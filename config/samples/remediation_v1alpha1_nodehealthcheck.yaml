@@ -1,0 +1,7 @@
+apiVersion: remediation.medik8s.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: nodehealthcheck-sample
+spec:
+  # Add fields here
+  foo: bar
