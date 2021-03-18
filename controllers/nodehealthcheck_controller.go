@@ -29,10 +29,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -62,8 +65,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// fetch nhc
 	nhc := remediationv1alpha1.NodeHealthCheck{}
-	objectKey := client.ObjectKey{Name: req.Name, Namespace: req.Namespace}
-	err := r.Get(ctx, objectKey, &nhc)
+	err := r.Get(ctx, req.NamespacedName, &nhc)
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check %s", nhc)
 		return ctrl.Result{}, err
@@ -182,6 +184,8 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&remediationv1alpha1.NodeHealthCheck{}).
 		Complete(r)
 }
+
+
 
 // shouldBackoff backs off if spec.backoff defined and the last time remediation was triggered
 // meets the criteria of the backoff
