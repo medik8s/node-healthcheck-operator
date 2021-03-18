@@ -62,38 +62,23 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// fetch nhc
 	nhc := remediationv1alpha1.NodeHealthCheck{}
-	objectKey := client.ObjectKeyFromObject(&nhc)
+	objectKey := client.ObjectKey{Name: req.Name, Namespace: req.Namespace}
 	err := r.Get(ctx, objectKey, &nhc)
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check %s", nhc)
 		return ctrl.Result{}, err
 	}
 	// select nodes using the nhc.selector
-	var nodes v1.NodeList
-	selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
-	if err != nil {
-		log.Error(err, "failed converting a selector from NHC selector %v", nhc.Spec.Selector)
-		return ctrl.Result{}, err
-	}
-	err = r.List(
-		ctx,
-		&nodes,
-		&client.ListOptions{LabelSelector: selector},
-	)
+	nodes := r.fetchNodes(ctx, nhc.Spec.Selector)
+
 	if err != nil {
 		log.Error(err, "failed fetching nodes using selector %v", nhc.Spec.Selector)
 		return ctrl.Result{}, err
 	}
 
-	var unhealthy map[string]v1.Node
-	// for each determine if healthy, and count
-	for _, n := range nodes.Items {
-		if isUnhealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
-			unhealthy[n.Name] = n
-		} else {
-			r.markHealthy(n, nhc)
-		}
-	}
+	// check nodes health
+	unhealthy := r.checkNodesHealth(nodes, nhc)
+
 	// after loop
 	nhc.Status.ObservedNodes = len(nodes.Items)
 	nhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
@@ -119,8 +104,36 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err = r.patchStatus(nhc)
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector ) v1.NodeList {
+	var nodes v1.NodeList
+	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+	if err != nil {
+		errors.Wrapf(err,"failed converting a selector from NHC selector %v", )
+		return v1.NodeList{}
+	}
+	err = r.List(
+		ctx,
+		&nodes,
+		&client.ListOptions{LabelSelector: selector},
+	)
+	return nodes
+}
+
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes v1.NodeList, nhc remediationv1alpha1.NodeHealthCheck) map[string]v1.Node {
+	var unhealthy map[string]v1.Node
+	for _, n := range nodes.Items {
+		if isUnhealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
+			unhealthy[n.Name] = n
+		} else {
+			r.markHealthy(n, nhc)
+		}
+	}
+	return unhealthy
 }
 
 func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
