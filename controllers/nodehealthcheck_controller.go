@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -182,10 +183,30 @@ func isUnhealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCo
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
+		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(allNHCHandler(mgr.GetClient()))).
 		Complete(r)
 }
 
 
+func allNHCHandler(c client.Client) handler.MapFunc {
+	// This closure is meant to fetch all NHC to fill the reconcile queue.
+	// If we have multiple nhc then it is possible that we fetch nhc objects that
+	// are unrelated to this node. Its even possible that the node still doesn't
+	// have the right labels set to be picked up by the nhc selector.
+	delegate := func(o client.Object) []reconcile.Request{
+		var nhcList remediationv1alpha1.NodeHealthCheckList
+		err := c.List(context.Background(), &nhcList, &client.ListOptions{})
+		if err != nil {
+			return nil
+		}
+		var r []reconcile.Request
+		for _, n := range nhcList.Items {
+			r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: n.GetName()}})
+		}
+		return r
+	}
+	return delegate
+}
 
 // shouldBackoff backs off if spec.backoff defined and the last time remediation was triggered
 // meets the criteria of the backoff
