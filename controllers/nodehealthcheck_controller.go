@@ -167,12 +167,13 @@ func isUnhealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCo
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
 	}
+
 	for _, c := range conditionTests {
-		v, exists := nodeConditionByType[c.Type]
+		n, exists := nodeConditionByType[c.Type]
 		if !exists {
 			continue
 		}
-		if now.After(v.LastTransitionTime.Add(c.Duration.Duration)) {
+		if n.Status == c.Status && now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 			return false
 		}
 	}
