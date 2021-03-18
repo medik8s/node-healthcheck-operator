@@ -29,10 +29,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -62,38 +66,22 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// fetch nhc
 	nhc := remediationv1alpha1.NodeHealthCheck{}
-	objectKey := client.ObjectKeyFromObject(&nhc)
-	err := r.Get(ctx, objectKey, &nhc)
+	err := r.Get(ctx, req.NamespacedName, &nhc)
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check %s", nhc)
 		return ctrl.Result{}, err
 	}
 	// select nodes using the nhc.selector
-	var nodes v1.NodeList
-	selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
-	if err != nil {
-		log.Error(err, "failed converting a selector from NHC selector %v", nhc.Spec.Selector)
-		return ctrl.Result{}, err
-	}
-	err = r.List(
-		ctx,
-		&nodes,
-		&client.ListOptions{LabelSelector: selector},
-	)
+	nodes := r.fetchNodes(ctx, nhc.Spec.Selector)
+
 	if err != nil {
 		log.Error(err, "failed fetching nodes using selector %v", nhc.Spec.Selector)
 		return ctrl.Result{}, err
 	}
 
-	var unhealthy map[string]v1.Node
-	// for each determine if healthy, and count
-	for _, n := range nodes.Items {
-		if isUnhealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
-			unhealthy[n.Name] = n
-		} else {
-			r.markHealthy(n, nhc)
-		}
-	}
+	// check nodes health
+	unhealthy := r.checkNodesHealth(nodes, nhc)
+
 	// after loop
 	nhc.Status.ObservedNodes = len(nodes.Items)
 	nhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
@@ -119,8 +107,36 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err = r.patchStatus(nhc)
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector ) v1.NodeList {
+	var nodes v1.NodeList
+	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+	if err != nil {
+		errors.Wrapf(err,"failed converting a selector from NHC selector %v", )
+		return v1.NodeList{}
+	}
+	err = r.List(
+		ctx,
+		&nodes,
+		&client.ListOptions{LabelSelector: selector},
+	)
+	return nodes
+}
+
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes v1.NodeList, nhc remediationv1alpha1.NodeHealthCheck) map[string]v1.Node {
+	var unhealthy map[string]v1.Node
+	for _, n := range nodes.Items {
+		if isUnhealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
+			unhealthy[n.Name] = n
+		} else {
+			r.markHealthy(n, nhc)
+		}
+	}
+	return unhealthy
 }
 
 func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
@@ -167,7 +183,29 @@ func isUnhealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCo
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
+		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(allNHCHandler(mgr.GetClient()))).
 		Complete(r)
+}
+
+
+func allNHCHandler(c client.Client) handler.MapFunc {
+	// This closure is meant to fetch all NHC to fill the reconcile queue.
+	// If we have multiple nhc then it is possible that we fetch nhc objects that
+	// are unrelated to this node. Its even possible that the node still doesn't
+	// have the right labels set to be picked up by the nhc selector.
+	delegate := func(o client.Object) []reconcile.Request{
+		var nhcList remediationv1alpha1.NodeHealthCheckList
+		err := c.List(context.Background(), &nhcList, &client.ListOptions{})
+		if err != nil {
+			return nil
+		}
+		var r []reconcile.Request
+		for _, n := range nhcList.Items {
+			r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: n.GetName()}})
+		}
+		return r
+	}
+	return delegate
 }
 
 // shouldBackoff backs off if spec.backoff defined and the last time remediation was triggered
