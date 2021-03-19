@@ -42,8 +42,7 @@ type NodeHealthCheckSpec struct {
 	// Both 0 and 0% are valid and will block all remediation.
 	// +kubebuilder:default="49%"
 	// +kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
-	// +kubebuilder:validation:Type:=string
-	// +kubebuilder:validation:Minimum:=0
+	// +kubebuilder:validation:Type=string
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
 	// ExternalRemediationTemplate is a reference to a remediation template
@@ -87,11 +86,11 @@ type NodeHealthCheckStatus struct {
 	//HealthyNodes specified the number of healthy nodes observed
 	HealthyNodes int `json:"healthyNodes"`
 
-	//TriggeredRemediationTime records the timestamp when remediation triggered per node
-	TriggeredRemediationTime TriggeredRemediationTime `json:"triggeredRemediationTime"`
+	//TriggeredRemediations records the timestamp when remediation triggered per node
+	TriggeredRemediations map[string]times `json:"triggeredRemediations"`
 }
 
-type TriggeredRemediationTime map[string][]metav1.Time
+type times []metav1.Time
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

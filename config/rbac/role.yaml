@@ -7,6 +7,12 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - watch
+- apiGroups:
   - remediation.medik8s.io
   resources:
   - nodehealthchecks

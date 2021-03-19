@@ -145,12 +145,18 @@ spec:
               observedNodes:
                 description: ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
                 type: integer
-              triggeredRemediationTime:
-                description: TriggeredRemediationTime records the timestamp when remediation triggered per node
+              triggeredRemediations:
+                additionalProperties:
+                  items:
+                    format: date-time
+                    type: string
+                  type: array
+                description: TriggeredRemediations records the timestamp when remediation triggered per node
+                type: object
             required:
             - healthyNodes
             - observedNodes
-            - triggeredRemediationTime
+            - triggeredRemediations
             type: object
         type: object
     served: true

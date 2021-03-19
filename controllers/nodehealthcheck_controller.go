@@ -104,7 +104,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// TODO because backoff functionality is in question updating the remediation time is excluded
-	// update mhc.status.triggeredRemediationTime map with the current remediation time per node
+	// update mhc.status.triggeredRemediations map with the current remediation time per node
 	err = r.patchStatus(nhc)
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
@@ -113,11 +113,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector ) v1.NodeList {
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) v1.NodeList {
 	var nodes v1.NodeList
 	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
 	if err != nil {
-		errors.Wrapf(err,"failed converting a selector from NHC selector %v", )
+		errors.Wrapf(err, "failed converting a selector from NHC selector")
 		return v1.NodeList{}
 	}
 	err = r.List(
@@ -189,13 +189,12 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-
 func allNHCHandler(c client.Client) handler.MapFunc {
 	// This closure is meant to fetch all NHC to fill the reconcile queue.
 	// If we have multiple nhc then it is possible that we fetch nhc objects that
 	// are unrelated to this node. Its even possible that the node still doesn't
 	// have the right labels set to be picked up by the nhc selector.
-	delegate := func(o client.Object) []reconcile.Request{
+	delegate := func(o client.Object) []reconcile.Request {
 		var nhcList remediationv1alpha1.NodeHealthCheckList
 		err := c.List(context.Background(), &nhcList, &client.ListOptions{})
 		if err != nil {
@@ -218,7 +217,7 @@ func (r *NodeHealthCheckReconciler) shouldBackoff(n v1.Node, nhc remediationv1al
 	}
 
 	now := time.Now()
-	remediationTimes := nhc.Status.TriggeredRemediationTime[n.Name]
+	remediationTimes := nhc.Status.TriggeredRemediations[n.Name]
 	if remediationTimes != nil && len(remediationTimes) > 1 {
 		// if we are passed the time limit then backoff
 		firstRemediationTime := remediationTimes[0]
