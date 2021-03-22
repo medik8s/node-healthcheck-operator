@@ -26,14 +26,16 @@ import (
 type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
 	// Note: An empty selector will match all nodes.
-	Selector metav1.LabelSelector `json:"selector"`
+	// +optional
+	Selector metav1.LabelSelector `json:"selector,omitempty"`
 
 	// UnhealthyConditions contains a list of the conditions that determine
 	// whether a node is considered unhealthy.  The conditions are combined in a
 	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
 	//
-	// +kubebuilder:validation:MinItems=1
-	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions"`
+	// +optional
+	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"}}
+	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by
 	// "selector" are not healthy.
@@ -93,6 +95,7 @@ type NodeHealthCheckStatus struct {
 type times []metav1.Time
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:path=nodehealthcheck,scope=Cluster
 // +kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
@@ -114,7 +117,7 @@ type NodeHealthCheckList struct {
 }
 
 type Backoff struct {
-	//todo rename to strategy instead of type?
+	//todo rename to strategy instead of type? not sure we need to support more backoff types
 	Type BackoffType `json:"type"`
 	// Expects a string of decimal numbers each with optional
 	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
