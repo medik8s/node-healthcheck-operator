@@ -135,6 +135,8 @@ spec:
                   - type
                   type: object
                 type: array
+            required:
+            - remediationTemplate
             type: object
           status:
             description: NodeHealthCheckStatus defines the observed state of NodeHealthCheck

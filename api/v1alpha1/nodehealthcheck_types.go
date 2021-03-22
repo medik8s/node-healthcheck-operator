@@ -27,7 +27,7 @@ type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
 	// Note: An empty selector will match all nodes.
 	// +optional
-	Selector metav1.LabelSelector `json:"selector,omitempty"`
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
 	// UnhealthyConditions contains a list of the conditions that determine
 	// whether a node is considered unhealthy.  The conditions are combined in a
@@ -52,7 +52,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
-	ExternalRemediationTemplate *corev1.ObjectReference `json:"remediationTemplate,omitempty"`
+	ExternalRemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
 
 	// TODO document this
 	// +optional

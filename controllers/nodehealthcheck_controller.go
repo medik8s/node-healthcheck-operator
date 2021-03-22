@@ -113,9 +113,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) v1.NodeList {
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector *metav1.LabelSelector) v1.NodeList {
 	var nodes v1.NodeList
-	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		errors.Wrapf(err, "failed converting a selector from NHC selector")
 		return v1.NodeList{}
