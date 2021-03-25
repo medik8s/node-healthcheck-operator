@@ -141,11 +141,10 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("few nodes are unhealthy and below max unhealthy", func() {
 			BeforeEach(func() {
-				objects = newNodeObjects(1, 2)
+				objects = newNodes(1, 2)
 				underTest = newNodeHealthCheck()
-				objects = append(objects, underTest)
 				remediationTemplate := newRemediationTemplate()
-				objects = append(objects, remediationTemplate)
+				objects = append(objects, underTest, remediationTemplate)
 			})
 
 			It("create a remediation CR for each unhealthy node", func() {
@@ -172,11 +171,10 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("few nodes are unhealthy and above max unhealthy", func() {
 			BeforeEach(func() {
-				objects = newNodeObjects(4, 3)
+				objects = newNodes(4, 3)
 				underTest = newNodeHealthCheck()
-				objects = append(objects, underTest)
 				remediationTemplate := newRemediationTemplate()
-				objects = append(objects, remediationTemplate)
+				objects = append(objects, underTest, remediationTemplate)
 			})
 
 			It("skips remediation - CR is not created", func() {
@@ -276,7 +274,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	}
 }
 
-func newNodeObjects(unhealthy int, healthy int) []runtime.Object {
+func newNodes(unhealthy int, healthy int) []runtime.Object {
 	o := make([]runtime.Object, 0, healthy+unhealthy)
 	for i := unhealthy; i > 0; i-- {
 		node := newNode(fmt.Sprintf("unhealthy-node-%d", i), v1.NodeReady, v1.ConditionFalse, time.Minute*10)
