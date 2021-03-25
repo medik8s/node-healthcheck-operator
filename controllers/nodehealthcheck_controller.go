@@ -63,17 +63,20 @@ type NodeHealthCheckReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("nodehealthcheck", req.NamespacedName)
+	log := r.Log.WithValues("NodeHealthCheck", req.NamespacedName)
 
 	// fetch nhc
 	nhc := remediationv1alpha1.NodeHealthCheck{}
 	err := r.Get(ctx, req.NamespacedName, &nhc)
 	if err != nil {
-		log.Error(err, "failed fetching Node Health Check %s", nhc)
+		log.Error(err, "failed fetching Node Health Check", "object", nhc)
 		return ctrl.Result{}, err
 	}
 	// select nodes using the nhc.selector
-	nodes := r.fetchNodes(ctx, nhc.Spec.Selector)
+	nodes, err := r.fetchNodes(ctx, nhc.Spec.Selector)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	if err != nil {
 		log.Error(err, "failed fetching nodes using selector %v", nhc.Spec.Selector)
@@ -81,7 +84,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check nodes health
-	unhealthy := r.checkNodesHealth(nodes, nhc)
+	unhealthy, err := r.checkNodesHealth(nodes, nhc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// after loop
 	nhc.Status.ObservedNodes = len(nodes.Items)
@@ -100,7 +106,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// trigger remediation per node
 	for _, n := range unhealthy {
-		r.remedy(n, nhc)
+		err := r.remediate(n, nhc)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// TODO because backoff functionality is in question updating the remediation time is excluded
@@ -113,31 +122,35 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector *metav1.LabelSelector) v1.NodeList {
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector *metav1.LabelSelector) (v1.NodeList, error) {
 	var nodes v1.NodeList
-	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
-	if err != nil {
-		errors.Wrapf(err, "failed converting a selector from NHC selector")
-		return v1.NodeList{}
-	}
-	err = r.List(
+	//selector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	//if err != nil {
+	//	err = errors.Wrapf(err, "failed converting a selector from NHC selector")
+	//	return v1.NodeList{}, err
+	//}
+	err := r.List(
 		ctx,
 		&nodes,
-		&client.ListOptions{LabelSelector: selector},
+		//&client.ListOptions{LabelSelector: selector},
+		&client.ListOptions{},
 	)
-	return nodes
+	return nodes, err
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes v1.NodeList, nhc remediationv1alpha1.NodeHealthCheck) map[string]v1.Node {
-	var unhealthy map[string]v1.Node
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes v1.NodeList, nhc remediationv1alpha1.NodeHealthCheck) (map[string]v1.Node, error) {
+	unhealthy := make(map[string]v1.Node)
 	for _, n := range nodes.Items {
-		if isUnhealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
-			unhealthy[n.Name] = n
+		if isHealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
+			err := r.markHealthy(n, nhc)
+			if err != nil {
+				return nil, err
+			}
 		} else {
-			r.markHealthy(n, nhc)
+			unhealthy[n.Name] = n
 		}
 	}
-	return unhealthy
+	return unhealthy, nil
 }
 
 func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
@@ -146,12 +159,14 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 		return err
 	}
 
-	r.Log.Info("node %s seems healthy", n.Name)
+	r.Log.Info("node seems healthy", "Node name", n.Name)
+
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
-	if err != nil {
+	// if the node is already healthy then there is no remediation object for it
+	if !apierrors.IsNotFound(err) {
 		return err
 	}
-	r.Log.Info("deleted node %s external remediation object", n.Name)
+	r.Log.Info("deleted node external remediation object", "Node name", n.Name)
 	return nil
 }
 
@@ -162,7 +177,7 @@ func (r *NodeHealthCheckReconciler) getMaxUnhealthy(nhc remediationv1alpha1.Node
 	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, nhc.Status.ObservedNodes, true)
 }
 
-func isUnhealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
+func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
 	now := time.Now()
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
@@ -236,7 +251,7 @@ func (r *NodeHealthCheckReconciler) shouldBackoff(n v1.Node, nhc remediationv1al
 	return false
 }
 
-func (r *NodeHealthCheckReconciler) remedy(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
 	cr, err := r.generateRemediationCR(n, nhc)
 	if err != nil {
 		return err
@@ -253,6 +268,9 @@ func (r *NodeHealthCheckReconciler) remedy(n v1.Node, nhc remediationv1alpha1.No
 
 func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
 	t, err := r.fetchTemplate(nhc)
+	if err != nil {
+		return nil, err
+	}
 	templateSpec, found, err := unstructured.NestedMap(t.Object, "spec", "template")
 	if !found {
 		return nil, errors.Errorf("missing Spec.Template on %v %q", t.GroupVersionKind(), t.GetName())
@@ -287,7 +305,6 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	u.SetUID("")
 	u.SetSelfLink("")
 	return &u, nil
-
 }
 
 func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
@@ -306,5 +323,6 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck) error {
 	// all values to be patched expected to be updated on the current nhc.status
 	from := client.MergeFrom(nhc.DeepCopy())
+	r.Log.Info("Patching NHC object", "from", from, "to", nhc)
 	return r.Client.Status().Patch(context.Background(), &nhc, from, &client.PatchOptions{})
 }
