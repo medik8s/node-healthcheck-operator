@@ -26,14 +26,16 @@ import (
 type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
 	// Note: An empty selector will match all nodes.
-	Selector metav1.LabelSelector `json:"selector"`
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
 	// UnhealthyConditions contains a list of the conditions that determine
 	// whether a node is considered unhealthy.  The conditions are combined in a
 	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
 	//
-	// +kubebuilder:validation:MinItems=1
-	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions"`
+	// +optional
+	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"}}
+	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by
 	// "selector" are not healthy.
@@ -42,8 +44,7 @@ type NodeHealthCheckSpec struct {
 	// Both 0 and 0% are valid and will block all remediation.
 	// +kubebuilder:default="49%"
 	// +kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
-	// +kubebuilder:validation:Type:=string
-	// +kubebuilder:validation:Minimum:=0
+	// +kubebuilder:validation:Type=string
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
 	// ExternalRemediationTemplate is a reference to a remediation template
@@ -51,7 +52,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
-	ExternalRemediationTemplate *corev1.ObjectReference `json:"remediationTemplate,omitempty"`
+	ExternalRemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
 
 	// TODO document this
 	// +optional
@@ -87,13 +88,14 @@ type NodeHealthCheckStatus struct {
 	//HealthyNodes specified the number of healthy nodes observed
 	HealthyNodes int `json:"healthyNodes"`
 
-	//TriggeredRemediationTime records the timestamp when remediation triggered per node
-	TriggeredRemediationTime TriggeredRemediationTime `json:"triggeredRemediationTime"`
+	//TriggeredRemediations records the timestamp when remediation triggered per node
+	TriggeredRemediations map[string]times `json:"triggeredRemediations"`
 }
 
-type TriggeredRemediationTime map[string][]metav1.Time
+type times []metav1.Time
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:path=nodehealthcheck,scope=Cluster
 // +kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
@@ -115,7 +117,7 @@ type NodeHealthCheckList struct {
 }
 
 type Backoff struct {
-	//todo rename to strategy instead of type?
+	//todo rename to strategy instead of type? not sure we need to support more backoff types
 	Type BackoffType `json:"type"`
 	// Expects a string of decimal numbers each with optional
 	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".

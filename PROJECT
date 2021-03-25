@@ -3,11 +3,17 @@ layout: go.kubebuilder.io/v3
 projectName: node-healthcheck-operator
 repo: github.com/medik8s/node-healthcheck-operator
 resources:
-- crdVersion: v1
+- api:
+    crdVersion: v1
+  # TODO(user): Uncomment the below line if this resource implements a controller, else delete it.
+  controller: true
+  domain: medik8s.io
   group: remediation
   kind: NodeHealthCheck
+  # TODO(user): Update the package path for your API if the below value is incorrect.
+  path: github.com/medik8s/node-healthcheck-operator/api/v1alpha1
   version: v1alpha1
-version: 3-alpha
+version: "3"
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}

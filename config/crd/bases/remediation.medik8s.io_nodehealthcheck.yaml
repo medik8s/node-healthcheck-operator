@@ -6,15 +6,15 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
-  name: nodehealthchecks.remediation.medik8s.io
+  name: nodehealthcheck.remediation.medik8s.io
 spec:
   group: remediation.medik8s.io
   names:
     kind: NodeHealthCheck
     listKind: NodeHealthCheckList
-    plural: nodehealthchecks
+    plural: nodehealthcheck
     singular: nodehealthcheck
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:
@@ -40,7 +40,7 @@ spec:
                     pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                     type: string
                   type:
-                    description: todo rename to strategy instead of type?
+                    description: todo rename to strategy instead of type? not sure we need to support more backoff types
                     type: string
                 required:
                 - duration
@@ -111,6 +111,10 @@ spec:
                     type: object
                 type: object
               unhealthyConditions:
+                default:
+                - duration: 300s
+                  status: "False"
+                  type: Ready
                 description: UnhealthyConditions contains a list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.
                 items:
                   description: UnhealthyCondition represents a Node condition type and value with a specified duration. When the named condition has been in the given status for at least the duration value a node is considered unhealthy.
@@ -130,11 +134,9 @@ spec:
                   - status
                   - type
                   type: object
-                minItems: 1
                 type: array
             required:
-            - selector
-            - unhealthyConditions
+            - remediationTemplate
             type: object
           status:
             description: NodeHealthCheckStatus defines the observed state of NodeHealthCheck
@@ -145,12 +147,18 @@ spec:
               observedNodes:
                 description: ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
                 type: integer
-              triggeredRemediationTime:
-                description: TriggeredRemediationTime records the timestamp when remediation triggered per node
+              triggeredRemediations:
+                additionalProperties:
+                  items:
+                    format: date-time
+                    type: string
+                  type: array
+                description: TriggeredRemediations records the timestamp when remediation triggered per node
+                type: object
             required:
             - healthyNodes
             - observedNodes
-            - triggeredRemediationTime
+            - triggeredRemediations
             type: object
         type: object
     served: true
