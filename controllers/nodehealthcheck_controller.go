@@ -174,7 +174,7 @@ func (r *NodeHealthCheckReconciler) getMaxUnhealthy(nhc remediationv1alpha1.Node
 	if nhc.Spec.MaxUnhealthy.Type == 0 {
 		return nhc.Spec.MaxUnhealthy.IntValue(), nil
 	}
-	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, nhc.Status.ObservedNodes, true)
+	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, nhc.Status.ObservedNodes, false)
 }
 
 func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
