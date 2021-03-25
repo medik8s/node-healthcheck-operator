@@ -26,18 +26,9 @@ import (
 )
 
 var _ = Describe("Node Health Check CR", func() {
-	var (
-		reconciler NodeHealthCheckReconciler
-		client     ctrlruntimeclient.Client
-	)
 	Context("Defaults", func() {
 		var underTest *v1alpha1.NodeHealthCheck
-		client = k8sClient
-		reconciler = NodeHealthCheckReconciler{
-			Client: client,
-			Log:    controllerruntime.Log,
-			Scheme: scheme.Scheme,
-		}
+
 		BeforeEach(func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
@@ -51,35 +42,40 @@ var _ = Describe("Node Health Check CR", func() {
 				},
 			}
 			err := k8sClient.Create(context.Background(), underTest)
-			reconciler.Log.Info("created resource NHC")
 			Expect(err).NotTo(HaveOccurred())
 		})
+
 		AfterEach(func() {
 			err := k8sClient.Delete(context.Background(), underTest)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
 		When("creating a resource", func() {
 			It("CR is cluster scoped", func() {
 				Expect(underTest.Namespace).To(BeEmpty())
 			})
+
 			It("sets a default condition Unready 300s", func() {
 				Expect(underTest.Spec.UnhealthyConditions).To(HaveLen(1))
 				Expect(underTest.Spec.UnhealthyConditions[0].Type).To(Equal(v1.NodeReady))
 				Expect(underTest.Spec.UnhealthyConditions[0].Status).To(Equal(v1.ConditionFalse))
 				Expect(underTest.Spec.UnhealthyConditions[0].Duration).To(Equal(metav1.Duration{Duration: time.Minute * 5}))
-
 			})
+
 			It("sets max unhealthy to 49%", func() {
 				Expect(underTest.Spec.MaxUnhealthy.StrVal).To(Equal(intstr.FromString("49%").StrVal))
 			})
+
 			It("sets an empty selector to select all nodes", func() {
 				Expect(underTest.Spec.Selector.MatchLabels).To(BeEmpty())
 				Expect(underTest.Spec.Selector.MatchExpressions).To(BeEmpty())
 			})
 		})
 	})
+
 	Context("Validation", func() {
 		var underTest *v1alpha1.NodeHealthCheck
+
 		BeforeEach(func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
@@ -92,16 +88,19 @@ var _ = Describe("Node Health Check CR", func() {
 				},
 			}
 		})
+
 		AfterEach(func() {
 			k8sClient.Delete(context.Background(), underTest)
 		})
+
 		When("specifying an external remediation template", func() {
 			It("should fail creation if empty", func() {
 				underTest.Spec.ExternalRemediationTemplate = nil
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(err).To(HaveOccurred())
 			})
-			It("should succeed creation with with non existent template", func() {
+
+			It("should succeed creation if a template CR doesn't exists", func() {
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -113,9 +112,11 @@ var _ = Describe("Node Health Check CR", func() {
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(errors.IsInvalid(err)).To(BeTrue())
 			})
+
 			It("fails creation on negative number", func() {
-				Skip("TODO how to make a minimum validation for IntOrString")
+				Skip("TODO find out how to validate a minimum for IntOrString")
 			})
+
 			It("succeeds creation on percentage between 0%-100%", func() {
 				validPercentage := intstr.FromString("30%")
 				underTest.Spec.MaxUnhealthy = &validPercentage
@@ -124,10 +125,12 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 	})
+
 	Context("Reconciliation", func() {
 		var (
-			underTest *v1alpha1.NodeHealthCheck
-			objects   []runtime.Object
+			underTest  *v1alpha1.NodeHealthCheck
+			objects    []runtime.Object
+			reconciler NodeHealthCheckReconciler
 		)
 
 		JustBeforeEach(func() {
