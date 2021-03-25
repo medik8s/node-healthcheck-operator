@@ -78,11 +78,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if err != nil {
-		log.Error(err, "failed fetching nodes using selector %v", nhc.Spec.Selector)
-		return ctrl.Result{}, err
-	}
-
 	// check nodes health
 	unhealthy, err := r.checkNodesHealth(nodes, nhc)
 	if err != nil {
