@@ -42,7 +42,7 @@ var _ = Describe("Node Health Check CR", func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
-					Selector: nil,
+					Selector: metav1.LabelSelector{},
 					ExternalRemediationTemplate: &v1.ObjectReference{
 						Kind:      "InfrastructureRemediationTemplate",
 						Namespace: "default",
@@ -73,7 +73,8 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Spec.MaxUnhealthy.StrVal).To(Equal(intstr.FromString("49%").StrVal))
 			})
 			It("sets an empty selector to select all nodes", func() {
-				Expect(underTest.Spec.Selector).To(BeNil())
+				Expect(underTest.Spec.Selector.MatchLabels).To(BeEmpty())
+				Expect(underTest.Spec.Selector.MatchExpressions).To(BeEmpty())
 			})
 		})
 	})
@@ -231,7 +232,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			Name: "test",
 		},
 		Spec: v1alpha1.NodeHealthCheckSpec{
-			Selector:     nil,
+			Selector:     metav1.LabelSelector{},
 			MaxUnhealthy: &unhealthy,
 			UnhealthyConditions: []v1alpha1.UnhealthyCondition{
 				{

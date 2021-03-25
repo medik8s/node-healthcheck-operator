@@ -27,7 +27,7 @@ type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
 	// Note: An empty selector will match all nodes.
 	// +optional
-	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+	Selector metav1.LabelSelector `json:"selector"`
 
 	// UnhealthyConditions contains a list of the conditions that determine
 	// whether a node is considered unhealthy.  The conditions are combined in a
