@@ -42,7 +42,7 @@ var _ = Describe("Node Health Check CR", func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
-					Selector: nil,
+					Selector: metav1.LabelSelector{},
 					ExternalRemediationTemplate: &v1.ObjectReference{
 						Kind:      "InfrastructureRemediationTemplate",
 						Namespace: "default",
@@ -73,7 +73,8 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Spec.MaxUnhealthy.StrVal).To(Equal(intstr.FromString("49%").StrVal))
 			})
 			It("sets an empty selector to select all nodes", func() {
-				Expect(underTest.Spec.Selector).To(BeNil())
+				Expect(underTest.Spec.Selector.MatchLabels).To(BeEmpty())
+				Expect(underTest.Spec.Selector.MatchExpressions).To(BeEmpty())
 			})
 		})
 	})
@@ -124,15 +125,12 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 	})
 	Context("Reconciliation", func() {
-		var underTest *v1alpha1.NodeHealthCheck
+		var (
+			underTest *v1alpha1.NodeHealthCheck
+			objects   []runtime.Object
+		)
 
-		BeforeEach(func() {
-			objects := newNodeObjects(1, 2)
-			underTest = newNodeHealthCheck()
-			objects = append(objects, underTest)
-			remediationTemplate := newRemediationTemplate()
-			objects = append(objects, remediationTemplate)
-
+		JustBeforeEach(func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
 			reconciler = NodeHealthCheckReconciler{Client: client, Log: controllerruntime.Log, Scheme: scheme.Scheme}
 			_, err := reconciler.Reconcile(
@@ -140,10 +138,17 @@ var _ = Describe("Node Health Check CR", func() {
 				controllerruntime.Request{NamespacedName: types.NamespacedName{Name: underTest.Name}})
 			Expect(err).NotTo(HaveOccurred())
 		})
+
 		When("few nodes are unhealthy and below max unhealthy", func() {
+			BeforeEach(func() {
+				objects = newNodes(1, 2)
+				underTest = newNodeHealthCheck()
+				remediationTemplate := newRemediationTemplate()
+				objects = append(objects, underTest, remediationTemplate)
+			})
 
 			It("create a remediation CR for each unhealthy node", func() {
-				o := newRemediationCR()
+				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
 				Expect(err).NotTo(HaveOccurred())
@@ -165,25 +170,66 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		When("few nodes are unhealthy and above max unhealthy", func() {
-
-			It("skips remediation - no CR is created", func() {
-
+			BeforeEach(func() {
+				objects = newNodes(4, 3)
+				underTest = newNodeHealthCheck()
+				remediationTemplate := newRemediationTemplate()
+				objects = append(objects, underTest, remediationTemplate)
 			})
-			It("deletes a remediation CR for if a node gone healthy", func() {})
-			It("updates the NHC status with number of healthy nodes", func() {})
-			It("updates the NHC status with number of observed nodes", func() {})
+
+			It("skips remediation - CR is not created", func() {
+				o := newRemediationCR("unhealthy-node-1")
+				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("updates the NHC status with number of healthy nodes", func() {
+				updatedNHC := v1alpha1.NodeHealthCheck{}
+				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(updatedNHC.Status.HealthyNodes).To(Equal(3))
+			})
+
+			It("updates the NHC status with number of observed nodes", func() {
+				updatedNHC := v1alpha1.NodeHealthCheck{}
+				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(updatedNHC.Status.ObservedNodes).To(Equal(7))
+			})
 		})
+
 		When("few nodes become healthy", func() {
-			It("deletes an existing remediation CR", func() {})
-			It("updates the NHC status with number of healthy nodes", func() {})
+			BeforeEach(func() {
+				objects = newNodes(1, 2)
+				underTest = newNodeHealthCheck()
+				remediationTemplate := newRemediationTemplate()
+				remediationCR := newRemediationCR("healthy-node-2")
+				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
+			})
+
+			It("deletes an existing remediation CR", func() {
+				o := newRemediationCR("unhealthy-node-1")
+				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(err).NotTo(HaveOccurred())
+
+				o = newRemediationCR("healthy-node-2")
+				err = reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("updates the NHC status with number of healthy nodes", func() {
+				updatedNHC := v1alpha1.NodeHealthCheck{}
+				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
+			})
 		})
 	})
-
 })
 
-func newRemediationCR() unstructured.Unstructured {
+func newRemediationCR(nodeName string) unstructured.Unstructured {
 	cr := unstructured.Unstructured{}
-	cr.SetName("unhealthy-node-1")
+	cr.SetName(nodeName)
 	cr.SetNamespace("default")
 	cr.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   TestRemediationCRD.Spec.Group,
@@ -231,7 +277,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			Name: "test",
 		},
 		Spec: v1alpha1.NodeHealthCheckSpec{
-			Selector:     nil,
+			Selector:     metav1.LabelSelector{},
 			MaxUnhealthy: &unhealthy,
 			UnhealthyConditions: []v1alpha1.UnhealthyCondition{
 				{
@@ -250,7 +296,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	}
 }
 
-func newNodeObjects(unhealthy int, healthy int) []runtime.Object {
+func newNodes(unhealthy int, healthy int) []runtime.Object {
 	o := make([]runtime.Object, 0, healthy+unhealthy)
 	for i := unhealthy; i > 0; i-- {
 		node := newNode(fmt.Sprintf("unhealthy-node-%d", i), v1.NodeReady, v1.ConditionFalse, time.Minute*10)
@@ -363,55 +409,4 @@ var TestRemediationTemplateCRD = &apiextensions.CustomResourceDefinition{
 			},
 		},
 	},
-}
-
-type InfraRemdiationCRDList struct {
-}
-
-func (i InfraRemdiationCRDList) GetResourceVersion() string {
-	return TestRemediationCRD.GetResourceVersion()
-}
-
-func (i InfraRemdiationCRDList) SetResourceVersion(version string) {
-	//
-}
-
-func (i InfraRemdiationCRDList) GetSelfLink() string {
-	return ""
-}
-
-func (i InfraRemdiationCRDList) SetSelfLink(selfLink string) {
-	//
-}
-
-func (i InfraRemdiationCRDList) GetContinue() string {
-	return ""
-}
-
-func (i InfraRemdiationCRDList) SetContinue(c string) {
-	//
-}
-
-func (i InfraRemdiationCRDList) GetRemainingItemCount() *int64 {
-	z := int64(0)
-	return &z
-}
-
-func (i InfraRemdiationCRDList) SetRemainingItemCount(c *int64) {
-	//
-}
-
-func (i InfraRemdiationCRDList) GetObjectKind() schema.ObjectKind {
-	return nil
-}
-
-type OK struct {
-}
-
-func (O OK) SetGroupVersionKind(kind schema.GroupVersionKind) {
-	//panic("implement me")
-}
-
-func (i InfraRemdiationCRDList) DeepCopyObject() runtime.Object {
-	panic("implement me")
 }

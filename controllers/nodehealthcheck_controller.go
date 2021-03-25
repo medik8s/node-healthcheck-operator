@@ -78,11 +78,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if err != nil {
-		log.Error(err, "failed fetching nodes using selector %v", nhc.Spec.Selector)
-		return ctrl.Result{}, err
-	}
-
 	// check nodes health
 	unhealthy, err := r.checkNodesHealth(nodes, nhc)
 	if err != nil {
@@ -90,31 +85,30 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// after loop
-	nhc.Status.ObservedNodes = len(nodes.Items)
-	nhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
+	updatedNhc := *nhc.DeepCopy()
+	updatedNhc.Status.ObservedNodes = len(nodes.Items)
+	updatedNhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
 
-	maxUnhealthy, err := r.getMaxUnhealthy(nhc)
+	maxUnhealthy, err := r.getMaxUnhealthy(updatedNhc)
 	if err != nil {
 		log.Error(err, "failed to calculate max unhealthy allowed nodes",
 			"maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return ctrl.Result{}, err
 	}
-	// if unhealthy count exceeds max unhealthy -> skip
-	if len(unhealthy) > maxUnhealthy {
-		return ctrl.Result{}, nil
-	}
 
-	// trigger remediation per node
-	for _, n := range unhealthy {
-		err := r.remediate(n, nhc)
-		if err != nil {
-			return ctrl.Result{}, err
+	if len(unhealthy) <= maxUnhealthy {
+		// trigger remediation per node
+		for _, n := range unhealthy {
+			err := r.remediate(n, nhc)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
 	// TODO because backoff functionality is in question updating the remediation time is excluded
 	// update mhc.status.triggeredRemediations map with the current remediation time per node
-	err = r.patchStatus(nhc)
+	err = r.patchStatus(nhc, updatedNhc)
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
 		return ctrl.Result{}, err
@@ -122,18 +116,17 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector *metav1.LabelSelector) (v1.NodeList, error) {
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) (v1.NodeList, error) {
 	var nodes v1.NodeList
-	//selector, err := metav1.LabelSelectorAsSelector(labelSelector)
-	//if err != nil {
-	//	err = errors.Wrapf(err, "failed converting a selector from NHC selector")
-	//	return v1.NodeList{}, err
-	//}
-	err := r.List(
+	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+	if err != nil {
+		err = errors.Wrapf(err, "failed converting a selector from NHC selector")
+		return v1.NodeList{}, err
+	}
+	err = r.List(
 		ctx,
 		&nodes,
-		//&client.ListOptions{LabelSelector: selector},
-		&client.ListOptions{},
+		&client.ListOptions{LabelSelector: selector},
 	)
 	return nodes, err
 }
@@ -174,7 +167,7 @@ func (r *NodeHealthCheckReconciler) getMaxUnhealthy(nhc remediationv1alpha1.Node
 	if nhc.Spec.MaxUnhealthy.Type == 0 {
 		return nhc.Spec.MaxUnhealthy.IntValue(), nil
 	}
-	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, nhc.Status.ObservedNodes, true)
+	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, nhc.Status.ObservedNodes, false)
 }
 
 func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
@@ -256,10 +249,10 @@ func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1
 	if err != nil {
 		return err
 	}
-	r.Log.Info("node %s seems unhealthy. Creating an external remediation object",
-		"name", cr.GetName(), "gvk", cr.GroupVersionKind())
+	r.Log.Info("node seems unhealthy. Creating an external remediation object",
+		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind())
 	err = r.Client.Create(context.Background(), cr, &client.CreateOptions{})
-	if !apierrors.IsAlreadyExists(err) {
+	if err != nil && apierrors.IsAlreadyExists(err) {
 		r.Log.Error(err, "failed to create an external remediation object")
 		return err
 	}
@@ -311,7 +304,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	t := nhc.Spec.ExternalRemediationTemplate.DeepCopy()
 	obj := new(unstructured.Unstructured)
 	obj.SetAPIVersion(t.APIVersion)
-	obj.SetKind(t.Kind)
+	obj.SetGroupVersionKind(t.GroupVersionKind())
 	obj.SetName(t.Name)
 	key := client.ObjectKey{Name: obj.GetName(), Namespace: t.Namespace}
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
@@ -320,9 +313,9 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	return obj, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, updatedNHC remediationv1alpha1.NodeHealthCheck) error {
 	// all values to be patched expected to be updated on the current nhc.status
-	from := client.MergeFrom(nhc.DeepCopy())
-	r.Log.Info("Patching NHC object", "from", from, "to", nhc)
-	return r.Client.Status().Patch(context.Background(), &nhc, from, &client.PatchOptions{})
+	patch := client.MergeFrom(nhc.DeepCopy())
+	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
+	return r.Client.Status().Patch(context.Background(), &updatedNHC, patch, &client.PatchOptions{})
 }
