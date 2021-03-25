@@ -89,8 +89,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	updatedNhc.Status.ObservedNodes = len(nodes.Items)
 	updatedNhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
 
-	log.Info("nhc after checking health", "nhc", updatedNhc)
-
 	maxUnhealthy, err := r.getMaxUnhealthy(updatedNhc)
 	if err != nil {
 		log.Error(err, "failed to calculate max unhealthy allowed nodes",

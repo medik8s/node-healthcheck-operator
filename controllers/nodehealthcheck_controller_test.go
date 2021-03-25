@@ -148,7 +148,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("create a remediation CR for each unhealthy node", func() {
-				o := newRemediationCR()
+				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
 				Expect(err).NotTo(HaveOccurred())
@@ -178,7 +178,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation - CR is not created", func() {
-				o := newRemediationCR()
+				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -198,16 +198,38 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		When("few nodes become healthy", func() {
-			It("deletes an existing remediation CR", func() {})
-			It("updates the NHC status with number of healthy nodes", func() {})
+			BeforeEach(func() {
+				objects = newNodes(1, 2)
+				underTest = newNodeHealthCheck()
+				remediationTemplate := newRemediationTemplate()
+				remediationCR := newRemediationCR("healthy-node-2")
+				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
+			})
+
+			It("deletes an existing remediation CR", func() {
+				o := newRemediationCR("unhealthy-node-1")
+				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(err).NotTo(HaveOccurred())
+
+				o = newRemediationCR("healthy-node-2")
+				err = reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("updates the NHC status with number of healthy nodes", func() {
+				updatedNHC := v1alpha1.NodeHealthCheck{}
+				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
+			})
 		})
 	})
-
 })
 
-func newRemediationCR() unstructured.Unstructured {
+func newRemediationCR(nodeName string) unstructured.Unstructured {
 	cr := unstructured.Unstructured{}
-	cr.SetName("unhealthy-node-1")
+	cr.SetName(nodeName)
 	cr.SetNamespace("default")
 	cr.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   TestRemediationCRD.Spec.Group,
