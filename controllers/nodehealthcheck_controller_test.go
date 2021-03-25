@@ -2,19 +2,25 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -22,27 +28,25 @@ import (
 var _ = Describe("Node Health Check CR", func() {
 	var (
 		reconciler NodeHealthCheckReconciler
-		client     client.Client
+		client     ctrlruntimeclient.Client
 	)
-	BeforeEach(func() {
+	Context("Defaults", func() {
+		var underTest *v1alpha1.NodeHealthCheck
 		client = k8sClient
 		reconciler = NodeHealthCheckReconciler{
 			Client: client,
 			Log:    controllerruntime.Log,
 			Scheme: scheme.Scheme,
 		}
-	})
-	Context("Defaults", func() {
-		var underTest *v1alpha1.NodeHealthCheck
 		BeforeEach(func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
 					Selector: nil,
 					ExternalRemediationTemplate: &v1.ObjectReference{
-						Kind:      "some.kind.kindTemplate",
-						Namespace: "ns",
-						Name:      "testtemplate",
+						Kind:      "InfrastructureRemediationTemplate",
+						Namespace: "default",
+						Name:      "template",
 					},
 				},
 			}
@@ -80,9 +84,9 @@ var _ = Describe("Node Health Check CR", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
 					ExternalRemediationTemplate: &v1.ObjectReference{
-						Kind:      "some.kind.kindTemplate",
-						Namespace: "ns",
-						Name:      "testtemplate",
+						Kind:      "InfrastructureRemediationTemplate",
+						Namespace: "default",
+						Name:      "template",
 					},
 				},
 			}
@@ -103,8 +107,8 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 		When("specifying max unhealthy", func() {
 			It("fails creation on percentage > 100%", func() {
-				invalidPercenteage := intstr.FromString("150%")
-				underTest.Spec.MaxUnhealthy = &invalidPercenteage
+				invalidPercentage := intstr.FromString("150%")
+				underTest.Spec.MaxUnhealthy = &invalidPercentage
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(errors.IsInvalid(err)).To(BeTrue())
 			})
@@ -115,51 +119,53 @@ var _ = Describe("Node Health Check CR", func() {
 				validPercentage := intstr.FromString("30%")
 				underTest.Spec.MaxUnhealthy = &validPercentage
 				err := k8sClient.Create(context.Background(), underTest)
-				Expect(errors.IsInvalid(err)).NotTo(BeTrue())
+				Expect(errors.IsInvalid(err)).To(BeFalse())
 			})
 		})
 	})
 	Context("Reconciliation", func() {
-			nodes := []v1.nodes{
-				ObjectMeta: metav1.ObjectMeta{Name: "worker-0"},
-				Status:     v1.NodeStatus{
-					Conditions:      []v1.NodeCondition{
-						{
-							Type:               v1.NodeReady,
-							Status:             v1.ConditionFalse,
-							LastTransitionTime: metav1.Time{Time: time.Now().Add(-time.Minute * 10)},
-							Reason:             "",
-							Message:            "",
-					},
-				},
-			},
-		})
 		var underTest *v1alpha1.NodeHealthCheck
+
 		BeforeEach(func() {
-			underTest = &v1alpha1.NodeHealthCheck{
-				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: v1alpha1.NodeHealthCheckSpec{
-					Selector: nil,
-					ExternalRemediationTemplate: &v1.ObjectReference{
-						Kind:      "some.kind.kindTemplate",
-						Namespace: "ns",
-						Name:      "testtemplate",
-					},
-				},
-			}
-		})
-		AfterEach(func() {
-			err := k8sClient.Delete(context.Background(), underTest)
+			objects := newNodeObjects(1, 2)
+			underTest = newNodeHealthCheck()
+			objects = append(objects, underTest)
+			remediationTemplate := newRemediationTemplate()
+			objects = append(objects, remediationTemplate)
+
+			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
+			reconciler = NodeHealthCheckReconciler{Client: client, Log: controllerruntime.Log, Scheme: scheme.Scheme}
+			_, err := reconciler.Reconcile(
+				context.Background(),
+				controllerruntime.Request{NamespacedName: types.NamespacedName{Name: underTest.Name}})
 			Expect(err).NotTo(HaveOccurred())
 		})
 		When("few nodes are unhealthy and below max unhealthy", func() {
-			It("create a remediation CR for each unhealthy node", func() {
 
+			It("create a remediation CR for each unhealthy node", func() {
+				o := newRemediationCR()
+				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(o.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
 			})
-			It("updates the NHC status with number of healthy nodes", func() {})
-			It("updates the NHC status with number of observed nodes", func() {})
+
+			It("updates the NHC status with number of healthy nodes", func() {
+				updatedNHC := v1alpha1.NodeHealthCheck{}
+				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
+			})
+
+			It("updates the NHC status with number of observed nodes", func() {
+				updatedNHC := v1alpha1.NodeHealthCheck{}
+				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(updatedNHC.Status.ObservedNodes).To(Equal(3))
+			})
+
 		})
+
 		When("few nodes are unhealthy and above max unhealthy", func() {
+
 			It("skips remediation - no CR is created", func() {
 
 			})
@@ -174,3 +180,238 @@ var _ = Describe("Node Health Check CR", func() {
 	})
 
 })
+
+func newRemediationCR() unstructured.Unstructured {
+	cr := unstructured.Unstructured{}
+	cr.SetName("unhealthy-node-1")
+	cr.SetNamespace("default")
+	cr.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   TestRemediationCRD.Spec.Group,
+		Version: TestRemediationCRD.Spec.Versions[0].Name,
+		Kind:    TestRemediationCRD.Spec.Names.Kind,
+	})
+	return cr
+}
+
+func newRemediationTemplate() runtime.Object {
+	r := map[string]interface{}{
+		"kind":       "InfrastructureRemediation",
+		"apiVersion": "medik8s.io/v1alpha1",
+		"metadata":   map[string]interface{}{},
+		"spec": map[string]interface{}{
+			"size": "foo",
+		},
+	}
+	template := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": r,
+			},
+		},
+	}
+	template.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "medik8s.io",
+		Version: "v1alpha1",
+		Kind:    "InfrastructureRemediationTemplate",
+	})
+	template.SetGenerateName("remediation-template-name-")
+	template.SetNamespace("default")
+	template.SetName("template")
+	return template.DeepCopyObject()
+}
+
+func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
+	unhealthy := intstr.FromString("49%")
+	return &v1alpha1.NodeHealthCheck{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "NodeHealthCheck",
+			APIVersion: "medik8s.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test",
+		},
+		Spec: v1alpha1.NodeHealthCheckSpec{
+			Selector:     nil,
+			MaxUnhealthy: &unhealthy,
+			UnhealthyConditions: []v1alpha1.UnhealthyCondition{
+				{
+					Type:     v1.NodeReady,
+					Status:   v1.ConditionFalse,
+					Duration: metav1.Duration{Duration: time.Second * 300},
+				},
+			},
+			ExternalRemediationTemplate: &v1.ObjectReference{
+				Kind:       "InfrastructureRemediationTemplate",
+				APIVersion: "medik8s.io/v1alpha1",
+				Namespace:  "default",
+				Name:       "template",
+			},
+		},
+	}
+}
+
+func newNodeObjects(unhealthy int, healthy int) []runtime.Object {
+	o := make([]runtime.Object, 0, healthy+unhealthy)
+	for i := unhealthy; i > 0; i-- {
+		node := newNode(fmt.Sprintf("unhealthy-node-%d", i), v1.NodeReady, v1.ConditionFalse, time.Minute*10)
+		o = append(o, node)
+	}
+	for i := healthy; i > 0; i-- {
+		o = append(o, newNode(fmt.Sprintf("healthy-node-%d", i), v1.NodeReady, v1.ConditionTrue, time.Minute*10))
+	}
+	return o
+}
+
+func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.Duration) runtime.Object {
+	return runtime.Object(
+		&v1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Status: v1.NodeStatus{
+				Conditions: []v1.NodeCondition{
+					{
+						Type:               t,
+						Status:             s,
+						LastTransitionTime: metav1.Time{Time: time.Now().Add(-d)},
+					},
+				},
+			},
+		})
+
+}
+
+var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
+	TypeMeta: metav1.TypeMeta{
+		APIVersion: apiextensions.SchemeGroupVersion.String(),
+		Kind:       "CustomResourceDefinition",
+	},
+	ObjectMeta: metav1.ObjectMeta{
+		Name: "infrastructureremediations.medik8s.io",
+	},
+	Spec: apiextensions.CustomResourceDefinitionSpec{
+		Group: "medik8s.io",
+		Scope: apiextensions.NamespaceScoped,
+		Names: apiextensions.CustomResourceDefinitionNames{
+			Kind:   "InfrastructureRemediation",
+			Plural: "infrastructureremediations",
+		},
+		Versions: []apiextensions.CustomResourceDefinitionVersion{
+			{
+				Name:    "v1alpha1",
+				Served:  true,
+				Storage: true,
+				Subresources: &apiextensions.CustomResourceSubresources{
+					Status: &apiextensions.CustomResourceSubresourceStatus{},
+				},
+				Schema: &apiextensions.CustomResourceValidation{
+					OpenAPIV3Schema: &apiextensions.JSONSchemaProps{
+						Type: "object",
+						Properties: map[string]apiextensions.JSONSchemaProps{
+							"spec": {
+								Type:                   "object",
+								XPreserveUnknownFields: pointer.BoolPtr(true),
+							},
+							"status": {
+								Type:                   "object",
+								XPreserveUnknownFields: pointer.BoolPtr(true),
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+}
+
+var TestRemediationTemplateCRD = &apiextensions.CustomResourceDefinition{
+	TypeMeta: metav1.TypeMeta{
+		APIVersion: apiextensions.SchemeGroupVersion.String(),
+		Kind:       "CustomResourceDefinition",
+	},
+	ObjectMeta: metav1.ObjectMeta{
+		Name: "infrastructureremediationtemplates.medik8s.io",
+	},
+	Spec: apiextensions.CustomResourceDefinitionSpec{
+		Group: "medik8s.io",
+		Scope: apiextensions.NamespaceScoped,
+		Names: apiextensions.CustomResourceDefinitionNames{
+			Kind:   "InfrastructureRemediationTemplate",
+			Plural: "infrastructureremediationtemplates",
+		},
+		Versions: []apiextensions.CustomResourceDefinitionVersion{
+			{
+				Name:    "v1alpha1",
+				Served:  true,
+				Storage: true,
+				Subresources: &apiextensions.CustomResourceSubresources{
+					Status: &apiextensions.CustomResourceSubresourceStatus{},
+				},
+				Schema: &apiextensions.CustomResourceValidation{
+					OpenAPIV3Schema: &apiextensions.JSONSchemaProps{
+						Type: "object",
+						Properties: map[string]apiextensions.JSONSchemaProps{
+							"spec": {
+								Type:                   "object",
+								XPreserveUnknownFields: pointer.BoolPtr(true),
+							},
+							"status": {
+								Type:                   "object",
+								XPreserveUnknownFields: pointer.BoolPtr(true),
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+}
+
+type InfraRemdiationCRDList struct {
+}
+
+func (i InfraRemdiationCRDList) GetResourceVersion() string {
+	return TestRemediationCRD.GetResourceVersion()
+}
+
+func (i InfraRemdiationCRDList) SetResourceVersion(version string) {
+	//
+}
+
+func (i InfraRemdiationCRDList) GetSelfLink() string {
+	return ""
+}
+
+func (i InfraRemdiationCRDList) SetSelfLink(selfLink string) {
+	//
+}
+
+func (i InfraRemdiationCRDList) GetContinue() string {
+	return ""
+}
+
+func (i InfraRemdiationCRDList) SetContinue(c string) {
+	//
+}
+
+func (i InfraRemdiationCRDList) GetRemainingItemCount() *int64 {
+	z := int64(0)
+	return &z
+}
+
+func (i InfraRemdiationCRDList) SetRemainingItemCount(c *int64) {
+	//
+}
+
+func (i InfraRemdiationCRDList) GetObjectKind() schema.ObjectKind {
+	return nil
+}
+
+type OK struct {
+}
+
+func (O OK) SetGroupVersionKind(kind schema.GroupVersionKind) {
+	//panic("implement me")
+}
+
+func (i InfraRemdiationCRDList) DeepCopyObject() runtime.Object {
+	panic("implement me")
+}
