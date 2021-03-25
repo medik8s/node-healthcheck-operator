@@ -90,10 +90,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// after loop
-	nhc.Status.ObservedNodes = len(nodes.Items)
-	nhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
+	updatedNhc := *nhc.DeepCopy()
+	updatedNhc.Status.ObservedNodes = len(nodes.Items)
+	updatedNhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
 
-	maxUnhealthy, err := r.getMaxUnhealthy(nhc)
+	log.Info("nhc after checking health", "nhc", updatedNhc)
+
+	maxUnhealthy, err := r.getMaxUnhealthy(updatedNhc)
 	if err != nil {
 		log.Error(err, "failed to calculate max unhealthy allowed nodes",
 			"maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
@@ -114,7 +117,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// TODO because backoff functionality is in question updating the remediation time is excluded
 	// update mhc.status.triggeredRemediations map with the current remediation time per node
-	err = r.patchStatus(nhc)
+	err = r.patchStatus(nhc, updatedNhc)
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
 		return ctrl.Result{}, err
@@ -255,10 +258,10 @@ func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1
 	if err != nil {
 		return err
 	}
-	r.Log.Info("node %s seems unhealthy. Creating an external remediation object",
-		"name", cr.GetName(), "gvk", cr.GroupVersionKind())
+	r.Log.Info("node seems unhealthy. Creating an external remediation object",
+		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind())
 	err = r.Client.Create(context.Background(), cr, &client.CreateOptions{})
-	if !apierrors.IsAlreadyExists(err) {
+	if err != nil && apierrors.IsAlreadyExists(err) {
 		r.Log.Error(err, "failed to create an external remediation object")
 		return err
 	}
@@ -310,7 +313,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	t := nhc.Spec.ExternalRemediationTemplate.DeepCopy()
 	obj := new(unstructured.Unstructured)
 	obj.SetAPIVersion(t.APIVersion)
-	obj.SetKind(t.Kind)
+	obj.SetGroupVersionKind(t.GroupVersionKind())
 	obj.SetName(t.Name)
 	key := client.ObjectKey{Name: obj.GetName(), Namespace: t.Namespace}
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
@@ -319,9 +322,9 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	return obj, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, updatedNHC remediationv1alpha1.NodeHealthCheck) error {
 	// all values to be patched expected to be updated on the current nhc.status
-	from := client.MergeFrom(nhc.DeepCopy())
-	r.Log.Info("Patching NHC object", "from", from, "to", nhc)
-	return r.Client.Status().Patch(context.Background(), &nhc, from, &client.PatchOptions{})
+	patch := client.MergeFrom(nhc.DeepCopy())
+	r.Log.Info("Patching NHC object", "patch", patch, "to", nhc)
+	return r.Client.Status().Patch(context.Background(), &nhc, patch, &client.PatchOptions{})
 }
