@@ -97,16 +97,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			"maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return ctrl.Result{}, err
 	}
-	// if unhealthy count exceeds max unhealthy -> skip
-	if len(unhealthy) > maxUnhealthy {
-		return ctrl.Result{}, nil
-	}
 
-	// trigger remediation per node
-	for _, n := range unhealthy {
-		err := r.remediate(n, nhc)
-		if err != nil {
-			return ctrl.Result{}, err
+	if len(unhealthy) <= maxUnhealthy {
+		// trigger remediation per node
+		for _, n := range unhealthy {
+			err := r.remediate(n, nhc)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
@@ -320,6 +318,6 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, updatedNHC remediationv1alpha1.NodeHealthCheck) error {
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
-	r.Log.Info("Patching NHC object", "patch", patch, "to", nhc)
-	return r.Client.Status().Patch(context.Background(), &nhc, patch, &client.PatchOptions{})
+	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
+	return r.Client.Status().Patch(context.Background(), &updatedNHC, patch, &client.PatchOptions{})
 }
