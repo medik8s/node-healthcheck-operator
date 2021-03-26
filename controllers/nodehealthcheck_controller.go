@@ -264,15 +264,14 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	if err != nil {
 		return nil, err
 	}
+
 	templateSpec, found, err := unstructured.NestedMap(t.Object, "spec", "template")
 	if !found {
 		return nil, errors.Errorf("missing Spec.Template on %v %q", t.GroupVersionKind(), t.GetName())
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve Spec.Template map on %v %q", t.GroupVersionKind(), t.GetName())
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	u := unstructured.Unstructured{Object: templateSpec}
 	u.SetName(n.Name)
 	u.SetNamespace(t.GetNamespace())
