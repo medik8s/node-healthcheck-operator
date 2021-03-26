@@ -252,7 +252,7 @@ func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1
 	r.Log.Info("node seems unhealthy. Creating an external remediation object",
 		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind())
 	err = r.Client.Create(context.Background(), cr, &client.CreateOptions{})
-	if err != nil && apierrors.IsAlreadyExists(err) {
+	if err != nil && !apierrors.IsAlreadyExists(err) {
 		r.Log.Error(err, "failed to create an external remediation object")
 		return err
 	}
