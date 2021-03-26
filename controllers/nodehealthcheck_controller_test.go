@@ -162,6 +162,12 @@ var _ = Describe("Node Health Check CR", func() {
 					Name: o.GetName()}, &o)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(o.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
+				Expect(o.GetOwnerReferences()).
+					To(ContainElement(metav1.OwnerReference{
+						Kind:               "Node",
+						Name:               "unhealthy-node-1",
+						Controller:         pointer.BoolPtr(false),
+					}))
 			})
 
 			It("updates the NHC status with number of healthy nodes", func() {
@@ -323,6 +329,7 @@ func newNodes(unhealthy int, healthy int) []runtime.Object {
 func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.Duration) runtime.Object {
 	return runtime.Object(
 		&v1.Node{
+			TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 			ObjectMeta: metav1.ObjectMeta{Name: name},
 			Status: v1.NodeStatus{
 				Conditions: []v1.NodeCondition{

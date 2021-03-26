@@ -286,7 +286,6 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 			Name:               n.Name,
 			UID:                n.UID,
 			Controller:         pointer.BoolPtr(false),
-			BlockOwnerDeletion: pointer.BoolPtr(true),
 		},
 	})
 	u.SetLabels(map[string]string{
