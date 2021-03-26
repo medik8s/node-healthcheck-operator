@@ -128,18 +128,23 @@ var _ = Describe("Node Health Check CR", func() {
 
 	Context("Reconciliation", func() {
 		var (
-			underTest  *v1alpha1.NodeHealthCheck
-			objects    []runtime.Object
-			reconciler NodeHealthCheckReconciler
+			underTest      *v1alpha1.NodeHealthCheck
+			objects        []runtime.Object
+			reconciler     NodeHealthCheckReconciler
+			reconcileError error
+			getNHCError    error
 		)
 
 		JustBeforeEach(func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
 			reconciler = NodeHealthCheckReconciler{Client: client, Log: controllerruntime.Log, Scheme: scheme.Scheme}
-			_, err := reconciler.Reconcile(
+			_, reconcileError = reconciler.Reconcile(
 				context.Background(),
 				controllerruntime.Request{NamespacedName: types.NamespacedName{Name: underTest.Name}})
-			Expect(err).NotTo(HaveOccurred())
+			getNHCError = reconciler.Get(
+				context.Background(),
+				ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
+				underTest)
 		})
 
 		When("few nodes are unhealthy and below max unhealthy", func() {
@@ -151,6 +156,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("create a remediation CR for each unhealthy node", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
 				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
@@ -159,25 +165,16 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("updates the NHC status with number of healthy nodes", func() {
-				updatedNHC := v1alpha1.NodeHealthCheck{}
-				Expect(reconciler.Get(
-					context.Background(),
-					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
-					&updatedNHC)).
-					To(Succeed())
-				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 			})
 
 			It("updates the NHC status with number of observed nodes", func() {
-				updatedNHC := v1alpha1.NodeHealthCheck{}
-				Expect(reconciler.Get(
-					context.Background(),
-					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
-					&updatedNHC)).
-					To(Succeed())
-				Expect(updatedNHC.Status.ObservedNodes).To(Equal(3))
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
 			})
-
 		})
 
 		When("few nodes are unhealthy and above max unhealthy", func() {
@@ -189,6 +186,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation - CR is not created", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
 				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
@@ -196,23 +194,15 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("updates the NHC status with number of healthy nodes", func() {
-				updatedNHC := v1alpha1.NodeHealthCheck{}
-				Expect(reconciler.Get(
-					context.Background(),
-					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
-					&updatedNHC)).
-					To(Succeed())
-				Expect(updatedNHC.Status.HealthyNodes).To(Equal(3))
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.HealthyNodes).To(Equal(3))
 			})
 
 			It("updates the NHC status with number of observed nodes", func() {
-				updatedNHC := v1alpha1.NodeHealthCheck{}
-				Expect(reconciler.Get(
-					context.Background(),
-					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
-					&updatedNHC)).
-					To(Succeed())
-				Expect(updatedNHC.Status.ObservedNodes).To(Equal(7))
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.ObservedNodes).To(Equal(7))
 			})
 		})
 
@@ -226,6 +216,9 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("deletes an existing remediation CR", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+
 				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
@@ -238,13 +231,9 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("updates the NHC status with number of healthy nodes", func() {
-				updatedNHC := v1alpha1.NodeHealthCheck{}
-				Expect(reconciler.Get(
-					context.Background(),
-					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
-					&updatedNHC)).
-					To(Succeed())
-				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 			})
 		})
 	})

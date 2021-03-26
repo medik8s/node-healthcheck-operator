@@ -86,8 +86,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// after loop
 	updatedNhc := *nhc.DeepCopy()
-	updatedNhc.Status.ObservedNodes = len(nodes.Items)
-	updatedNhc.Status.HealthyNodes = len(nodes.Items) - len(unhealthy)
+	updatedNhc.Status.ObservedNodes = len(nodes)
+	updatedNhc.Status.HealthyNodes = len(nodes) - len(unhealthy)
 
 	maxUnhealthy, err := r.getMaxUnhealthy(updatedNhc)
 	if err != nil {
@@ -116,24 +116,24 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) (v1.NodeList, error) {
+func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) ([]v1.Node, error) {
 	var nodes v1.NodeList
 	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
 	if err != nil {
 		err = errors.Wrapf(err, "failed converting a selector from NHC selector")
-		return v1.NodeList{}, err
+		return []v1.Node{}, err
 	}
 	err = r.List(
 		ctx,
 		&nodes,
 		&client.ListOptions{LabelSelector: selector},
 	)
-	return nodes, err
+	return nodes.Items, err
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes v1.NodeList, nhc remediationv1alpha1.NodeHealthCheck) (map[string]v1.Node, error) {
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (map[string]v1.Node, error) {
 	unhealthy := make(map[string]v1.Node)
-	for _, n := range nodes.Items {
+	for _, n := range nodes {
 		if isHealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
 			err := r.markHealthy(n, nhc)
 			if err != nil {
