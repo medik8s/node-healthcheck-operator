@@ -156,7 +156,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
 	// if the node is already healthy then there is no remediation object for it
-	if !apierrors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	r.Log.Info("deleted node external remediation object", "Node name", n.Name)
@@ -252,7 +252,7 @@ func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1
 	r.Log.Info("node seems unhealthy. Creating an external remediation object",
 		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind())
 	err = r.Client.Create(context.Background(), cr, &client.CreateOptions{})
-	if err != nil && apierrors.IsAlreadyExists(err) {
+	if err != nil && !apierrors.IsAlreadyExists(err) {
 		r.Log.Error(err, "failed to create an external remediation object")
 		return err
 	}
@@ -264,15 +264,14 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	if err != nil {
 		return nil, err
 	}
+
 	templateSpec, found, err := unstructured.NestedMap(t.Object, "spec", "template")
 	if !found {
 		return nil, errors.Errorf("missing Spec.Template on %v %q", t.GroupVersionKind(), t.GetName())
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve Spec.Template map on %v %q", t.GroupVersionKind(), t.GetName())
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	u := unstructured.Unstructured{Object: templateSpec}
 	u.SetName(n.Name)
 	u.SetNamespace(t.GetNamespace())
