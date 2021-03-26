@@ -79,26 +79,21 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check nodes health
-	unhealthy, err := r.checkNodesHealth(nodes, nhc)
+	unhealthyNodes, err := r.checkNodesHealth(nodes, nhc)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// after loop
-	updatedNhc := *nhc.DeepCopy()
-	updatedNhc.Status.ObservedNodes = len(nodes)
-	updatedNhc.Status.HealthyNodes = len(nodes) - len(unhealthy)
-
-	maxUnhealthy, err := r.getMaxUnhealthy(updatedNhc)
+	maxUnhealthy, err := r.getMaxUnhealthy(nhc, len(nodes))
 	if err != nil {
 		log.Error(err, "failed to calculate max unhealthy allowed nodes",
 			"maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return ctrl.Result{}, err
 	}
 
-	if len(unhealthy) <= maxUnhealthy {
+	if len(unhealthyNodes) <= maxUnhealthy {
 		// trigger remediation per node
-		for _, n := range unhealthy {
+		for _, n := range unhealthyNodes {
 			err := r.remediate(n, nhc)
 			if err != nil {
 				return ctrl.Result{}, err
@@ -108,7 +103,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// TODO because backoff functionality is in question updating the remediation time is excluded
 	// update mhc.status.triggeredRemediations map with the current remediation time per node
-	err = r.patchStatus(nhc, updatedNhc)
+	err = r.patchStatus(nhc, len(nodes), len(unhealthyNodes))
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
 		return ctrl.Result{}, err
@@ -163,11 +158,11 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 	return nil
 }
 
-func (r *NodeHealthCheckReconciler) getMaxUnhealthy(nhc remediationv1alpha1.NodeHealthCheck) (int, error) {
+func (r *NodeHealthCheckReconciler) getMaxUnhealthy(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int) (int, error) {
 	if nhc.Spec.MaxUnhealthy.Type == 0 {
 		return nhc.Spec.MaxUnhealthy.IntValue(), nil
 	}
-	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, nhc.Status.ObservedNodes, false)
+	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, observedNodes, false)
 }
 
 func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
@@ -311,7 +306,10 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	return obj, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, updatedNHC remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int) error {
+	updatedNHC := *nhc.DeepCopy()
+	updatedNHC.Status.ObservedNodes = observedNodes
+	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
 	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
