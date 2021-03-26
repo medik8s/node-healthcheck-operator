@@ -156,7 +156,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
 	// if the node is already healthy then there is no remediation object for it
-	if !apierrors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	r.Log.Info("deleted node external remediation object", "Node name", n.Name)
