@@ -160,13 +160,21 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("updates the NHC status with number of healthy nodes", func() {
 				updatedNHC := v1alpha1.NodeHealthCheck{}
-				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(reconciler.Get(
+					context.Background(),
+					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
+					&updatedNHC)).
+					To(Succeed())
 				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
 			})
 
 			It("updates the NHC status with number of observed nodes", func() {
 				updatedNHC := v1alpha1.NodeHealthCheck{}
-				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(reconciler.Get(
+					context.Background(),
+					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
+					&updatedNHC)).
+					To(Succeed())
 				Expect(updatedNHC.Status.ObservedNodes).To(Equal(3))
 			})
 
@@ -189,13 +197,21 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("updates the NHC status with number of healthy nodes", func() {
 				updatedNHC := v1alpha1.NodeHealthCheck{}
-				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(reconciler.Get(
+					context.Background(),
+					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
+					&updatedNHC)).
+					To(Succeed())
 				Expect(updatedNHC.Status.HealthyNodes).To(Equal(3))
 			})
 
 			It("updates the NHC status with number of observed nodes", func() {
 				updatedNHC := v1alpha1.NodeHealthCheck{}
-				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(reconciler.Get(
+					context.Background(),
+					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
+					&updatedNHC)).
+					To(Succeed())
 				Expect(updatedNHC.Status.ObservedNodes).To(Equal(7))
 			})
 		})
@@ -223,7 +239,11 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("updates the NHC status with number of healthy nodes", func() {
 				updatedNHC := v1alpha1.NodeHealthCheck{}
-				reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name}, &updatedNHC)
+				Expect(reconciler.Get(
+					context.Background(),
+					ctrlruntimeclient.ObjectKey{Namespace: underTest.Namespace, Name: underTest.Name},
+					&updatedNHC)).
+					To(Succeed())
 				Expect(updatedNHC.Status.HealthyNodes).To(Equal(2))
 			})
 		})
