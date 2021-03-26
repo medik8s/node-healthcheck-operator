@@ -277,10 +277,10 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	})
 	u.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			Kind:               n.Kind,
-			Name:               n.Name,
-			UID:                n.UID,
-			Controller:         pointer.BoolPtr(false),
+			Kind:       n.Kind,
+			Name:       n.Name,
+			UID:        n.UID,
+			Controller: pointer.BoolPtr(false),
 		},
 	})
 	u.SetLabels(map[string]string{

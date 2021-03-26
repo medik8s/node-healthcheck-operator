@@ -164,9 +164,9 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(o.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
 				Expect(o.GetOwnerReferences()).
 					To(ContainElement(metav1.OwnerReference{
-						Kind:               "Node",
-						Name:               "unhealthy-node-1",
-						Controller:         pointer.BoolPtr(false),
+						Kind:       "Node",
+						Name:       "unhealthy-node-1",
+						Controller: pointer.BoolPtr(false),
 					}))
 			})
 
