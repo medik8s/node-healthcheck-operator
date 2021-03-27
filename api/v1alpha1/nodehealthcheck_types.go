@@ -52,7 +52,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
-	ExternalRemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
+	ExternalRemediationTemplate *corev1.ObjectReference `json:"externalRemediationTemplate"`
 
 	// TODO document this
 	// +optional
