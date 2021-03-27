@@ -46,16 +46,7 @@ spec:
                 - duration
                 - type
                 type: object
-              maxUnhealthy:
-                anyOf:
-                - type: integer
-                - type: string
-                default: 49%
-                description: Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy. Expects either a positive integer value or a percentage value. Percentage values must be positive whole numbers and are capped at 100%. Both 0 and 0% are valid and will block all remediation.
-                pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
-                type: string
-                x-kubernetes-int-or-string: true
-              remediationTemplate:
+              externalRemediationTemplate:
                 description: "ExternalRemediationTemplate is a reference to a remediation template provided by an infrastructure provider. \n If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider."
                 properties:
                   apiVersion:
@@ -80,6 +71,15 @@ spec:
                     description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                     type: string
                 type: object
+              maxUnhealthy:
+                anyOf:
+                - type: integer
+                - type: string
+                default: 49%
+                description: Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy. Expects either a positive integer value or a percentage value. Percentage values must be positive whole numbers and are capped at 100%. Both 0 and 0% are valid and will block all remediation.
+                pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
+                type: string
+                x-kubernetes-int-or-string: true
               selector:
                 description: 'Label selector to match nodes whose health will be exercised. Note: An empty selector will match all nodes.'
                 properties:
@@ -136,7 +136,7 @@ spec:
                   type: object
                 type: array
             required:
-            - remediationTemplate
+            - externalRemediationTemplate
             type: object
           status:
             description: NodeHealthCheckStatus defines the observed state of NodeHealthCheck
