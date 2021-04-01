@@ -11,6 +11,8 @@ rules:
   resources:
   - nodes
   verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - remediation.medik8s.io
