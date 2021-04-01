@@ -312,7 +312,9 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 	updatedNHC := *nhc.DeepCopy()
 	updatedNHC.Status.ObservedNodes = observedNodes
 	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
-
+	if updatedNHC.Status.TriggeredRemediations == nil {
+		updatedNHC.Status.TriggeredRemediations = map[string]remediationv1alpha1.Times{}
+	}
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
 	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)

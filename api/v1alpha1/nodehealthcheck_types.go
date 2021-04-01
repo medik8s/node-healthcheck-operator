@@ -89,10 +89,10 @@ type NodeHealthCheckStatus struct {
 	HealthyNodes int `json:"healthyNodes"`
 
 	//TriggeredRemediations records the timestamp when remediation triggered per node
-	TriggeredRemediations map[string]times `json:"triggeredRemediations"`
+	TriggeredRemediations map[string]Times `json:"triggeredRemediations"`
 }
 
-type times []metav1.Time
+type Times []metav1.Time
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=nodehealthchecks,scope=Cluster
