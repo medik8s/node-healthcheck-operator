@@ -23,7 +23,7 @@ spec:
         control-plane: controller-manager
     spec:
       securityContext:
-        runAsUser: 65532
+        runAsUser: 1000730000
       containers:
       - command:
         - /manager
