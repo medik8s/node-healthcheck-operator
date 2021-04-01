@@ -6,13 +6,13 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
-  name: nodehealthcheck.remediation.medik8s.io
+  name: nodehealthchecks.remediation.medik8s.io
 spec:
   group: remediation.medik8s.io
   names:
     kind: NodeHealthCheck
     listKind: NodeHealthCheckList
-    plural: nodehealthcheck
+    plural: nodehealthchecks
     singular: nodehealthcheck
   scope: Cluster
   versions:

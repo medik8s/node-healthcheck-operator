@@ -95,7 +95,7 @@ type NodeHealthCheckStatus struct {
 type times []metav1.Time
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=nodehealthcheck,scope=Cluster
+// +kubebuilder:resource:path=nodehealthchecks,scope=Cluster
 // +kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
