@@ -277,10 +277,12 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	})
 	u.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			Kind:       n.Kind,
-			Name:       n.Name,
-			UID:        n.UID,
-			Controller: pointer.BoolPtr(false),
+			APIVersion:         n.APIVersion,
+			Kind:               n.Kind,
+			Name:               n.Name,
+			UID:                n.UID,
+			Controller:         pointer.BoolPtr(false),
+			BlockOwnerDeletion: nil,
 		},
 	})
 	u.SetLabels(map[string]string{
@@ -310,6 +312,7 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 	updatedNHC := *nhc.DeepCopy()
 	updatedNHC.Status.ObservedNodes = observedNodes
 	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
+
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
 	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
