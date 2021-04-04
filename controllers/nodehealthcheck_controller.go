@@ -48,7 +48,7 @@ type NodeHealthCheckReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=core,resources=nodes,verbs=watch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/finalizers,verbs=update
@@ -277,10 +277,12 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	})
 	u.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			Kind:       n.Kind,
-			Name:       n.Name,
-			UID:        n.UID,
-			Controller: pointer.BoolPtr(false),
+			APIVersion:         n.APIVersion,
+			Kind:               n.Kind,
+			Name:               n.Name,
+			UID:                n.UID,
+			Controller:         pointer.BoolPtr(false),
+			BlockOwnerDeletion: nil,
 		},
 	})
 	u.SetLabels(map[string]string{
@@ -310,6 +312,9 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 	updatedNHC := *nhc.DeepCopy()
 	updatedNHC.Status.ObservedNodes = observedNodes
 	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
+	if updatedNHC.Status.TriggeredRemediations == nil {
+		updatedNHC.Status.TriggeredRemediations = map[string]remediationv1alpha1.Times{}
+	}
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
 	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
