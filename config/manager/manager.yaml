@@ -22,6 +22,12 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+          operator: Exists
       securityContext:
         runAsUser: 1000730000
       containers:
