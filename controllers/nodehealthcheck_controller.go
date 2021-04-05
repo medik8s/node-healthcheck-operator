@@ -195,11 +195,11 @@ func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCond
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
-		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(allNHCHandler(mgr.GetClient()))).
+		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(nhcByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger()))).
 		Complete(r)
 }
 
-func allNHCHandler(c client.Client) handler.MapFunc {
+func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	// This closure is meant to fetch all NHC to fill the reconcile queue.
 	// If we have multiple nhc then it is possible that we fetch nhc objects that
 	// are unrelated to this node. Its even possible that the node still doesn't
@@ -211,8 +211,22 @@ func allNHCHandler(c client.Client) handler.MapFunc {
 			return nil
 		}
 		var r []reconcile.Request
-		for _, n := range nhcList.Items {
-			r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: n.GetName()}})
+		for _, nhc := range nhcList.Items {
+			nodes := v1.NodeList{}
+			selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
+			if err != nil {
+				logger.Error(err, "failed to use the NHC selector.")
+			} else {
+				_ = c.List(context.Background(), &nodes, &client.ListOptions{
+					LabelSelector: selector,
+				})
+				for _, node := range nodes.Items {
+					if node.GetName() == o.GetName() {
+						r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
+						break
+					}
+				}
+			}
 		}
 		return r
 	}

@@ -21,6 +21,7 @@ import (
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -240,6 +241,77 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
+			})
+		})
+	})
+
+	Context("Controller Watches", func() {
+		var (
+			underTest1 *v1alpha1.NodeHealthCheck
+			underTest2 *v1alpha1.NodeHealthCheck
+			objects    []runtime.Object
+			client     ctrlruntimeclient.Client
+		)
+
+		JustBeforeEach(func() {
+			objects = append(objects)
+			client = fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
+		})
+
+		When("a node changes status and is selectable by one NHC selector", func() {
+			BeforeEach(func() {
+				objects = newNodes(3, 10)
+				underTest1 = newNodeHealthCheck()
+				underTest2 = newNodeHealthCheck()
+				underTest2.Name = "test-2"
+				emptySelector, _ := metav1.ParseToLabelSelector("fooLabel=bar")
+				underTest2.Spec.Selector = *emptySelector
+				objects = append(objects, underTest1, underTest2)
+			})
+
+			It("creates a reconcile request", func() {
+				handler := nhcByNodeMapperFunc(client, controllerruntime.Log)
+				updatedNode := v1.Node{
+					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
+				}
+				requests := handler(&updatedNode)
+				Expect(len(requests)).To(Equal(1))
+				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest1.GetName()}}))
+			})
+		})
+
+		When("a node changes status and is selectable by the more 2 NHC selector", func() {
+			BeforeEach(func() {
+				objects = newNodes(3, 10)
+				underTest1 = newNodeHealthCheck()
+				underTest2 = newNodeHealthCheck()
+				underTest2.Name = "test-2"
+				objects = append(objects, underTest1, underTest2)
+			})
+
+			It("creates 2 reconcile requests", func() {
+				handler := nhcByNodeMapperFunc(client, controllerruntime.Log)
+				updatedNode := v1.Node{
+					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
+				}
+				requests := handler(&updatedNode)
+				Expect(len(requests)).To(Equal(2))
+				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest1.GetName()}}))
+				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest2.GetName()}}))
+			})
+		})
+		When("a node changes status and is and there are no NHC objects", func() {
+			BeforeEach(func() {
+				objects = newNodes(3, 10)
+			})
+
+			It("doesn't create reconcile requests", func() {
+				handler := nhcByNodeMapperFunc(client, controllerruntime.Log)
+				updatedNode := v1.Node{
+					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
+				}
+				requests := handler(&updatedNode)
+				Expect(requests).To(BeEmpty())
 			})
 		})
 	})
