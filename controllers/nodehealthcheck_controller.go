@@ -303,7 +303,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	obj.SetName(t.Name)
 	key := client.ObjectKey{Name: obj.GetName(), Namespace: t.Namespace}
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
-		return nil, errors.Wrapf(err, "failed to retrieve %s external object %q/%q", obj.GetKind(), key.Namespace, key.Name)
+		return nil, errors.Wrapf(err, "failed to retrieve %s external remdiation template %q/%q", obj.GetKind(), key.Namespace, key.Name)
 	}
 	return obj, nil
 }
