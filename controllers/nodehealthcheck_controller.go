@@ -70,6 +70,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err := r.Get(ctx, req.NamespacedName, &nhc)
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check", "object", nhc)
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 	// select nodes using the nhc.selector
