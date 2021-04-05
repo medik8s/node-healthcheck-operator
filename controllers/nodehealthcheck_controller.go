@@ -126,8 +126,8 @@ func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelecto
 	return nodes.Items, err
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (map[string]v1.Node, error) {
-	unhealthy := make(map[string]v1.Node)
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remediationv1alpha1.NodeHealthCheck) ([]v1.Node, error) {
+	var unhealthy []v1.Node
 	for _, n := range nodes {
 		if isHealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
 			err := r.markHealthy(n, nhc)
@@ -135,7 +135,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remedi
 				return nil, err
 			}
 		} else {
-			unhealthy[n.Name] = n
+			unhealthy = append(unhealthy, n)
 		}
 	}
 	return unhealthy, nil
