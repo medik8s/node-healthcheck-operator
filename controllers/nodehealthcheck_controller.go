@@ -70,6 +70,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err := r.Get(ctx, req.NamespacedName, &nhc)
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check", "object", nhc)
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 	// select nodes using the nhc.selector
@@ -126,8 +129,8 @@ func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelecto
 	return nodes.Items, err
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (map[string]v1.Node, error) {
-	unhealthy := make(map[string]v1.Node)
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remediationv1alpha1.NodeHealthCheck) ([]v1.Node, error) {
+	var unhealthy []v1.Node
 	for _, n := range nodes {
 		if isHealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
 			err := r.markHealthy(n, nhc)
@@ -135,7 +138,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remedi
 				return nil, err
 			}
 		} else {
-			unhealthy[n.Name] = n
+			unhealthy = append(unhealthy, n)
 		}
 	}
 	return unhealthy, nil
@@ -147,14 +150,18 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 		return err
 	}
 
-	r.Log.Info("node seems healthy", "Node name", n.Name)
+	r.Log.V(5).Info("node seems healthy", "Node name", n.Name)
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
 	// if the node is already healthy then there is no remediation object for it
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	r.Log.Info("deleted node external remediation object", "Node name", n.Name)
+
+	if err == nil {
+		// deleted an actual object
+		r.Log.Info("deleted node external remediation object", "Node name", n.Name)
+	}
 	return nil
 }
 
@@ -188,11 +195,11 @@ func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCond
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
-		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(allNHCHandler(mgr.GetClient()))).
+		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(nhcByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger()))).
 		Complete(r)
 }
 
-func allNHCHandler(c client.Client) handler.MapFunc {
+func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	// This closure is meant to fetch all NHC to fill the reconcile queue.
 	// If we have multiple nhc then it is possible that we fetch nhc objects that
 	// are unrelated to this node. Its even possible that the node still doesn't
@@ -204,8 +211,22 @@ func allNHCHandler(c client.Client) handler.MapFunc {
 			return nil
 		}
 		var r []reconcile.Request
-		for _, n := range nhcList.Items {
-			r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: n.GetName()}})
+		for _, nhc := range nhcList.Items {
+			nodes := v1.NodeList{}
+			selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
+			if err != nil {
+				logger.Error(err, "failed to use the NHC selector.")
+			} else {
+				_ = c.List(context.Background(), &nodes, &client.ListOptions{
+					LabelSelector: selector,
+				})
+				for _, node := range nodes.Items {
+					if node.GetName() == o.GetName() {
+						r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
+						break
+					}
+				}
+			}
 		}
 		return r
 	}
@@ -261,10 +282,8 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	}
 
 	templateSpec, found, err := unstructured.NestedMap(t.Object, "spec", "template")
-	if !found {
-		return nil, errors.Errorf("missing Spec.Template on %v %q", t.GroupVersionKind(), t.GetName())
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "failed to retrieve Spec.Template map on %v %q", t.GroupVersionKind(), t.GetName())
+	if !found || err != nil {
+		return nil, errors.Errorf("Failed to retrieve Spec.Template on %v %q %v", t.GroupVersionKind(), t.GetName(), err)
 	}
 
 	u := unstructured.Unstructured{Object: templateSpec}
@@ -303,7 +322,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	obj.SetName(t.Name)
 	key := client.ObjectKey{Name: obj.GetName(), Namespace: t.Namespace}
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
-		return nil, errors.Wrapf(err, "failed to retrieve %s external object %q/%q", obj.GetKind(), key.Namespace, key.Name)
+		return nil, errors.Wrapf(err, "failed to retrieve %s external remdiation template %q/%q", obj.GetKind(), key.Namespace, key.Name)
 	}
 	return obj, nil
 }
