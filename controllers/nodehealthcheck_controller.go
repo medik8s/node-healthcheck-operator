@@ -296,10 +296,10 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	})
 	u.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			APIVersion:         n.APIVersion,
-			Kind:               n.Kind,
-			Name:               n.Name,
-			UID:                n.UID,
+			APIVersion:         nhc.APIVersion,
+			Kind:               nhc.Kind,
+			Name:               nhc.Name,
+			UID:                nhc.UID,
 			Controller:         pointer.BoolPtr(false),
 			BlockOwnerDeletion: nil,
 		},
