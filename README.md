@@ -41,7 +41,7 @@ metadata:
 spec:
 # mandatory
   externalRemediationTemplate:
-    kind: ProviderXRemedyTemplate
+    kind: ProviderXRemediationTemplate
     apiVersion: medik8s.io/v1alpha1
     name: group-x
     namespace: default
@@ -71,8 +71,78 @@ spec:
 | _maxUnhealthy_ | no | 49% | Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy.| 
 | _unhealthyConditions_ | no | `[{type: Ready, status: False, duration: 300s}]` | list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.|
 
+## NodeHealthCheck life-cycle
+
+- when a node is unhealthy
+  - sum up how many other nodes are unhealthy.
+  - if the number of unhealthy nodes < maxUnhealthy the controllers creates the external remediation object
+  - the external remediation object has an OwnerReference on the NodeHeathCheck object
+- controller updates the NodeHealthCheck.Status
+- when a node turn healthy
+  - node-healthcheck-controller deletes the external remediation object
+  - controller updates the NodeHealthCheck.Status 
 
 
+### External Remediation Resources
 
-### External Remediation API
-TODO
+External remediation resources are custom resource meant to be reconciled by speciallized remediation providers.
+The NHC object has a property of a External Remediaiton Template, and this template Spec will be
+copied over to the External Remediation Object Spec.
+For example this example NHC has this template defined:
+
+```
+apiVersion: remediation.medik8s.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: nodehealthcheck-sameple
+...
+spec:
+  externalRemediationTemplate:
+    kind: ProviderXRemediationTemplate
+    apiVersion: medik8s.io/v1alpha1
+    name: group-x
+    namespace: default
+...
+
+```
+
+- it is the admin's responsiblity to create a template object from the template kind `ProviderXRemdiationTemplate`
+  with the name `group-x`.
+
+```
+apiVersion: medik8s.io/v1alpha1
+kind: ProviderXRemdiationTemplate
+metadata:
+  name: group-x
+  namespace: default
+spec:
+  template:
+    # whatever
+    size: 42
+
+```
+- the controller will create an object with the kind `ProviderXRemdiation` (postfix 'Template' trimmed)
+  and the object will have ownerReference set to the co-responding NHC object
+
+```
+apiVersion: medik8s.io/v1alpha1
+kind: ProviderXRemdiation
+metadata:
+  # named after the target node
+  name: worker-0-21
+  namespace: default
+  ownerReferences:
+    - kind: NodeHealthCheck
+      apiVersion: medik8s.io/v1alpha1
+      name: nodehealthcheck-sample
+spec:
+  size: 42
+
+```
+
+## Remediation Providers responsibility
+
+- it is upto the remediation provider to delete the external remediation object if the node is deleted and another is
+  reprovisioned. In that specific scenario the controller can not assume a successful node remediation because the
+  node with that name doesn't exist, and instead there will be a new one.
+
