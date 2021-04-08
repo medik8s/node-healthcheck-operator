@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,8 +45,9 @@ import (
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
 type NodeHealthCheckReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	DynamicClient dynamic.Interface
+	Log           logr.Logger
+	Scheme        *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -104,9 +106,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// TODO because backoff functionality is in question updating the remediation time is excluded
-	// update mhc.status.triggeredRemediations map with the current remediation time per node
-	err = r.patchStatus(nhc, len(nodes), len(unhealthyNodes))
+	inFlightRemediations, err := r.getInflightRemediations(nhc)
+	if err != nil {
+		errors.Wrapf(err, "failed fetching remediation objects of the NHC")
+		return ctrl.Result{}, err
+	}
+
+	err = r.patchStatus(nhc, len(nodes), len(unhealthyNodes), inFlightRemediations)
 	if err != nil {
 		log.Error(err, "failed to patch NHC status")
 		return ctrl.Result{}, err
@@ -233,41 +239,19 @@ func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	return delegate
 }
 
-// shouldBackoff backs off if spec.backoff defined and the last time remediation was triggered
-// meets the criteria of the backoff
-func (r *NodeHealthCheckReconciler) shouldBackoff(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) bool {
-	if nhc.Spec.Backoff == nil {
-		return false
-	}
-
-	now := time.Now()
-	remediationTimes := nhc.Status.TriggeredRemediations[n.Name]
-	if remediationTimes != nil && len(remediationTimes) > 1 {
-		// if we are passed the time limit then backoff
-		firstRemediationTime := remediationTimes[0]
-		if now.After(firstRemediationTime.Add(nhc.Spec.Backoff.Limit.Duration)) {
-			return true
-		}
-
-		// exponential backoff - wait twice the period of time between last 2 attempts
-		secondLastRemediationTime := remediationTimes[len(remediationTimes)-1]
-		lastRemediationTime := remediationTimes[len(remediationTimes)]
-		lastPeriod := lastRemediationTime.Sub(secondLastRemediationTime.Time)
-		if now.Before(lastRemediationTime.Add(lastPeriod * 2)) {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
 	cr, err := r.generateRemediationCR(n, nhc)
 	if err != nil {
 		return err
 	}
 	r.Log.Info("node seems unhealthy. Creating an external remediation object",
-		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind())
-	err = r.Client.Create(context.Background(), cr, &client.CreateOptions{})
+		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
+	resource := schema.GroupVersionResource{
+		Group:    cr.GroupVersionKind().Group,
+		Version:  cr.GroupVersionKind().Version,
+		Resource: strings.ToLower(cr.GetKind()),
+	}
+	_, err = r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).Create(context.Background(), cr, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		r.Log.Error(err, "failed to create an external remediation object")
 		return err
@@ -327,15 +311,49 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	return obj, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int, remediations map[string]metav1.Time) error {
 	updatedNHC := *nhc.DeepCopy()
 	updatedNHC.Status.ObservedNodes = observedNodes
 	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
-	if updatedNHC.Status.TriggeredRemediations == nil {
-		updatedNHC.Status.TriggeredRemediations = map[string]remediationv1alpha1.Times{}
-	}
+	updatedNHC.Status.InFlightRemediations = remediations
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
 	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
 	return r.Client.Status().Patch(context.Background(), &updatedNHC, patch, &client.PatchOptions{})
+}
+
+func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error) {
+	cr, err := r.generateRemediationCR(v1.Node{}, nhc)
+	if err != nil {
+		return nil, err
+	}
+	resource := schema.GroupVersionResource{
+		Group:    cr.GroupVersionKind().Group,
+		Version:  cr.GroupVersionKind().Version,
+		Resource: strings.ToLower(cr.GetKind()),
+	}
+
+	list, err := r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).List(
+		context.Background(),
+		metav1.ListOptions{},
+	)
+	if err != nil {
+		return nil,
+			errors.Wrapf(err, "failed to fetch all remediation objects from kind %s and apiVersion %s",
+				list.GetObjectKind(),
+				list.GetAPIVersion())
+	}
+
+	remediations := make(map[string]metav1.Time)
+	for _, emr := range list.Items {
+		for _, ownerRefs := range emr.GetOwnerReferences() {
+			if ownerRefs.Name == nhc.Name &&
+				ownerRefs.Kind == nhc.Kind &&
+				ownerRefs.APIVersion == nhc.APIVersion {
+				remediations[emr.GetName()] = emr.GetCreationTimestamp()
+				continue
+			}
+		}
+	}
+	return remediations, nil
 }

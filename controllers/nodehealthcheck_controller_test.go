@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -10,13 +11,16 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/testing"
 	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,7 +142,8 @@ var _ = Describe("Node Health Check CR", func() {
 
 		JustBeforeEach(func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
-			reconciler = NodeHealthCheckReconciler{Client: client, Log: controllerruntime.Log, Scheme: scheme.Scheme}
+			dynamicClient := newDynamicClient()
+			reconciler = NodeHealthCheckReconciler{Client: client, DynamicClient: dynamicClient, Log: controllerruntime.Log, Scheme: scheme.Scheme}
 			_, reconcileError = reconciler.Reconcile(
 				context.Background(),
 				controllerruntime.Request{NamespacedName: types.NamespacedName{Name: underTest.Name}})
@@ -158,9 +163,10 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("create a remediation CR for each unhealthy node", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
-				o := newRemediationCR("unhealthy-node-1")
-				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
-					Name: o.GetName()}, &o)
+				cr := newRemediationCR("unhealthy-node-1")
+				o, err := reconciler.DynamicClient.Resource(remediationResource(cr)).
+					Namespace(cr.GetNamespace()).
+					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(o.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
 				Expect(o.GetOwnerReferences()).
@@ -182,6 +188,12 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+			})
+
+			It("updates the NHC status with in-flight remediations", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.InFlightRemediations).NotTo(BeEmpty())
 			})
 		})
 
@@ -227,14 +239,18 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
 
-				o := newRemediationCR("unhealthy-node-1")
-				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
-					Name: o.GetName()}, &o)
+				cr := newRemediationCR("unhealthy-node-1")
+				_, err := reconciler.DynamicClient.
+					Resource(remediationResource(cr)).
+					Namespace(cr.GetNamespace()).
+					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				o = newRemediationCR("healthy-node-2")
-				err = reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
-					Name: o.GetName()}, &o)
+				cr = newRemediationCR("unhealthy-node-2")
+				_, err = reconciler.DynamicClient.
+					Resource(remediationResource(cr)).
+					Namespace(cr.GetNamespace()).
+					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 			})
 
@@ -317,6 +333,14 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 	})
 })
+
+func remediationResource(u unstructured.Unstructured) schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    u.GroupVersionKind().Group,
+		Version:  u.GroupVersionKind().Version,
+		Resource: strings.ToLower(u.GetKind()),
+	}
+}
 
 func newRemediationCR(nodeName string) unstructured.Unstructured {
 	cr := unstructured.Unstructured{}
@@ -501,4 +525,20 @@ var TestRemediationTemplateCRD = &apiextensions.CustomResourceDefinition{
 			},
 		},
 	},
+}
+
+func newDynamicClient() *dynamicfake.FakeDynamicClient {
+	c := dynamicfake.NewSimpleDynamicClient(scheme.Scheme)
+	c.PrependReactor("create", "*", func(action testing.Action) (handled bool, ret runtime.Object, err error) {
+		createAction := action.(testing.CreateAction)
+		object := createAction.GetObject()
+		accessor, err := meta.Accessor(object)
+		if err != nil {
+			return false, object, err
+		}
+		accessor.SetCreationTimestamp(metav1.Now())
+		accessor.SetUID(types.UID(fmt.Sprintf("FAKE-UID-%s", accessor.GetCreationTimestamp())))
+		return false, object, nil
+	})
+	return c
 }

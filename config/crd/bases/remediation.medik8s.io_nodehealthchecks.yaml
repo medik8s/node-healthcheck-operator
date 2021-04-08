@@ -144,21 +144,19 @@ spec:
               healthyNodes:
                 description: HealthyNodes specified the number of healthy nodes observed
                 type: integer
+              inFlightRemediations:
+                additionalProperties:
+                  format: date-time
+                  type: string
+                description: InFlightRemediations records the timestamp when remediation triggered per node
+                type: object
               observedNodes:
                 description: ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
                 type: integer
-              triggeredRemediations:
-                additionalProperties:
-                  items:
-                    format: date-time
-                    type: string
-                  type: array
-                description: TriggeredRemediations records the timestamp when remediation triggered per node
-                type: object
             required:
             - healthyNodes
+            - inFlightRemediations
             - observedNodes
-            - triggeredRemediations
             type: object
         type: object
     served: true
