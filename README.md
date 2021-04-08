@@ -142,7 +142,12 @@ spec:
 
 ## Remediation Providers responsibility
 
-- it is upto the remediation provider to delete the external remediation object if the node is deleted and another is
+  It is upto the remediation provider to delete the external remediation object if the node is deleted and another is
   reprovisioned. In that specific scenario the controller can not assume a successful node remediation because the
   node with that name doesn't exist, and instead there will be a new one.
 
+### RBAC rules aggregation
+
+Each provider must label it's rules with `rbac.ext-remediation/aggregate-to-ext-remediation: true` so the controller
+will aggreate its rules and will have the proper permission to create/delete external remediation objects
+  each 
