@@ -1,0 +1,9 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        rbac.ext-remediation/aggregate-to-ext-remediation: "true"
