@@ -90,7 +90,7 @@ The NHC object has a property of a External Remediaiton Template, and this templ
 copied over to the External Remediation Object Spec.
 For example this example NHC has this template defined:
 
-```
+```yaml
 apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
@@ -109,7 +109,7 @@ spec:
 - it is the admin's responsiblity to create a template object from the template kind `ProviderXRemdiationTemplate`
   with the name `group-x`.
 
-```
+```yaml
 apiVersion: medik8s.io/v1alpha1
 kind: ProviderXRemdiationTemplate
 metadata:
@@ -124,7 +124,7 @@ spec:
 - the controller will create an object with the kind `ProviderXRemdiation` (postfix 'Template' trimmed)
   and the object will have ownerReference set to the co-responding NHC object
 
-```
+```yaml
 apiVersion: medik8s.io/v1alpha1
 kind: ProviderXRemdiation
 metadata:
