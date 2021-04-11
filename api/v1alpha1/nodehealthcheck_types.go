@@ -88,11 +88,9 @@ type NodeHealthCheckStatus struct {
 	//HealthyNodes specified the number of healthy nodes observed
 	HealthyNodes int `json:"healthyNodes"`
 
-	//TriggeredRemediations records the timestamp when remediation triggered per node
-	TriggeredRemediations map[string]Times `json:"triggeredRemediations"`
+	//InFlightRemediations records the timestamp when remediation triggered per node
+	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations"`
 }
-
-type Times []metav1.Time
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=nodehealthchecks,scope=Cluster
