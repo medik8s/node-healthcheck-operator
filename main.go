@@ -83,7 +83,7 @@ func main() {
 	}
 
 	if err = (&controllers.NodeHealthCheckReconciler{
-		Client:        mgr.GetClient(),
+		Client: mgr.GetClient(),
 		// the dynamic client is here only because the fake client from client-go
 		// couldn't List correctly unstructuredList. The fake dynamic client works.
 		// See https://github.com/kubernetes-sigs/controller-runtime/issues/702

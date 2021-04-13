@@ -1,3 +1,6 @@
+# SHELL defines bash so all the inline scripts here will work as expected.
+SHELL := /bin/bash
+
 # VERSION defines the project version for the bundle. 
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
@@ -92,11 +95,11 @@ generate: controller-gen
 
 # Build the docker image
 docker-build: test
-	docker build -t ${IMG} .
+	podman build -t ${IMG} .
 
 # Push the docker image
 docker-push:
-	docker push ${IMG}
+	podman push ${IMG}
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
@@ -133,4 +136,4 @@ bundle: manifests kustomize
 # Build the bundle image.
 .PHONY: bundle-build
 bundle-build:
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .

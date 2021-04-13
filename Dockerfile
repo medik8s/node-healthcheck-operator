@@ -1,5 +1,6 @@
 # Build the manager binary
-FROM registry.svc.ci.openshift.org/openshift/release:golang-1.15 AS builder                                             
+FROM quay.io/centos/centos:stream8 AS builder
+RUN yum install golang -y
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
