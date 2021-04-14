@@ -1,0 +1,215 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "remediation.medik8s.io/v1alpha1",
+          "kind": "NodeHealthCheck",
+          "metadata": {
+            "name": "nodehealthcheck-sample"
+          },
+          "spec": {
+            "externalRemediationTemplate": {
+              "apiVersion": "medik8s.io/v1alpha1",
+              "kind": "ProviderXRemedyTemplate",
+              "name": "group-x",
+              "namespace": "default"
+            },
+            "maxUnhealthy": "49%",
+            "selector": {
+              "matchLabels": {
+                "kubernetes.io/os": "linux"
+              }
+            },
+            "unhealthyConditions": [
+              {
+                "duration": "300s",
+                "status": false,
+                "type": "Ready"
+              }
+            ]
+          }
+        }
+      ]
+    capabilities: Basic Install
+    operators.operatorframework.io/builder: operator-sdk-v1.4.0+git
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
+  name: node-healthcheck-operator.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: NodeHealthCheck is the Schema for the nodehealthchecks API
+      displayName: Node Health Check
+      kind: NodeHealthCheck
+      name: nodehealthchecks.remediation.medik8s.io
+      version: v1alpha1
+  description: This operator deploys the Node Health Check controller and its artifacts
+  displayName: Node Health Check Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - nodes
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - remediation.medik8s.io
+          resources:
+          - nodehealthchecks
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - remediation.medik8s.io
+          resources:
+          - nodehealthchecks/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - remediation.medik8s.io
+          resources:
+          - nodehealthchecks/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: default
+      deployments:
+      - name: node-healthcheck-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --secure-listen-address=0.0.0.0:8443
+                - --upstream=http://127.0.0.1:8080/
+                - --logtostderr=true
+                - --v=10
+                image: gcr.io/kubebuilder/kube-rbac-proxy:v0.5.0
+                name: kube-rbac-proxy
+                ports:
+                - containerPort: 8443
+                  name: https
+                resources: {}
+              - args:
+                - --health-probe-bind-address=:8081
+                - --metrics-bind-address=127.0.0.1:8080
+                - --leader-elect
+                command:
+                - /manager
+                image: quay.io/medik8s/node-healthcheck-controller:latest
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 100m
+                    memory: 30Mi
+                  requests:
+                    cpu: 100m
+                    memory: 20Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+              nodeSelector:
+                node-role.kubernetes.io/master: ""
+              securityContext:
+                runAsUser: 1000730000
+              terminationGracePeriodSeconds: 10
+              tolerations:
+              - effect: NoSchedule
+                key: node-role.kubernetes.io/master
+                operator: Exists
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          - coordination.k8s.io
+          resources:
+          - configmaps
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: default
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - Remediation
+  - Fencing
+  - medik8s
+  - k8s
+  links:
+  - name: Node Healthcheck Operator
+    url: https://node-healthcheck-operator.domain
+  maturity: alpha
+  provider:
+    name: medik8s.io
+    url: https://github.com/medik8s
+  version: 0.0.1
