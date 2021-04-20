@@ -19,7 +19,7 @@ jobs:
         go-version: 1.15
 
     - name: Build
-      run: make fmt vet
+      run: make manager
 
     - name: Test
       run: make test
