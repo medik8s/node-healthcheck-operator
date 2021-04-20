@@ -1,10 +1,8 @@
-name: Publish A Container Image
+name: Publish Container Images
 on:
   push:
     branches:
       - master
-env:
-  IMG: quay.io/medik8s/node-healthcheck-controller
 
 jobs:
   push_to_registry:
@@ -22,7 +20,7 @@ jobs:
           registry: quay.io
 
       - name: Prepare Container Image
-        run: make docker-build
+        run: make docker-build bundle-build
 
       - name: Push to Quay.io
-        run: make docker-push
+        run: make docker-push bundle-push
