@@ -134,7 +134,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/medik8s/node-healthcheck-controller:latest
+                image: quay.io/medik8s/node-healthcheck-operator:0.0.1
                 livenessProbe:
                   httpGet:
                     path: /healthz
