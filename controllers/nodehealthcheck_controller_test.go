@@ -39,7 +39,7 @@ var _ = Describe("Node Health Check CR", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
 					Selector: metav1.LabelSelector{},
-					ExternalRemediationTemplate: &v1.ObjectReference{
+					RemediationTemplate: &v1.ObjectReference{
 						Kind:      "InfrastructureRemediationTemplate",
 						Namespace: "default",
 						Name:      "template",
@@ -85,7 +85,7 @@ var _ = Describe("Node Health Check CR", func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
-					ExternalRemediationTemplate: &v1.ObjectReference{
+					RemediationTemplate: &v1.ObjectReference{
 						Kind:      "InfrastructureRemediationTemplate",
 						Namespace: "default",
 						Name:      "template",
@@ -100,7 +100,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("specifying an external remediation template", func() {
 			It("should fail creation if empty", func() {
-				underTest.Spec.ExternalRemediationTemplate = nil
+				underTest.Spec.RemediationTemplate = nil
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(err).To(HaveOccurred())
 			})
@@ -401,7 +401,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 					Duration: metav1.Duration{Duration: time.Second * 300},
 				},
 			},
-			ExternalRemediationTemplate: &v1.ObjectReference{
+			RemediationTemplate: &v1.ObjectReference{
 				Kind:       "InfrastructureRemediationTemplate",
 				APIVersion: "medik8s.io/v1alpha1",
 				Namespace:  "default",

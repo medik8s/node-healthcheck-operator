@@ -11,13 +11,13 @@ metadata:
             "name": "nodehealthcheck-sample"
           },
           "spec": {
-            "externalRemediationTemplate": {
+            "maxUnhealthy": "49%",
+            "remediationTemplate": {
               "apiVersion": "medik8s.io/v1alpha1",
               "kind": "ProviderXRemedyTemplate",
               "name": "group-x",
               "namespace": "default"
             },
-            "maxUnhealthy": "49%",
             "selector": {
               "matchLabels": {
                 "kubernetes.io/os": "linux"
@@ -34,7 +34,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    operators.operatorframework.io/builder: operator-sdk-v1.4.0+git
+    operators.operatorframework.io/builder: operator-sdk-v1.6.1+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
   name: node-healthcheck-operator.v0.0.1
   namespace: placeholder

@@ -116,8 +116,8 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
-	if in.ExternalRemediationTemplate != nil {
-		in, out := &in.ExternalRemediationTemplate, &out.ExternalRemediationTemplate
+	if in.RemediationTemplate != nil {
+		in, out := &in.RemediationTemplate, &out.RemediationTemplate
 		*out = new(v1.ObjectReference)
 		**out = **in
 	}

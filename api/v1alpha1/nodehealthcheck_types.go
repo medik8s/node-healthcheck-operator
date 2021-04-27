@@ -47,12 +47,12 @@ type NodeHealthCheckSpec struct {
 	// +kubebuilder:validation:Type=string
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
-	// ExternalRemediationTemplate is a reference to a remediation template
+	// RemediationTemplate is a reference to a remediation template
 	// provided by an infrastructure provider.
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
-	ExternalRemediationTemplate *corev1.ObjectReference `json:"externalRemediationTemplate"`
+	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
 
 	// TODO document this
 	// +optional

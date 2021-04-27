@@ -299,7 +299,7 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 }
 
 func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
-	t := nhc.Spec.ExternalRemediationTemplate.DeepCopy()
+	t := nhc.Spec.RemediationTemplate.DeepCopy()
 	obj := new(unstructured.Unstructured)
 	obj.SetAPIVersion(t.APIVersion)
 	obj.SetGroupVersionKind(t.GroupVersionKind())
