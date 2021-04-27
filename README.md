@@ -40,7 +40,7 @@ metadata:
   name: nodehealthcheck-sample
 spec:
 # mandatory
-  externalRemediationTemplate:
+  remediationTemplate:
     kind: ProviderXRemediationTemplate
     apiVersion: medik8s.io/v1alpha1
     name: group-x
@@ -66,7 +66,7 @@ spec:
 
 | Field | Mandatory | Default Value | Description |
 | --- | --- | --- | --- |
-| _externalRemediationTemplate_ | yes | n/a | A reference to a remediation template provided by an infrastructure provider. If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider.|
+| _remediationTemplate_ | yes | n/a | A reference to a remediation template provided by an infrastructure provider. If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider.|
 | _selector_ | no | empty selector that selects all nodes | a nodes selector of type [metav1.LabelSelector](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#LabelSelector) | 
 | _maxUnhealthy_ | no | 49% | Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy.| 
 | _unhealthyConditions_ | no | `[{type: Ready, status: False, duration: 300s}]` | list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.|
@@ -97,7 +97,7 @@ metadata:
   name: nodehealthcheck-sameple
 ...
 spec:
-  externalRemediationTemplate:
+  remediationTemplate:
     kind: ProviderXRemediationTemplate
     apiVersion: medik8s.io/v1alpha1
     name: group-x

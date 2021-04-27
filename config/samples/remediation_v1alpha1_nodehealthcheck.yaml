@@ -19,7 +19,7 @@ spec:
     - type: Ready
       status: False
       duration: 300s
-  externalRemediationTemplate:                 # 4)
+  remediationTemplate:                 # 4)
     kind: ProviderXRemedyTemplate
     apiVersion: medik8s.io/v1alpha1
     name: group-x
