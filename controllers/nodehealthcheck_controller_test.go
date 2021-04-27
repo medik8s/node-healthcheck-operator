@@ -95,7 +95,7 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		AfterEach(func() {
-			k8sClient.Delete(context.Background(), underTest)
+			_ = k8sClient.Delete(context.Background(), underTest)
 		})
 
 		When("specifying an external remediation template", func() {
@@ -455,49 +455,6 @@ var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
 		Names: apiextensions.CustomResourceDefinitionNames{
 			Kind:   "InfrastructureRemediation",
 			Plural: "infrastructureremediations",
-		},
-		Versions: []apiextensions.CustomResourceDefinitionVersion{
-			{
-				Name:    "v1alpha1",
-				Served:  true,
-				Storage: true,
-				Subresources: &apiextensions.CustomResourceSubresources{
-					Status: &apiextensions.CustomResourceSubresourceStatus{},
-				},
-				Schema: &apiextensions.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensions.JSONSchemaProps{
-						Type: "object",
-						Properties: map[string]apiextensions.JSONSchemaProps{
-							"spec": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.BoolPtr(true),
-							},
-							"status": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.BoolPtr(true),
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-}
-
-var TestRemediationTemplateCRD = &apiextensions.CustomResourceDefinition{
-	TypeMeta: metav1.TypeMeta{
-		APIVersion: apiextensions.SchemeGroupVersion.String(),
-		Kind:       "CustomResourceDefinition",
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name: "infrastructureremediationtemplates.medik8s.io",
-	},
-	Spec: apiextensions.CustomResourceDefinitionSpec{
-		Group: "medik8s.io",
-		Scope: apiextensions.NamespaceScoped,
-		Names: apiextensions.CustomResourceDefinitionNames{
-			Kind:   "InfrastructureRemediationTemplate",
-			Plural: "infrastructureremediationtemplates",
 		},
 		Versions: []apiextensions.CustomResourceDefinitionVersion{
 			{

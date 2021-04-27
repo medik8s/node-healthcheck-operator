@@ -108,8 +108,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	inFlightRemediations, err := r.getInflightRemediations(nhc)
 	if err != nil {
-		errors.Wrapf(err, "failed fetching remediation objects of the NHC")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, errors.Wrapf(err, "failed fetching remediation objects of the NHC")
 	}
 
 	err = r.patchStatus(nhc, len(nodes), len(unhealthyNodes), inFlightRemediations)
@@ -340,8 +339,8 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alp
 	if err != nil {
 		return nil,
 			errors.Wrapf(err, "failed to fetch all remediation objects from kind %s and apiVersion %s",
-				list.GetObjectKind(),
-				list.GetAPIVersion())
+				cr.GroupVersionKind(),
+				cr.GetAPIVersion())
 	}
 
 	remediations := make(map[string]metav1.Time)
