@@ -1,5 +1,3 @@
-# Under development
-
 ## Node Healthcheck Controller
 
 A Node entering an unready state after 5 minutes is an obvious sign that a
