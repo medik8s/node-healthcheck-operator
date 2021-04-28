@@ -1,0 +1,9 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+aliases:
+  approvers:
+      - n1r1
+      - rgolangh
+  code-reviewers:
+      - n1r1
+      - rgolangh
