@@ -40,6 +40,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/metrics"
+)
+
+const (
+	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
+	templateSuffix                = "Template"
+	remediationCRAlertTimeout     = time.Hour * 48
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
@@ -70,38 +77,42 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// fetch nhc
 	nhc := remediationv1alpha1.NodeHealthCheck{}
 	err := r.Get(ctx, req.NamespacedName, &nhc)
+	result := ctrl.Result{}
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check", "object", nhc)
 		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
+			return result, nil
 		}
-		return ctrl.Result{}, err
+		return result, err
 	}
 	// select nodes using the nhc.selector
 	nodes, err := r.fetchNodes(ctx, nhc.Spec.Selector)
 	if err != nil {
-		return ctrl.Result{}, err
+		return result, err
 	}
 
 	// check nodes health
 	unhealthyNodes, err := r.checkNodesHealth(nodes, nhc)
 	if err != nil {
-		return ctrl.Result{}, err
+		return result, err
 	}
 
 	maxUnhealthy, err := r.getMaxUnhealthy(nhc, len(nodes))
 	if err != nil {
 		log.Error(err, "failed to calculate max unhealthy allowed nodes",
 			"maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
-		return ctrl.Result{}, err
+		return result, err
 	}
 
 	if len(unhealthyNodes) <= maxUnhealthy {
 		// trigger remediation per node
 		for _, n := range unhealthyNodes {
-			err := r.remediate(n, nhc)
+			nextReconcile, err := r.remediate(ctx, n, nhc)
 			if err != nil {
 				return ctrl.Result{}, err
+			}
+			if nextReconcile != nil {
+				updateResultNextReconcile(&result, *nextReconcile)
 			}
 		}
 	}
@@ -116,7 +127,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Error(err, "failed to patch NHC status")
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
 func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) ([]v1.Node, error) {
@@ -238,10 +249,10 @@ func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	return delegate
 }
 
-func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
 	cr, err := r.generateRemediationCR(n, nhc)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r.Log.Info("node seems unhealthy. Creating an external remediation object",
 		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
@@ -250,12 +261,19 @@ func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1
 		Version:  cr.GroupVersionKind().Version,
 		Resource: strings.ToLower(cr.GetKind()),
 	}
-	_, err = r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).Create(context.Background(), cr, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		r.Log.Error(err, "failed to create an external remediation object")
-		return err
+	if req := r.getExternalRemediationRequest(ctx, cr, nhc, n.Name); req == nil {
+		if _, err = r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).Create(context.Background(), cr, metav1.CreateOptions{}); err != nil {
+			r.Log.Error(err, "failed to create an external remediation object")
+			return nil, err
+		}
+	} else {
+		isAlert, nextReconcile := r.alertOldRemediationCR(req)
+		if isAlert {
+			metrics.ObserveNodeHealthCheckOldRemediationCR(n.Name, n.Namespace)
+		}
+		return nextReconcile, nil
 	}
-	return nil
+	return nil, nil
 }
 
 func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
@@ -275,7 +293,7 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	u.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   t.GroupVersionKind().Group,
 		Version: t.GroupVersionKind().Version,
-		Kind:    strings.TrimSuffix(t.GetKind(), "Template"),
+		Kind:    strings.TrimSuffix(t.GetKind(), templateSuffix),
 	})
 	u.SetOwnerReferences([]metav1.OwnerReference{
 		{
@@ -344,15 +362,64 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alp
 	}
 
 	remediations := make(map[string]metav1.Time)
-	for _, emr := range list.Items {
-		for _, ownerRefs := range emr.GetOwnerReferences() {
+	for _, remediationCR := range list.Items {
+		for _, ownerRefs := range remediationCR.GetOwnerReferences() {
 			if ownerRefs.Name == nhc.Name &&
 				ownerRefs.Kind == nhc.Kind &&
 				ownerRefs.APIVersion == nhc.APIVersion {
-				remediations[emr.GetName()] = emr.GetCreationTimestamp()
+				remediations[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
 				continue
 			}
 		}
 	}
 	return remediations, nil
+}
+
+func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstructured.Unstructured) (bool, *time.Duration) {
+	isSendAlert := false
+	var nextReconcile *time.Duration = nil
+	//verify remediationCR is old
+	now := time.Now()
+	if now.After(remediationCR.GetCreationTimestamp().Add(remediationCRAlertTimeout)) {
+		var remediationCrAnnotations map[string]string
+		if remediationCrAnnotations = remediationCR.GetAnnotations(); remediationCrAnnotations == nil {
+			remediationCrAnnotations = map[string]string{}
+		}
+		//verify this is the first alert for this remediationCR
+		if _, isAlertedSent := remediationCrAnnotations[oldRemediationCRAnnotationKey]; !isAlertedSent {
+			remediationCrAnnotations[oldRemediationCRAnnotationKey] = "flagon"
+			remediationCR.SetAnnotations(remediationCrAnnotations)
+			if err := r.Client.Update(context.TODO(), remediationCR); err == nil {
+				isSendAlert = true
+			} else {
+				r.Log.Error(err, "Setting `old remediationCR` annotation on remediation CR %s: failed to update: %v", remediationCR.GetName(), err)
+			}
+
+		}
+	} else {
+		calcNextReconcile := remediationCRAlertTimeout - now.Sub(remediationCR.GetCreationTimestamp().Time) + time.Minute
+		nextReconcile = &calcNextReconcile
+	}
+	return isSendAlert, nextReconcile
+
+}
+
+// getExternalRemediationRequest gets reference to External Remediation Request, unstructured object.
+func (r *NodeHealthCheckReconciler) getExternalRemediationRequest(ctx context.Context, req *unstructured.Unstructured, nhc remediationv1alpha1.NodeHealthCheck, nodeName string) *unstructured.Unstructured {
+	obj := req.DeepCopy()
+	key := client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}
+	if err := r.Client.Get(ctx, key, obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			r.Log.Error(err, "error retrieving external remediation  %v %q for node %q in namespace %q: %v", nhc.Spec.RemediationTemplate.GroupVersionKind(), nhc.Spec.RemediationTemplate.Name, nodeName, nhc.Namespace, err)
+		}
+		return nil
+	}
+	return obj
+
+}
+
+func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Duration) {
+	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
+		result.RequeueAfter = updatedRequeueAfter
+	}
 }
