@@ -239,6 +239,7 @@ func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	return delegate
 }
 
+// dummy comment
 func (r *NodeHealthCheckReconciler) remediate(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
 	cr, err := r.generateRemediationCR(n, nhc)
 	if err != nil {
