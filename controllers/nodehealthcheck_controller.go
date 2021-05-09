@@ -346,7 +346,7 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alp
 		context.Background(),
 		metav1.ListOptions{},
 	)
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return nil,
 			errors.Wrapf(err, "failed to fetch all remediation objects from kind %s and apiVersion %s",
 				cr.GroupVersionKind(),
