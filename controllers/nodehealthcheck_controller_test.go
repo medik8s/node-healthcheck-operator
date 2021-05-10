@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("Node Health Check CR", func() {
@@ -95,7 +96,7 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		AfterEach(func() {
-			k8sClient.Delete(context.Background(), underTest)
+			_ = k8sClient.Delete(context.Background(), underTest)
 		})
 
 		When("specifying an external remediation template", func() {
@@ -176,6 +177,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Name:       underTest.Name,
 						Controller: pointer.BoolPtr(false),
 					}))
+				Expect(o.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
 			})
 
 			It("updates the NHC status with number of healthy nodes", func() {
@@ -259,6 +261,32 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 			})
+		})
+
+		When("an old remediation cr exist", func() {
+			BeforeEach(func() {
+				objects = newNodes(1, 2)
+				underTest = newNodeHealthCheck()
+				remediationTemplate := newRemediationTemplate()
+				remediationCR := newRemediationCR("unhealthy-node-1")
+				remediationCR.SetCreationTimestamp(metav1.Time{Time: time.Now().Add(-remediationCRAlertTimeout - 2*time.Minute)})
+				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
+			})
+
+			It("an alert flag is set on remediation cr", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
+
+				actualRemediationCR := new(unstructured.Unstructured)
+				actualRemediationCR.SetKind(strings.TrimSuffix(underTest.Spec.RemediationTemplate.Kind, templateSuffix))
+				actualRemediationCR.SetAPIVersion(underTest.Spec.RemediationTemplate.APIVersion)
+				key := client.ObjectKey{Name: "unhealthy-node-1", Namespace: "default"}
+				err := reconciler.Client.Get(context.Background(), key, actualRemediationCR)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(actualRemediationCR.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
+
+			})
+
 		})
 	})
 
@@ -455,49 +483,6 @@ var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
 		Names: apiextensions.CustomResourceDefinitionNames{
 			Kind:   "InfrastructureRemediation",
 			Plural: "infrastructureremediations",
-		},
-		Versions: []apiextensions.CustomResourceDefinitionVersion{
-			{
-				Name:    "v1alpha1",
-				Served:  true,
-				Storage: true,
-				Subresources: &apiextensions.CustomResourceSubresources{
-					Status: &apiextensions.CustomResourceSubresourceStatus{},
-				},
-				Schema: &apiextensions.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensions.JSONSchemaProps{
-						Type: "object",
-						Properties: map[string]apiextensions.JSONSchemaProps{
-							"spec": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.BoolPtr(true),
-							},
-							"status": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.BoolPtr(true),
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-}
-
-var TestRemediationTemplateCRD = &apiextensions.CustomResourceDefinition{
-	TypeMeta: metav1.TypeMeta{
-		APIVersion: apiextensions.SchemeGroupVersion.String(),
-		Kind:       "CustomResourceDefinition",
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name: "infrastructureremediationtemplates.medik8s.io",
-	},
-	Spec: apiextensions.CustomResourceDefinitionSpec{
-		Group: "medik8s.io",
-		Scope: apiextensions.NamespaceScoped,
-		Names: apiextensions.CustomResourceDefinitionNames{
-			Kind:   "InfrastructureRemediationTemplate",
-			Plural: "infrastructureremediationtemplates",
 		},
 		Versions: []apiextensions.CustomResourceDefinitionVersion{
 			{

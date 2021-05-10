@@ -35,6 +35,7 @@ import (
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers"
+	"github.com/medik8s/node-healthcheck-operator/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -104,6 +105,9 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+
+	// Register the MHC specific metrics
+	metrics.InitializeNodeHealthCheckMetrics()
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
