@@ -57,7 +57,7 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: generate fmt vet manifests
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out
+	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./controllers -coverprofile cover.out
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
@@ -120,7 +120,6 @@ docker-build: test
 # Push the docker image
 docker-push:
 	podman push ${IMG}
-
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
@@ -163,9 +162,22 @@ bundle-build:
 bundle-push:
 	podman push ${BUNDLE_IMG}
 
+# Run end to end tests
 PHONY: test-e2e
 test-e2e:
-	echo $(IMG) $(VERSION)
+	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeocnfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
+	#TODO not sure needed @if [ -z ${PPIL_IMG} ]; then echo "[WARN] PPIL_IMG is not set"; fi
 	$(MAKE) deploy
-	
-	
+	$(MAKE) deploy-poison-pill
+	go test ./e2e -coverprofile cover.out
+
+# Deploy poison-pill to a running cluster
+.PHONY: deploy-poison-pill
+PPIL_DIR = $(shell pwd)/testdata/.remediators/poison-pill
+PPIL_GIT_REF ?= master
+PPIL_IMG ?= quay.io/medik8s/poison-pill-operator:latest
+deploy-poison-pill:
+	mkdir -p ${PPIL_DIR}
+	test -f ${PPIL_DIR}/Makefile || curl -L https://github.com/medik8s/poison-pill/tarball/${PPIL_GIT_REF} | tar -C ${PPIL_DIR} -xzv --strip=1
+	$(MAKE) -C ${PPIL_DIR} deploy IMG=${PPIL_IMG}
+
