@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -256,11 +257,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n v1.Node, nh
 	}
 	r.Log.Info("node seems unhealthy. Creating an external remediation object",
 		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
-	resource := schema.GroupVersionResource{
-		Group:    cr.GroupVersionKind().Group,
-		Version:  cr.GroupVersionKind().Version,
-		Resource: strings.ToLower(cr.GetKind()),
-	}
+	resource := crToResource(*cr)
 	if req := r.getExternalRemediationRequest(ctx, cr, nhc, n.Name); req == nil {
 		if _, err = r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).Create(context.Background(), cr, metav1.CreateOptions{}); err != nil {
 			r.Log.Error(err, "failed to create an external remediation object")
@@ -344,12 +341,7 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alp
 	if err != nil {
 		return nil, err
 	}
-	resource := schema.GroupVersionResource{
-		Group:    cr.GroupVersionKind().Group,
-		Version:  cr.GroupVersionKind().Version,
-		Resource: strings.ToLower(cr.GetKind()),
-	}
-
+	resource := crToResource(*cr)
 	list, err := r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).List(
 		context.Background(),
 		metav1.ListOptions{},
@@ -421,5 +413,13 @@ func (r *NodeHealthCheckReconciler) getExternalRemediationRequest(ctx context.Co
 func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Duration) {
 	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = updatedRequeueAfter
+	}
+}
+
+func crToResource(cr unstructured.Unstructured) schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    cr.GroupVersionKind().Group,
+		Version:  cr.GroupVersionKind().Version,
+		Resource: fmt.Sprintf("%ss", strings.ToLower(cr.GetKind())),
 	}
 }
