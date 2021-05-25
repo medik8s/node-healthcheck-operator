@@ -93,7 +93,7 @@ type NodeHealthCheckStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=nodehealthchecks,scope=Cluster
+// +kubebuilder:resource:path=nodehealthchecks,scope=Cluster,shortName=nhc
 // +kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
