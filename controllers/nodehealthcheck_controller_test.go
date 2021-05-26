@@ -165,7 +165,7 @@ var _ = Describe("Node Health Check CR", func() {
 			It("create a remediation CR for each unhealthy node", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				cr := newRemediationCR("unhealthy-node-1")
-				o, err := reconciler.DynamicClient.Resource(remediationResource(cr)).
+				o, err := reconciler.DynamicClient.Resource(crToResource(cr)).
 					Namespace(cr.GetNamespace()).
 					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
@@ -243,14 +243,14 @@ var _ = Describe("Node Health Check CR", func() {
 
 				cr := newRemediationCR("unhealthy-node-1")
 				_, err := reconciler.DynamicClient.
-					Resource(remediationResource(cr)).
+					Resource(crToResource(cr)).
 					Namespace(cr.GetNamespace()).
 					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
 				cr = newRemediationCR("unhealthy-node-2")
 				_, err = reconciler.DynamicClient.
-					Resource(remediationResource(cr)).
+					Resource(crToResource(cr)).
 					Namespace(cr.GetNamespace()).
 					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -361,14 +361,6 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 	})
 })
-
-func remediationResource(u unstructured.Unstructured) schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    u.GroupVersionKind().Group,
-		Version:  u.GroupVersionKind().Version,
-		Resource: strings.ToLower(u.GetKind()),
-	}
-}
 
 func newRemediationCR(nodeName string) unstructured.Unstructured {
 	cr := unstructured.Unstructured{}
