@@ -13,6 +13,8 @@ spec:
     kind: NodeHealthCheck
     listKind: NodeHealthCheckList
     plural: nodehealthchecks
+    shortNames:
+    - nhc
     singular: nodehealthcheck
   scope: Cluster
   versions:
