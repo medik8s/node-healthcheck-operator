@@ -116,6 +116,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				updateResultNextReconcile(&result, *nextReconcile)
 			}
 		}
+	} else {
+		log.Info("Unhealthy nodes count reached the maximum allowed - skipping remediation.",
+			"unhealthyNodes", len(unhealthyNodes), "maxUnhealthy", maxUnhealthy)
 	}
 
 	inFlightRemediations, err := r.getInflightRemediations(nhc)
