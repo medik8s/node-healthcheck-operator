@@ -36,7 +36,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// +optional
 	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
-  // +operator-sdk:csv:customresourcedefinitions:type=spec
+	// +operator-sdk:csv:customresourcedefinitions:type=spec
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by
@@ -88,15 +88,15 @@ type UnhealthyCondition struct {
 type NodeHealthCheckStatus struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="observedNodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:observedNodes"
 	//ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
-	ObservedNodes int `json:"observedNodes"`
+	ObservedNodes int `json:"observedNodes,omitempty"`
 
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="healthynodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:healthyNodes"
 	//HealthyNodes specified the number of healthy nodes observed
-	HealthyNodes int `json:"healthyNodes"`
+	HealthyNodes int `json:"healthyNodes,omitempty"`
 
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:inFlightRemediations"
 	//InFlightRemediations records the timestamp when remediation triggered per node
-	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations"`
+	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations,omitempty"`
 }
 
 // +kubebuilder:object:root=true

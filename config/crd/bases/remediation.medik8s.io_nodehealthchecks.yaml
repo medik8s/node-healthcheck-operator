@@ -158,10 +158,6 @@ spec:
               observedNodes:
                 description: ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
                 type: integer
-            required:
-            - healthyNodes
-            - inFlightRemediations
-            - observedNodes
             type: object
         type: object
     served: true
