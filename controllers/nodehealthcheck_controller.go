@@ -332,7 +332,7 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 	updatedNHC.Status.InFlightRemediations = remediations
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
-	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
+	r.Log.Info("Patching NHC object", "patch", updatedNHC.Status)
 	return r.Client.Status().Patch(context.Background(), &updatedNHC, patch, &client.PatchOptions{})
 }
 
