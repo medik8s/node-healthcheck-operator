@@ -39,7 +39,7 @@ metadata:
 spec:
 # mandatory
   remediationTemplate:
-    kind: ProviderXRemediationTemplate
+    kind: PoisonPillRemediationTemplate
     apiVersion: medik8s.io/v1alpha1
     name: group-x
     namespace: default
@@ -93,14 +93,13 @@ apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
   name: nodehealthcheck-sameple
-...
 spec:
   remediationTemplate:
-    kind: ProviderXRemediationTemplate
-    apiVersion: medik8s.io/v1alpha1
+    kind: PoisonPillRemediationTemplate
+    apiVersion: poison-pill.medik8s.io/v1alpha1
     name: group-x
     namespace: default
-...
+
 
 ```
 
@@ -108,33 +107,31 @@ spec:
   with the name `group-x`.
 
 ```yaml
-apiVersion: medik8s.io/v1alpha1
-kind: ProviderXRemdiationTemplate
+apiVersion: poison-pill.medik8s.io/v1alpha1
+kind: PoisonPillRemediationTemplate
 metadata:
   name: group-x
   namespace: default
 spec:
   template:
-    # whatever
-    size: 42
-
+    spec: {}
 ```
-- the controller will create an object with the kind `ProviderXRemdiation` (postfix 'Template' trimmed)
+
+- the controller will create an object with the kind `ProviderPillRemdiation` (postfix 'Template' trimmed)
   and the object will have ownerReference set to the co-responding NHC object
 
 ```yaml
-apiVersion: medik8s.io/v1alpha1
-kind: ProviderXRemdiation
+apiVersion: poison-pill.medik8s.io/v1alpha1
+kind: PoisonPillRemdiation
 metadata:
   # named after the target node
   name: worker-0-21
   namespace: default
   ownerReferences:
     - kind: NodeHealthCheck
-      apiVersion: medik8s.io/v1alpha1
+      apiVersion: remediation.medik8s.io/v1alpha1
       name: nodehealthcheck-sample
-spec:
-  size: 42
+spec: {}
 
 ```
 
