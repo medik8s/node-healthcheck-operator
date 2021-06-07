@@ -209,8 +209,6 @@ spec:
                   allowPrivilegeEscalation: false
               nodeSelector:
                 node-role.kubernetes.io/master: ""
-              securityContext:
-                runAsUser: 1000730000
               terminationGracePeriodSeconds: 10
               tolerations:
               - effect: NoSchedule

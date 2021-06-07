@@ -28,8 +28,6 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/master
           operator: Exists
-      securityContext:
-        runAsUser: 1000730000
       containers:
       - command:
         - /manager
