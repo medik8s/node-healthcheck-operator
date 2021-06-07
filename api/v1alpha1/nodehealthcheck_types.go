@@ -86,15 +86,15 @@ type UnhealthyCondition struct {
 
 // NodeHealthCheckStatus defines the observed state of NodeHealthCheck
 type NodeHealthCheckStatus struct {
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="observedNodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:podStatuses"
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="observedNodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:observedNodes"
 	//ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
 	ObservedNodes int `json:"observedNodes"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="healthynodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:podStatuses"
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="healthynodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:healthyNodes"
 	//HealthyNodes specified the number of healthy nodes observed
 	HealthyNodes int `json:"healthyNodes"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:podStatuses"
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:inFlightRemediations"
 	//InFlightRemediations records the timestamp when remediation triggered per node
 	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations"`
 }
@@ -104,7 +104,7 @@ type NodeHealthCheckStatus struct {
 // +kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
-// +operator-sdk:csv:customresourcedefinitions:resources={{"Nodes","v1"}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{"NodeHealthCheck","v1alpha1","nodehealthchecks"}}
 type NodeHealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
