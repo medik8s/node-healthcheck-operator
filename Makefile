@@ -53,6 +53,10 @@ test: generate fmt vet manifests
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out
 
+test-mutation: verify-no-changes fetch-mutation ## Run mutation tests.
+	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
+	go-mutesting controllers/
+
 # Build manager binary
 manager: generate fmt vet
 	go build -o bin/manager main.go
@@ -89,6 +93,12 @@ fmt:
 # Run go vet against code
 vet:
 	go vet ./...
+
+verify-no-changes: ## verify no there are no un-staged changes
+	./hack/verify-diff.sh
+
+fetch-mutation: ## fetch mutation package.
+	GO111MODULE=off go get -t -v github.com/mshitrit/go-mutesting/...
 
 # Generate code
 generate: controller-gen
