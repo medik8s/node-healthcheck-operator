@@ -61,11 +61,14 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Namespace).To(BeEmpty())
 			})
 
-			It("sets a default condition Unready 300s", func() {
-				Expect(underTest.Spec.UnhealthyConditions).To(HaveLen(1))
+			It("sets a default conditions", func() {
+				Expect(underTest.Spec.UnhealthyConditions).To(HaveLen(2))
 				Expect(underTest.Spec.UnhealthyConditions[0].Type).To(Equal(v1.NodeReady))
 				Expect(underTest.Spec.UnhealthyConditions[0].Status).To(Equal(v1.ConditionFalse))
 				Expect(underTest.Spec.UnhealthyConditions[0].Duration).To(Equal(metav1.Duration{Duration: time.Minute * 5}))
+				Expect(underTest.Spec.UnhealthyConditions[1].Type).To(Equal(v1.NodeReady))
+				Expect(underTest.Spec.UnhealthyConditions[1].Status).To(Equal(v1.ConditionUnknown))
+				Expect(underTest.Spec.UnhealthyConditions[1].Duration).To(Equal(metav1.Duration{Duration: time.Minute * 5}))
 			})
 
 			It("sets max unhealthy to 49%", func() {
