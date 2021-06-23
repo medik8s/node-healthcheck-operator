@@ -8,9 +8,19 @@ $ operator-sdk olm install
 ```
 
 ## Installation
-To get a functioning remediation mechanism you can go to the operator page on [operator hub]
 
-Alternatively you can run`$ kubectl create -f https://operatorhub.io/install/node-healthcheck-operator.yaml`
+  - For K8S:
+
+    ```shell
+     kubectl create -f https://operatorhub.io/install/node-healthcheck-operator.yaml
+    ```
+  - For OpenShift:
+
+    ```shell
+    curl -s -L https://operatorhub.io/install/node-healthcheck-operator.yaml | \
+    sed -e '/namespace:/ s/operators/openshift-operators/ ; /source:/ s/operatorhubio-catalog/community-operators/ ; /sourceNamespace:/ s/olm/openshift- marketplace/' |   kubectl create -f -
+    ```
+
 
 By default, OLM will resolve Poison-Pill as a dependency and will install the
 latest available version in the current catalog or other catalog with higher
