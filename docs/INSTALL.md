@@ -70,7 +70,7 @@ spec:
       status: Unknown
       duration: 300s
     - type: Ready
-      status: False
+      status: "False"
       duration: 300s
   remediationTemplate:
     kind: PoisonPillRemediationTemplate
