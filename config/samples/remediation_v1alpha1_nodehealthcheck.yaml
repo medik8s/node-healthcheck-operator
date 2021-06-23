@@ -4,7 +4,7 @@ metadata:
   name: nodehealthcheck-sample
 spec:
 #  optional
-  selector:                                     # 1)
+  selector:
     matchLabels:
       kubernetes.io/os: linux
 #    optionally use more fine grained matching
@@ -14,12 +14,15 @@ spec:
 #        values:
 #          - another-node-label-value
 
-  maxUnhealthy: "49%"                          # 2)
-  unhealthyConditions:                         # 3)
+  maxUnhealthy: "49%"
+  unhealthyConditions:
     - type: Ready
       status: False
       duration: 300s
-  remediationTemplate:                 # 4)
+    - type: Ready
+      status: Unknown
+      duration: 300s
+  remediationTemplate:
     kind: ProviderXRemedyTemplate
     apiVersion: medik8s.io/v1alpha1
     name: group-x
