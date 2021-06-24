@@ -27,6 +27,7 @@ type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
 	// Note: An empty selector will match all nodes.
 	// +optional
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	Selector metav1.LabelSelector `json:"selector"`
 
 	// UnhealthyConditions contains a list of the conditions that determine
@@ -35,6 +36,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// +optional
 	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
+  // +operator-sdk:csv:customresourcedefinitions:type=spec
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by
@@ -45,6 +47,7 @@ type NodeHealthCheckSpec struct {
 	// +kubebuilder:default="49%"
 	// +kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
 	// +kubebuilder:validation:Type=string
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template
@@ -52,6 +55,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
 
 	// TODO document this
@@ -82,12 +86,15 @@ type UnhealthyCondition struct {
 
 // NodeHealthCheckStatus defines the observed state of NodeHealthCheck
 type NodeHealthCheckStatus struct {
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="observedNodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:observedNodes"
 	//ObservedNodes specified the number of nodes observed by using the NHC spec.selecor
 	ObservedNodes int `json:"observedNodes"`
 
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="healthynodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:healthyNodes"
 	//HealthyNodes specified the number of healthy nodes observed
 	HealthyNodes int `json:"healthyNodes"`
 
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:inFlightRemediations"
 	//InFlightRemediations records the timestamp when remediation triggered per node
 	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations"`
 }
@@ -97,6 +104,7 @@ type NodeHealthCheckStatus struct {
 // +kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
+// +operator-sdk:csv:customresourcedefinitions:resources={{"NodeHealthCheck","v1alpha1","nodehealthchecks"}}
 type NodeHealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
