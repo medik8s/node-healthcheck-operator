@@ -3,6 +3,11 @@ on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'
+  release:
+    types:
+      - created
 
 jobs:
   push_to_registry:

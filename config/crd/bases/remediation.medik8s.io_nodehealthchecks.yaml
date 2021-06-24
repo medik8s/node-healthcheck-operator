@@ -117,6 +117,9 @@ spec:
                 - duration: 300s
                   status: "False"
                   type: Ready
+                - duration: 300s
+                  status: Unknown
+                  type: Ready
                 description: UnhealthyConditions contains a list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.
                 items:
                   description: UnhealthyCondition represents a Node condition type and value with a specified duration. When the named condition has been in the given status for at least the duration value a node is considered unhealthy.

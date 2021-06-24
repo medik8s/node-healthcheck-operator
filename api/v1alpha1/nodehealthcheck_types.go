@@ -35,8 +35,8 @@ type NodeHealthCheckSpec struct {
 	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
 	//
 	// +optional
-	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"}}
-	// +operator-sdk:csv:customresourcedefinitions:type=spec
+	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
+  // +operator-sdk:csv:customresourcedefinitions:type=spec
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by
