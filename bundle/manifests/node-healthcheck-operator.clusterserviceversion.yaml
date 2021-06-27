@@ -28,6 +28,11 @@ metadata:
                 "duration": "300s",
                 "status": false,
                 "type": "Ready"
+              },
+              {
+                "duration": "300s",
+                "status": "Unknown",
+                "type": "Ready"
               }
             ]
           }
@@ -42,7 +47,7 @@ metadata:
     operators.operatorframework.io/builder: operator-sdk-v1.7.1+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/medik8s/node-healthcheck-operator
-  name: node-healthcheck-operator.v0.0.1
+  name: node-healthcheck-operator.v0.0.2
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -185,7 +190,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/medik8s/node-healthcheck-operator:0.0.1
+                image: quay.io/medik8s/node-healthcheck-operator:0.0.2
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -266,4 +271,4 @@ spec:
   provider:
     name: medik8s.io
     url: https://github.com/medik8s
-  version: 0.0.1
+  version: 0.0.2

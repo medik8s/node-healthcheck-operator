@@ -116,6 +116,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				updateResultNextReconcile(&result, *nextReconcile)
 			}
 		}
+	} else {
+		log.Info("Unhealthy nodes count reached the maximum allowed - skipping remediation.",
+			"unhealthyNodes", len(unhealthyNodes), "maxUnhealthy", maxUnhealthy)
 	}
 
 	inFlightRemediations, err := r.getInflightRemediations(nhc)
@@ -332,7 +335,7 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 	updatedNHC.Status.InFlightRemediations = remediations
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
-	r.Log.Info("Patching NHC object", "patch", patch, "to", updatedNHC)
+	r.Log.Info("Patching NHC object", "patch", updatedNHC.Status)
 	return r.Client.Status().Patch(context.Background(), &updatedNHC, patch, &client.PatchOptions{})
 }
 
@@ -346,7 +349,7 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alp
 		context.Background(),
 		metav1.ListOptions{},
 	)
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return nil,
 			errors.Wrapf(err, "failed to fetch all remediation objects from kind %s and apiVersion %s",
 				cr.GroupVersionKind(),

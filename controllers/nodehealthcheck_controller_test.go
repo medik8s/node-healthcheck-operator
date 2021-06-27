@@ -80,6 +80,22 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Spec.Selector.MatchExpressions).To(BeEmpty())
 			})
 		})
+
+		When("updating status", func() {
+			It("succeeds updating only part of the fields", func() {
+				Expect(underTest.Status).ToNot(BeNil())
+				Expect(underTest.Status.HealthyNodes).To(Equal(0))
+				patch := client.MergeFrom(underTest.DeepCopy())
+				underTest.Status.HealthyNodes = 1
+				underTest.Status.ObservedNodes = 6
+				err := k8sClient.Status().Patch(context.Background(), underTest, patch)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(underTest.Status.HealthyNodes).To(Equal(1))
+				Expect(underTest.Status.ObservedNodes).To(Equal(6))
+				Expect(underTest.Status.InFlightRemediations).To(BeNil())
+			})
+		})
+
 	})
 
 	Context("Validation", func() {
