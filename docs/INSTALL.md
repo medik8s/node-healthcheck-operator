@@ -31,17 +31,6 @@ priority.
 >NOTE: OLM on k8s install operators under the `operators` namespace while
 >      in OCP or OKD it is under `openshift-operators`
 
-- create `PoisonPillConfig` object ([ongoing work to make it automatic][ppil-auto-config])
-```shell
-cat << EOF | kubectl create -f -
-apiVersion: poison-pill.medik8s.io/v1alpha1
-kind: PoisonPillConfig
-metadata:
-  namespace: operators
-  name: poison-pill-config
-spec: {}
-EOF
-```
 - create a poison pill remediation template
 ```shell
 cat << EOF | kubectl create -f -
@@ -98,5 +87,4 @@ See the [README.md](./README.md) for Node Healthcheck CR customizations.
 
 
 [operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
-[ppil-auto-config]: https://github.com/medik8s/poison-pill/pull/33
 [operator-sdk]: https://sdk.operatorframework.io/docs/installation/
