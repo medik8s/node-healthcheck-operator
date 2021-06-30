@@ -156,3 +156,10 @@ bundle-build:
 .PHONY: bundle-push
 bundle-push:
 	podman push ${BUNDLE_IMG}
+
+PHONY: test-e2e
+test-e2e:
+	echo $(IMG) $(VERSION)
+	$(MAKE) deploy
+	
+	
