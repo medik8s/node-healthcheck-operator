@@ -17,7 +17,7 @@ import (
 const (
 	blockingPodName               = "api-blocker-pod"
 	safeToAssumeNodeRebootTimeout = 180 * time.Second
-	testNamespace                 = "default"
+	testNamespace                 = "node-healthcheck-operator-system"
 )
 
 var _ = Describe("e2e", func() {
@@ -26,7 +26,7 @@ var _ = Describe("e2e", func() {
 	BeforeEach(func() {
 		// randomly pick a host (or let the scheduler do it by running the blocking pod)
 		// block the api port to make it go Ready Unknown
-		nodeName, err := makeNodeUnready(time.Minute * 5)
+		nodeName, err := makeNodeUnready(time.Minute * 10)
 		Expect(err).NotTo(HaveOccurred())
 		nodeUnderTest, err = clientSet.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
@@ -39,7 +39,7 @@ var _ = Describe("e2e", func() {
 	When("Node conditions meets the unhealthy criteria", func() {
 		It("Remediates a host", func() {
 			Eventually(
-				fetchNHCByName(nodeUnderTest.Name), 2*time.Minute, 5*time.Second).
+				fetchPPRByName(nodeUnderTest.Name), 10*time.Minute, 10*time.Second).
 				Should(Succeed())
 			Eventually(
 				nodeCreationTime(nodeUnderTest.Name), safeToAssumeNodeRebootTimeout+30*time.Second, 250*time.Millisecond).
@@ -58,9 +58,13 @@ func nodeCreationTime(nodeName string) func() time.Time {
 	}
 }
 
-func fetchNHCByName(name string) func() error {
+func fetchPPRByName(name string) func() error {
 	return func() error {
-		get, err := dynamicClient.Resource(poisonPillRemediationGVR).Namespace(testNamespace).
+		ns, err := getPPRTemplateNS()
+		if err != nil {
+			return err
+		}
+		get, err := dynamicClient.Resource(poisonPillRemediationGVR).Namespace(ns).
 			Get(context.Background(),
 				name,
 				metav1.GetOptions{})
@@ -70,6 +74,20 @@ func fetchNHCByName(name string) func() error {
 		fmt.Fprintf(GinkgoWriter, "found a ppil object %v  that should remediate node %v\n", get.GetName(), name)
 		return nil
 	}
+}
+
+func getPPRTemplateNS() (string, error) {
+	list, err := dynamicClient.Resource(poisonPillTemplateGVR).List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+	for _, t := range list.Items {
+		if t.GetName() == "poison-pill-default-template" {
+			return t.GetNamespace(), err
+		}
+	}
+
+	return "", fmt.Errorf("failed to find the default poison-pill template")
 }
 
 //makeNodeUnready puts a node in an unready condition by disrupting the network

@@ -23,13 +23,27 @@ larger clusters, we want to protect against failures that appear to take out
 large portions of compute capacity but are really the result of failures on or
 near the control plane.
 
-For this reason, the healthcheck CR includes the ability to define a percentage
-or total number of nodes that can be considered candidates for concurrent
-remediation.
+For this reason, the [healthcheck CR](#nodehealthcheck-custom-resource) includes
+the ability to define a percentage or total number of nodes that can be
+considered candidates for concurrent remediation.
+
+When the controller starts it will create a default [healthcheck CR](#nodehealthcheck-custom-resource),
+if there is no healthcheck CR at all in the cluster already(supporting upgrades
+with existing configurations). The default CR works with [poison-pill], that
+should be installed automatically if you deployed using the [operator hub].
+The CR uses all defaults except a selector to select only worker nodes.
+
+## Installation
+
+Install the Node Healthcheck operator using [operator hub]. The installation
+will also install the [poison-pill] operator as a default remediator.
+
+For development environments you can run `make deploy deploy-poison-pill`.
+See the [Makefile](./Makefile) for more variables.
 
 ## NodeHealthCheck Custom Resource
 
-Here is an example defintion of the resourcee
+Here is an example definition of the resource
 
 ```yaml
 apiVersion: remediation.medik8s.io/v1alpha1
@@ -149,3 +163,6 @@ spec: {}
 Each provider must label it's rules with `rbac.ext-remediation/aggregate-to-ext-remediation: true` so the controller
 will aggreate its rules and will have the proper permission to create/delete external remediation objects
   each 
+
+[operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
+[poison-pill]: https://github.com/medik8s/poison-pill
