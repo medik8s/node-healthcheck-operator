@@ -175,7 +175,7 @@ test-e2e:
 .PHONY: deploy-poison-pill
 PPIL_DIR = $(shell pwd)/testdata/.remediators/poison-pill
 PPIL_GIT_REF ?= v0.0.6
-PPIL_IMG ?= quay.io/medik8s/poison-pill-operator:0.0.6-10-g20adc0b
+PPIL_IMG ?= quay.io/medik8s/poison-pill-operator:0.0.6-19-gfadf1dd
 deploy-poison-pill:
 	mkdir -p ${PPIL_DIR}
 	test -f ${PPIL_DIR}/Makefile || curl -L https://github.com/medik8s/poison-pill/tarball/${PPIL_GIT_REF} | tar -C ${PPIL_DIR} -xzv --strip=1
