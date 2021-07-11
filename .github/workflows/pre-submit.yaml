@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
 
     - name: Set up Go
       uses: actions/setup-go@v2
@@ -23,6 +25,9 @@ jobs:
 
     - name: Test
       run: make test
+
+    - name: Test container build
+      run: make docker-build
 
     - name: TestMutations
       run: make test-mutation-ci
