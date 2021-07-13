@@ -13,20 +13,23 @@ metadata:
           "spec": {
             "maxUnhealthy": "49%",
             "remediationTemplate": {
-              "apiVersion": "medik8s.io/v1alpha1",
-              "kind": "ProviderXRemedyTemplate",
+              "apiVersion": "poison-pill.medik8s.io/v1alpha1",
+              "kind": "PoisonPillRemediationTemplate",
               "name": "group-x",
               "namespace": "default"
             },
             "selector": {
-              "matchLabels": {
-                "kubernetes.io/os": "linux"
-              }
+              "matchExpressions": [
+                {
+                  "key": "node-role.kubernetes.io/worker",
+                  "operator": "Exists"
+                }
+              ]
             },
             "unhealthyConditions": [
               {
                 "duration": "300s",
-                "status": false,
+                "status": "False",
                 "type": "Ready"
               },
               {
@@ -40,7 +43,7 @@ metadata:
       ]
     capabilities: Basic Install
     categories: OpenShift Optional
-    containerImage: quay.io/medik8s/node-healthcheck-operator:0.0.1
+    containerImage: quay.io/medik8s/node-healthcheck-operator:0.0.2
     createdAt: "2021-04-20 12:00:00"
     description: An operator to monitor node healthcheck and remdiate via 3rd party
       providers like poison-pill.

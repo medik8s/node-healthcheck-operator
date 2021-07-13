@@ -5,8 +5,11 @@ metadata:
 spec:
 #  optional
   selector:
-    matchLabels:
-      kubernetes.io/os: linux
+    matchExpressions:
+      - key: node-role.kubernetes.io/worker
+        operator: Exists
+#    matchLabels:
+#      kubernetes.io/os: linux
 #    optionally use more fine grained matching
 #    matchExpressions:
 #      - key: another-node-label-key
@@ -17,13 +20,13 @@ spec:
   maxUnhealthy: "49%"
   unhealthyConditions:
     - type: Ready
-      status: False
+      status: "False"
       duration: 300s
     - type: Ready
       status: Unknown
       duration: 300s
   remediationTemplate:
-    kind: ProviderXRemedyTemplate
-    apiVersion: medik8s.io/v1alpha1
+    kind: PoisonPillRemediationTemplate
+    apiVersion: poison-pill.medik8s.io/v1alpha1
     name: group-x
     namespace: default
