@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     categories: OpenShift Optional
-    containerImage: quay.io/medik8s/node-healthcheck-operator:0.0.1
+    containerImage: quay.io/medik8s/node-healthcheck-operator:0.0.2
     createdAt: "2021-04-20 12:00:00"
     description: An operator to monitor node healthcheck and remdiate via 3rd party
       providers like poison-pill.
