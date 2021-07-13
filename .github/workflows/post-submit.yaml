@@ -30,4 +30,4 @@ jobs:
         run: make docker-build bundle-build
 
       - name: Push to Quay.io
-        run: make docker-push bundle-push
+        run: make docker-push docker-push-latest

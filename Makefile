@@ -181,3 +181,9 @@ deploy-poison-pill:
 	test -f ${PPIL_DIR}/Makefile || curl -L https://github.com/medik8s/poison-pill/tarball/${PPIL_GIT_REF} | tar -C ${PPIL_DIR} -xzv --strip=1
 	$(MAKE) -C ${PPIL_DIR} deploy IMG=${PPIL_IMG}
 
+docker-push-latest: IMG_ORIG:=$(IMG)
+docker-push-latest: VERSION=$(shell git describe --abbrev=0 | sed 's/v//')-latest
+docker-push-latest:
+	podman tag $(IMG_ORIG) $(IMG)
+	$(MAKE) docker-push IMG=$(IMG)
+
