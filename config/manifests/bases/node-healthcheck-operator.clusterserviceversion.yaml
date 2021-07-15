@@ -99,6 +99,6 @@ spec:
     name: Nir Yehia
   maturity: alpha
   provider:
-    name: medik8s.io
+    name: medik8s
     url: https://github.com/medik8s
   version: 0.0.0
