@@ -8,5 +8,5 @@ roleRef:
   name: manager-role-aggregator
 subjects:
 - kind: ServiceAccount
-  name: default
+  name: controller-manager
   namespace: system

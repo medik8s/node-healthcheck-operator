@@ -1,7 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: proxy-role
+  creationTimestamp: null
+  name: node-healthcheck-operator-proxy-role
 rules:
 - apiGroups:
   - authentication.k8s.io

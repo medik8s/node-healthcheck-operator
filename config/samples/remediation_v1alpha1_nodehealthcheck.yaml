@@ -2,6 +2,7 @@ apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
   name: nodehealthcheck-sample
+  namespace: system
 spec:
 #  optional
   selector:
@@ -29,4 +30,4 @@ spec:
     kind: PoisonPillRemediationTemplate
     apiVersion: poison-pill.medik8s.io/v1alpha1
     name: group-x
-    namespace: default
+    namespace: system
