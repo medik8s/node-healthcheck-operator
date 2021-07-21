@@ -93,10 +93,8 @@ spec:
   - name: Node Healthcheck Operator
     url: https://node-healthcheck-operator.domain
   maintainers:
-  - email: rgolan@redhat.com
-    name: Roy Golan
-  - email: nyehia@redhat.com
-    name: Nir Yehia
+  - email: medik8s@googlegroups.com
+    name: medik8s team
   maturity: alpha
   provider:
     name: medik8s
