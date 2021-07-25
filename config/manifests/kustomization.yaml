@@ -1,4 +1,5 @@
 resources:
+- bases/node-healthcheck-operator.clusterserviceversion.yaml
 - ../default
 - ../samples
 - ../scorecard
