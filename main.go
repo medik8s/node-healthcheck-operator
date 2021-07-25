@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"k8s.io/client-go/dynamic"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -83,16 +82,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.NodeHealthCheckReconciler{
-		Client: mgr.GetClient(),
-		// the dynamic client is here only because the fake client from client-go
-		// couldn't List correctly unstructuredList. The fake dynamic client works.
-		// See https://github.com/kubernetes-sigs/controller-runtime/issues/702
-		DynamicClient: dynamic.NewForConfigOrDie(mgr.GetConfig()),
-		Log:           ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
-		Scheme:        mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
+	if err = controllers.NewNodeHealthcheckController(mgr); err != nil {
+		setupLog.Error(err, "controller", "NodeHealthcheckController")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

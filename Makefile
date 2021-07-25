@@ -57,7 +57,7 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: generate fmt vet manifests
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./controllers -coverprofile cover.out
+	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./controllers -coverprofile cover.out -v -ginkgo.v
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
@@ -85,7 +85,7 @@ uninstall: manifests kustomize
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build $${KUSTOMIZE_OVERLAY-config/default} | $(KUBECTL) apply -f -
 
 # UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
 undeploy:
@@ -167,19 +167,21 @@ PHONY: test-e2e
 test-e2e:
 	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeocnfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
 	#TODO not sure needed @if [ -z ${PPIL_IMG} ]; then echo "[WARN] PPIL_IMG is not set"; fi
-	$(MAKE) deploy
+	$(MAKE) deploy KUSTOMIZE_OVERLAY=config/overlays/e2e
 	$(MAKE) deploy-poison-pill
-	go test ./e2e -coverprofile cover.out
+	go test ./e2e -coverprofile cover.out -v -timeout 15m
 
 # Deploy poison-pill to a running cluster
 .PHONY: deploy-poison-pill
 PPIL_DIR = $(shell pwd)/testdata/.remediators/poison-pill
-PPIL_GIT_REF ?= v0.0.6
-PPIL_IMG ?= quay.io/medik8s/poison-pill-operator:0.0.6
+PPIL_GIT_REF ?= ab2fe35
+PPILL_VERSION ?= 0.1.2-11-gab2fe35
 deploy-poison-pill:
 	mkdir -p ${PPIL_DIR}
 	test -f ${PPIL_DIR}/Makefile || curl -L https://github.com/medik8s/poison-pill/tarball/${PPIL_GIT_REF} | tar -C ${PPIL_DIR} -xzv --strip=1
-	$(MAKE) -C ${PPIL_DIR} deploy IMG=${PPIL_IMG}
+	# must override IMG because openshift CI overrides IMG as well.
+	# must override VERSION because this makefile has VERSION and ppill uses the env variable for substition in the deploy
+	$(MAKE) -C ${PPIL_DIR} deploy IMG=quay.io/medik8s/poison-pill-operator:$(PPILL_VERSION) VERSION=$(PPILL_VERSION)
 
 docker-push-latest: IMG_ORIG:=$(IMG)
 docker-push-latest: VERSION=$(shell git describe --abbrev=0 | sed 's/v//')-latest
