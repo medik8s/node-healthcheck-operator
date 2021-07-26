@@ -145,7 +145,7 @@ metadata:
   ownerReferences:
     - kind: NodeHealthCheck
       apiVersion: remediation.medik8s.io/v1alpha1
-      name: nodehealthcheck-sample
+      name: nhc-worker-default
 spec: {}
 
 ```
