@@ -41,42 +41,40 @@ will also install the [poison-pill] operator as a default remediator.
 For development environments you can run `make deploy deploy-poison-pill`.
 See the [Makefile](./Makefile) for more variables.
 
+On start the controller creates a default resource name `nhc-worker-default`,
+that remediates using Poison Pill, and will check for worker-only heath issues.
+See [NodeHealthCheck Custom Resource](#nodehealthcheck-custom-resource) for the default properties.
+If there is an existing resource the controller will not create a default one.
+
 ## NodeHealthCheck Custom Resource
 
-Here is an example definition of the resource
+Here is the default NHC resource the operator creates on start:
 
 ```yaml
 apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
-  name: nodehealthcheck-sample
+  name: nhc-worker-default
 spec:
-# mandatory
+  # mandatory
   remediationTemplate:
     kind: PoisonPillRemediationTemplate
     apiVersion: medik8s.io/v1alpha1
-    name: group-x
-    namespace: default
-#  # optional
-#  selector:
-#    matchLabels:
-#      kubernetes.io/os: linux
-#    optionally use more fine grained matching
-#    matchExpressions:
-#      - key: another-node-label-key
-#        operator: In
-#        values:
-#          - another-node-label-value
-#
-#  maxUnhealthy: "49%"
-#  unhealthyConditions:
-#    - type: Ready
-#      status: False
-#      duration: 300s
-#    - type: Ready
-#      status: Unknown
-#      duration: 300s
-
+    name: poison-pill-default-template
+    namespace: poison-pill
+  # see k8s doc on selectors https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#resources-that-support-set-based-requirements
+  selector:
+    matchExpressions:
+      - key: node-role.kubernetes.io/worker
+        operator: Exists
+  maxUnhealthy: "49%"
+  unhealthyConditions:
+    - type: Ready
+      status: "False"
+      duration: 300s
+    - type: Ready
+      status: Unknown
+      duration: 300s
 ```
 
 | Field | Mandatory | Default Value | Description |
