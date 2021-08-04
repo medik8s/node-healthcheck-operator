@@ -86,14 +86,15 @@ spec:
 
 ## NodeHealthCheck life-cycle
 
-- when a node is unhealthy
+When a node is unhealthy:
   - sum up how many other nodes are unhealthy.
   - if the number of unhealthy nodes < maxUnhealthy the controllers creates the external remediation object
   - the external remediation object has an OwnerReference on the NodeHeathCheck object
-- controller updates the NodeHealthCheck.Status
-- when a node turn healthy
-  - node-healthcheck-controller deletes the external remediation object
-  - controller updates the NodeHealthCheck.Status 
+  - controller updates the NodeHealthCheck.Status
+
+When a node turns healthy:
+  - the controller deletes the external remediation object
+  - the controller updates the NodeHealthCheck.Status 
 
 
 ### External Remediation Resources
@@ -159,8 +160,7 @@ spec: {}
 ### RBAC rules aggregation
 
 Each provider must label it's rules with `rbac.ext-remediation/aggregate-to-ext-remediation: true` so the controller
-will aggreate its rules and will have the proper permission to create/delete external remediation objects
-  each 
+will aggreate its rules and will have the proper permission to create/delete external remediation objects.
 
 [operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
 [poison-pill]: https://github.com/medik8s/poison-pill
