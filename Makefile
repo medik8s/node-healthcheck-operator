@@ -50,6 +50,26 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
+### LD FLAGS begin
+# this section was copied over and slightly mutated
+# from https://github.com/openshift/build-machinery-go/blob/b1828cc0cdade9cd18e91c3410ef11d796c73293/make/lib/golang.mk
+# OS_GIT_VERSION is populated by ART
+# If building out of the ART pipeline, fallback to SOURCE_GIT_TAG
+ifndef OS_GIT_VERSION
+	OS_GIT_VERSION = $(VERSION)
+endif
+GO_PACKAGE ?=$(shell go list -m -f '{{ .Path }}' || echo 'no_package_detected')
+SOURCE_GIT_COMMIT ?=$(shell git rev-parse --short "HEAD^{commit}" 2>/dev/null)
+SOURCE_GIT_TREE_STATE ?=$(shell ( ( [ ! -d ".git/" ] || git diff --quiet ) && echo 'clean' ) || echo 'dirty')
+define version-ldflags
+-X $(1).versionFromGit="$(OS_GIT_VERSION)" \
+-X $(1).commitFromGit="$(SOURCE_GIT_COMMIT)" \
+-X $(1).gitTreeState="$(SOURCE_GIT_TREE_STATE)" \
+-X $(1).buildDate="$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')"
+endef
+GO_LD_FLAGS ?=-ldflags "$(call version-ldflags,$(GO_PACKAGE)/pkg/version) $(GO_LD_EXTRAFLAGS)"
+### LD FLAGS end
+
 all: manager
 
 # Run tests
@@ -68,7 +88,7 @@ test-mutation-ci: fetch-mutation ## Run mutation tests as part of auto build pro
 
 # Build manager binary
 manager: generate fmt vet
-	go build -o bin/manager main.go
+	go build $(GO_LD_FLAGS) -o bin/manager main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet manifests
