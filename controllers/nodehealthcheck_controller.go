@@ -56,6 +56,7 @@ type NodeHealthCheckReconciler struct {
 	DynamicClient dynamic.Interface
 	Log           logr.Logger
 	Scheme        *runtime.Scheme
+	template      *unstructured.Unstructured
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -74,7 +75,7 @@ type NodeHealthCheckReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("NodeHealthCheck", req.NamespacedName)
-
+	r.template = nil
 	// fetch nhc
 	nhc := remediationv1alpha1.NodeHealthCheck{}
 	err := r.Get(ctx, req.NamespacedName, &nhc)
@@ -316,6 +317,10 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 }
 
 func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
+	if r.template != nil {
+		return r.template, nil
+	}
+
 	t := nhc.Spec.RemediationTemplate.DeepCopy()
 	obj := new(unstructured.Unstructured)
 	obj.SetAPIVersion(t.APIVersion)
@@ -325,6 +330,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve %s external remdiation template %q/%q", obj.GetKind(), key.Namespace, key.Name)
 	}
+	r.template = obj
 	return obj, nil
 }
 
