@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/medik8s/node-healthcheck-operator/pkg/version"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -68,6 +69,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	setupLog.Info(version.String())
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
@@ -83,7 +86,7 @@ func main() {
 	}
 
 	if err = controllers.NewNodeHealthcheckController(mgr); err != nil {
-		setupLog.Error(err, "controller", "NodeHealthcheckController")
+		setupLog.Error(err, "controller failed to start")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
