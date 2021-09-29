@@ -32,14 +32,19 @@ const DefaultPoisonPillTemplateName = "poison-pill-default-template"
 // that works with poison-pill template by the name in #DefaultPoisonPillTemplateName
 // on the same namespace this controller is deployed.
 func NewNodeHealthcheckController(mgr manager.Manager) error {
+	upgradeChecker, err := newClusterUpgradeStatusChecker(mgr)
+	if err != nil {
+		return errors.Wrap(err, "unable to determine a cluster upgrade status upgradeChecker")
+	}
 	if err := (&NodeHealthCheckReconciler{
 		Client: mgr.GetClient(),
 		// the dynamic client is here only because the fake client from client-go
 		// couldn't List correctly unstructuredList. The fake dynamic client works.
 		// See https://github.com/kubernetes-sigs/controller-runtime/issues/702
-		DynamicClient: dynamic.NewForConfigOrDie(mgr.GetConfig()),
-		Log:           ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
-		Scheme:        mgr.GetScheme(),
+		DynamicClient:               dynamic.NewForConfigOrDie(mgr.GetConfig()),
+		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
+		Scheme:                      mgr.GetScheme(),
+		clusterUpgradeStatusChecker: upgradeChecker,
 	}).SetupWithManager(mgr); err != nil {
 		return errors.Wrap(err, "unable to create controller")
 	}

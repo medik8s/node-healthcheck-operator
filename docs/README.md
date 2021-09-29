@@ -33,6 +33,16 @@ with existing configurations). The default CR works with [poison-pill], that
 should be installed automatically if you deployed using the [operator hub].
 The CR uses all defaults except a selector to select only worker nodes.
 
+## Cluster Upgrade awareness
+
+Cluster upgrade usually draw workers reboot, mainly to apply OS updates, and this
+disruption can cause other nodes to overload to compensate for the lost compute capacity,
+and may even start to appear unhealthy. Making remediation decisions at this moment may
+interfere with the course of the upgrade and may even fail it completely.
+For that NHC will stop remediating new unhealthy nodes in case in detects that a cluster is upgrading.
+At the moment only OpenShift is supported since [ClusterVersionOperator](https://github.com/openshift/cluster-version-operator)
+is automatically managing the cluster upgrade state.
+
 ## Installation
 
 Install the Node Healthcheck operator using [operator hub]. The installation
