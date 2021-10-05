@@ -121,6 +121,11 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(v1.ObjectReference)
 		**out = **in
 	}
+	if in.PauseRequests != nil {
+		in, out := &in.PauseRequests, &out.PauseRequests
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Backoff != nil {
 		in, out := &in.Backoff, &out.Backoff
 		*out = new(Backoff)
