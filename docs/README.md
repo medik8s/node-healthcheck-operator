@@ -84,7 +84,7 @@ spec:
     matchExpressions:
       - key: node-role.kubernetes.io/worker
         operator: Exists
-  maxUnhealthy: "49%"
+  minHealthy: "51%"
   unhealthyConditions:
     - type: Ready
       status: "False"
@@ -98,7 +98,7 @@ spec:
 | --- | --- | --- | --- |
 | _remediationTemplate_ | yes | n/a | A reference to a remediation template provided by an infrastructure provider. If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider.|
 | _selector_ | no | empty selector that selects all nodes | a nodes selector of type [metav1.LabelSelector](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#LabelSelector) | 
-| _maxUnhealthy_ | no | 49% | Any further remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy.| 
+| _minHealthy_ | no | 51% | Any further remediation is allowed if "MinHealthy" nodes selected by "selector" are healthy.|
 | _pauseRequests_ | no | n/a | prevents any new remdiation from starting, while in-flight remediations keep running. Each entry is free form, and ideally represents the requested party reason for this pausing e.g "imaginary-cluster-upgrade-manager-operator" |
 | _unhealthyConditions_ | no | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.|
 
@@ -106,7 +106,7 @@ spec:
 
 When a node is unhealthy:
   - sum up how many other nodes are unhealthy.
-  - if the number of unhealthy nodes < maxUnhealthy the controllers creates the external remediation object
+  - if the number of healthy nodes > minHealthy the controllers creates the external remediation object
   - the external remediation object has an OwnerReference on the NodeHeathCheck object
   - controller updates the NodeHealthCheck.Status
 

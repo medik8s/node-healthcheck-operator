@@ -111,8 +111,8 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = make([]UnhealthyCondition, len(*in))
 		copy(*out, *in)
 	}
-	if in.MaxUnhealthy != nil {
-		in, out := &in.MaxUnhealthy, &out.MaxUnhealthy
+	if in.MinHealthy != nil {
+		in, out := &in.MinHealthy, &out.MinHealthy
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}

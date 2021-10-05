@@ -25,13 +25,13 @@ spec:
         name: nodehealthchecks
         version: v1alpha1
       specDescriptors:
-      - description: Any farther remediation is only allowed if at most "MaxUnhealthy"
-          nodes selected by "selector" are not healthy. Expects either a positive
+      - description: Any further remediation is allowed if "MinHealthy"
+          nodes selected by "selector" are healthy. Expects either a positive
           integer value or a percentage value. Percentage values must be positive
           whole numbers and are capped at 100%. Both 0 and 0% are valid and will block
           all remediation.
-        displayName: Max Unhealthy
-        path: maxUnhealthy
+        displayName: Min Healthy
+        path: minHealthy
       - description: "RemediationTemplate is a reference to a remediation template
           provided by an infrastructure provider. \n If a node needs remediation the
           controller will create an object from this template and then it should be

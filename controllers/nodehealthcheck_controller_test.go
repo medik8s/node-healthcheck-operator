@@ -71,8 +71,8 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Spec.UnhealthyConditions[1].Duration).To(Equal(metav1.Duration{Duration: time.Minute * 5}))
 			})
 
-			It("sets max unhealthy to 49%", func() {
-				Expect(underTest.Spec.MaxUnhealthy.StrVal).To(Equal(intstr.FromString("49%").StrVal))
+			It("sets min healthy to 51%", func() {
+				Expect(underTest.Spec.MinHealthy.StrVal).To(Equal(intstr.FromString("51%").StrVal))
 			})
 
 			It("sets an empty selector to select all nodes", func() {
@@ -130,10 +130,10 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})
-		When("specifying max unhealthy", func() {
+		When("specifying min healthy", func() {
 			It("fails creation on percentage > 100%", func() {
 				invalidPercentage := intstr.FromString("150%")
-				underTest.Spec.MaxUnhealthy = &invalidPercentage
+				underTest.Spec.MinHealthy = &invalidPercentage
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(errors.IsInvalid(err)).To(BeTrue())
 			})
@@ -144,7 +144,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("succeeds creation on percentage between 0%-100%", func() {
 				validPercentage := intstr.FromString("30%")
-				underTest.Spec.MaxUnhealthy = &validPercentage
+				underTest.Spec.MinHealthy = &validPercentage
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(errors.IsInvalid(err)).To(BeFalse())
 			})
@@ -183,7 +183,7 @@ var _ = Describe("Node Health Check CR", func() {
 				underTest)
 		})
 
-		When("few nodes are unhealthy and below max unhealthy", func() {
+		When("few nodes are unhealthy and healthy nodes meet min healthy", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
 			})
@@ -225,7 +225,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 
-		When("few nodes are unhealthy and above max unhealthy", func() {
+		When("few nodes are unhealthy and healthy nodes above min healthy", func() {
 			BeforeEach(func() {
 				setupObjects(4, 3)
 			})
@@ -468,7 +468,7 @@ func newRemediationTemplate() runtime.Object {
 }
 
 func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
-	unhealthy := intstr.FromString("49%")
+	unhealthy := intstr.FromString("51%")
 	return &v1alpha1.NodeHealthCheck{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "NodeHealthCheck",
@@ -478,8 +478,8 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			Name: "test",
 		},
 		Spec: v1alpha1.NodeHealthCheckSpec{
-			Selector:     metav1.LabelSelector{},
-			MaxUnhealthy: &unhealthy,
+			Selector:   metav1.LabelSelector{},
+			MinHealthy: &unhealthy,
 			UnhealthyConditions: []v1alpha1.UnhealthyCondition{
 				{
 					Type:     v1.NodeReady,

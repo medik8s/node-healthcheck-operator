@@ -12,7 +12,7 @@ metadata:
             "namespace": "node-healthcheck-operator-system"
           },
           "spec": {
-            "maxUnhealthy": "49%",
+            "minHealthy": "51%",
             "remediationTemplate": {
               "apiVersion": "poison-pill.medik8s.io/v1alpha1",
               "kind": "PoisonPillRemediationTemplate",
@@ -66,13 +66,13 @@ spec:
         name: nodehealthchecks
         version: v1alpha1
       specDescriptors:
-      - description: Any farther remediation is only allowed if at most "MaxUnhealthy"
-          nodes selected by "selector" are not healthy. Expects either a positive
+      - description: Any further remediation is allowed if "MinHealthy"
+          nodes selected by "selector" are healthy. Expects either a positive
           integer value or a percentage value. Percentage values must be positive
           whole numbers and are capped at 100%. Both 0 and 0% are valid and will block
           all remediation.
-        displayName: Max Unhealthy
-        path: maxUnhealthy
+        displayName: Min Healthy
+        path: minHealthy
       - description: 'PauseRequests will prevent any new remdiation to start, while
           in-flight remediations keep running. Each entry is free form, and ideally
           represents the requested party reason for this pausing.

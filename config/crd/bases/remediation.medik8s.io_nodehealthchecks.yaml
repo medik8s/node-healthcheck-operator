@@ -48,12 +48,12 @@ spec:
                 - duration
                 - type
                 type: object
-              maxUnhealthy:
+              minHealthy:
                 anyOf:
                 - type: integer
                 - type: string
-                default: 49%
-                description: Any farther remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy. Expects either a positive integer value or a percentage value. Percentage values must be positive whole numbers and are capped at 100%. Both 0 and 0% are valid and will block all remediation.
+                default: 51%
+                description: Remediation is allowed if at least "MinHealthy" nodes selected by "selector" are healthy. Expects either a positive integer value or a percentage value. Percentage values must be positive whole numbers and are capped at 100%. 100% is valid and will block all remediation.
                 pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
                 type: string
                 x-kubernetes-int-or-string: true

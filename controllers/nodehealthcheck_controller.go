@@ -99,14 +99,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	maxUnhealthy, err := r.getMaxUnhealthy(nhc, len(nodes))
+	minHealthy, err := r.getMinHealthy(nhc, len(nodes))
 	if err != nil {
-		log.Error(err, "failed to calculate max unhealthy allowed nodes",
-			"maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
+		log.Error(err, "failed to calculate min healthy allowed nodes",
+			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
 	}
 
-	if r.shouldTryRemediation(nhc, unhealthyNodes, maxUnhealthy, &result) {
+	if r.shouldTryRemediation(nhc, nodes, unhealthyNodes, minHealthy, &result) {
 		for _, n := range unhealthyNodes {
 			nextReconcile, err := r.remediate(ctx, n, nhc)
 			if err != nil {
@@ -131,12 +131,15 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return result, nil
 }
 
-func (r *NodeHealthCheckReconciler) shouldTryRemediation(nhc remediationv1alpha1.NodeHealthCheck, unhealthyNodes []v1.Node, maxUnhealthy int, result *ctrl.Result) bool {
+func (r *NodeHealthCheckReconciler) shouldTryRemediation(
+	nhc remediationv1alpha1.NodeHealthCheck, nodes []v1.Node, unhealthyNodes []v1.Node, minHealthy int, result *ctrl.Result) bool {
 	if len(unhealthyNodes) == 0 {
 		return false
 	}
 
-	if len(unhealthyNodes) <= maxUnhealthy {
+	healthyNodes := len(nodes) - len(unhealthyNodes)
+	if healthyNodes >= minHealthy {
+		// trigger remediation per node
 		if len(nhc.Spec.PauseRequests) > 0 {
 			// some actors want to pause remediation.
 			r.Log.Info("remediation is paused because there are pause requests", "pauseRequestsCount", len(nhc.Spec.PauseRequests))
@@ -148,8 +151,8 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(nhc remediationv1alpha1
 		}
 		return true
 	}
-	r.Log.Info("Unhealthy nodes count reached the maximum allowed - skipping remediation.",
-		"unhealthyNodes", len(unhealthyNodes), "maxUnhealthy", maxUnhealthy)
+	r.Log.Info("Skipping remediation - not enough healthy nodes in the list of nodes selected by the selector",
+		"healthyNodes", healthyNodes, "minHealthy", minHealthy)
 	return false
 }
 
@@ -220,11 +223,11 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 	return nil
 }
 
-func (r *NodeHealthCheckReconciler) getMaxUnhealthy(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int) (int, error) {
-	if nhc.Spec.MaxUnhealthy.Type == 0 {
-		return nhc.Spec.MaxUnhealthy.IntValue(), nil
+func (r *NodeHealthCheckReconciler) getMinHealthy(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int) (int, error) {
+	if nhc.Spec.MinHealthy.Type == 0 {
+		return nhc.Spec.MinHealthy.IntValue(), nil
 	}
-	return intstr.GetValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, observedNodes, false)
+	return intstr.GetValueFromIntOrPercent(nhc.Spec.MinHealthy, observedNodes, true)
 }
 
 func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
