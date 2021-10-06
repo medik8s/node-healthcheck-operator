@@ -83,7 +83,7 @@ func main() {
 	}
 
 	if err = controllers.NewNodeHealthcheckController(mgr); err != nil {
-		setupLog.Error(err, "controller", "NodeHealthcheckController")
+		setupLog.Error(err, "controller NodeHealthcheckController")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
