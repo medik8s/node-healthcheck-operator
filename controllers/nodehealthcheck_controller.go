@@ -105,7 +105,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	if len(unhealthyNodes) <= maxUnhealthy {
+	if r.shouldTryRemediation(nhc, unhealthyNodes, maxUnhealthy) {
 		// trigger remediation per node
 		for _, n := range unhealthyNodes {
 			nextReconcile, err := r.remediate(ctx, n, nhc)
@@ -116,9 +116,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				updateResultNextReconcile(&result, *nextReconcile)
 			}
 		}
-	} else {
-		log.Info("Unhealthy nodes count reached the maximum allowed - skipping remediation.",
-			"unhealthyNodes", len(unhealthyNodes), "maxUnhealthy", maxUnhealthy)
 	}
 
 	inFlightRemediations, err := r.getInflightRemediations(nhc)
@@ -132,6 +129,23 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	return result, nil
+}
+
+func (r *NodeHealthCheckReconciler) shouldTryRemediation(nhc remediationv1alpha1.NodeHealthCheck, unhealthyNodes []v1.Node, maxUnhealthy int) bool {
+	if len(unhealthyNodes) == 0 {
+		return false
+	}
+	if len(unhealthyNodes) <= maxUnhealthy {
+		if len(nhc.Spec.PauseRequests) > 0 {
+			// some actors want to pause remediation.
+			r.Log.Info("remediation is paused because there are pause requests", "pauseRequestsCount", len(nhc.Spec.PauseRequests))
+			return false
+		}
+		return true
+	}
+	r.Log.Info("Unhealthy nodes count reached the maximum allowed - skipping remediation.",
+		"unhealthyNodes", len(unhealthyNodes), "maxUnhealthy", maxUnhealthy)
+	return false
 }
 
 func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelector metav1.LabelSelector) ([]v1.Node, error) {

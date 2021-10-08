@@ -57,6 +57,11 @@ spec:
                 pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
                 type: string
                 x-kubernetes-int-or-string: true
+              pauseRequests:
+                description: 'PauseRequests will prevent any new remdiation to start, while in-flight remediations keep running. Each entry is free form, and ideally represents the requested party reason for this pausing - i.e:     "imaginary-cluster-upgrade-manager-operator"'
+                items:
+                  type: string
+                type: array
               remediationTemplate:
                 description: "RemediationTemplate is a reference to a remediation template provided by an infrastructure provider. \n If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider."
                 properties:

@@ -160,6 +160,13 @@ var _ = Describe("Node Health Check CR", func() {
 			getNHCError    error
 		)
 
+		var setupObjects = func(unhealthy int, healthy int) {
+			objects = newNodes(unhealthy, healthy)
+			underTest = newNodeHealthCheck()
+			remediationTemplate := newRemediationTemplate()
+			objects = append(objects, underTest, remediationTemplate)
+		}
+
 		JustBeforeEach(func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
 			dynamicClient := newDynamicClient()
@@ -175,10 +182,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("few nodes are unhealthy and below max unhealthy", func() {
 			BeforeEach(func() {
-				objects = newNodes(1, 2)
-				underTest = newNodeHealthCheck()
-				remediationTemplate := newRemediationTemplate()
-				objects = append(objects, underTest, remediationTemplate)
+				setupObjects(1, 2)
 			})
 
 			It("create a remediation CR for each unhealthy node", func() {
@@ -220,10 +224,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("few nodes are unhealthy and above max unhealthy", func() {
 			BeforeEach(func() {
-				objects = newNodes(4, 3)
-				underTest = newNodeHealthCheck()
-				remediationTemplate := newRemediationTemplate()
-				objects = append(objects, underTest, remediationTemplate)
+				setupObjects(4, 3)
 			})
 
 			It("skips remediation - CR is not created", func() {
@@ -249,11 +250,9 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("few nodes become healthy", func() {
 			BeforeEach(func() {
-				objects = newNodes(1, 2)
-				underTest = newNodeHealthCheck()
-				remediationTemplate := newRemediationTemplate()
+				setupObjects(1, 2)
 				remediationCR := newRemediationCR("healthy-node-2")
-				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
+				objects = append(objects, remediationCR.DeepCopyObject())
 			})
 
 			It("deletes an existing remediation CR", func() {
@@ -284,12 +283,10 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("an old remediation cr exist", func() {
 			BeforeEach(func() {
-				objects = newNodes(1, 2)
-				underTest = newNodeHealthCheck()
-				remediationTemplate := newRemediationTemplate()
+				setupObjects(1, 2)
 				remediationCR := newRemediationCR("unhealthy-node-1")
 				remediationCR.SetCreationTimestamp(metav1.Time{Time: time.Now().Add(-remediationCRAlertTimeout - 2*time.Minute)})
-				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
+				objects = append(objects, remediationCR.DeepCopyObject())
 			})
 
 			It("an alert flag is set on remediation cr", func() {
@@ -303,9 +300,31 @@ var _ = Describe("Node Health Check CR", func() {
 				err := reconciler.Client.Get(context.Background(), key, actualRemediationCR)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(actualRemediationCR.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
+			})
+		})
 
+		When("remediation is needed but pauseRequests exists", func() {
+			BeforeEach(func() {
+				setupObjects(1, 2)
+				underTest.Spec.PauseRequests = []string{"I'm an admin, asking you to stop remediating this group of nodes"}
 			})
 
+			It("should reconcile successfully", func() {
+				Expect(reconcileError).ShouldNot(HaveOccurred())
+			})
+
+			It("skips remediation - CR is not created", func() {
+				o := newRemediationCR("unhealthy-node-1")
+				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
+					Name: o.GetName()}, &o)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("updates the NHC status", func() {
+				Expect(getNHCError).NotTo(HaveOccurred())
+				Expect(underTest.Status.HealthyNodes).To(Equal(2))
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+			})
 		})
 	})
 
@@ -318,7 +337,6 @@ var _ = Describe("Node Health Check CR", func() {
 		)
 
 		JustBeforeEach(func() {
-			objects = append(objects)
 			client = fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
 		})
 

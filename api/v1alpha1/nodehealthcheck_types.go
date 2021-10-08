@@ -58,6 +58,14 @@ type NodeHealthCheckSpec struct {
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
 
+	// PauseRequests will prevent any new remdiation to start, while in-flight remediations
+	// keep running. Each entry is free form, and ideally represents the requested party reason
+	// for this pausing - i.e:
+	//     "imaginary-cluster-upgrade-manager-operator"
+	// +optional
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	PauseRequests []string `json:"pauseRequests,omitempty"`
+
 	// TODO document this
 	// +optional
 	Backoff *Backoff `json:"backoff,omitempty"`
