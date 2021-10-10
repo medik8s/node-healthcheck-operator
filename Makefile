@@ -52,6 +52,11 @@ endif
 
 all: manager
 
+# CI uses a non-writable home dir, make sure .cache is writable
+ifeq ("${HOME}", "/")
+HOME=/tmp
+endif
+
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: generate fmt vet manifests
