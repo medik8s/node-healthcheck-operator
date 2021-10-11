@@ -53,9 +53,10 @@ const (
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
 type NodeHealthCheckReconciler struct {
 	client.Client
-	DynamicClient dynamic.Interface
-	Log           logr.Logger
-	Scheme        *runtime.Scheme
+	DynamicClient               dynamic.Interface
+	Log                         logr.Logger
+	Scheme                      *runtime.Scheme
+	clusterUpgradeStatusChecker clusterUpgradeChecker
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -105,8 +106,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	if r.shouldTryRemediation(nhc, unhealthyNodes, maxUnhealthy) {
-		// trigger remediation per node
+	if r.shouldTryRemediation(nhc, unhealthyNodes, maxUnhealthy, &result) {
 		for _, n := range unhealthyNodes {
 			nextReconcile, err := r.remediate(ctx, n, nhc)
 			if err != nil {
@@ -131,20 +131,41 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return result, nil
 }
 
-func (r *NodeHealthCheckReconciler) shouldTryRemediation(nhc remediationv1alpha1.NodeHealthCheck, unhealthyNodes []v1.Node, maxUnhealthy int) bool {
+func (r *NodeHealthCheckReconciler) shouldTryRemediation(nhc remediationv1alpha1.NodeHealthCheck, unhealthyNodes []v1.Node, maxUnhealthy int, result *ctrl.Result) bool {
 	if len(unhealthyNodes) == 0 {
 		return false
 	}
+
 	if len(unhealthyNodes) <= maxUnhealthy {
 		if len(nhc.Spec.PauseRequests) > 0 {
 			// some actors want to pause remediation.
 			r.Log.Info("remediation is paused because there are pause requests", "pauseRequestsCount", len(nhc.Spec.PauseRequests))
 			return false
 		}
+		if r.isClusterUpgrading() {
+			updateResultNextReconcile(result, 1*time.Minute)
+			return false
+		}
 		return true
 	}
 	r.Log.Info("Unhealthy nodes count reached the maximum allowed - skipping remediation.",
 		"unhealthyNodes", len(unhealthyNodes), "maxUnhealthy", maxUnhealthy)
+	return false
+}
+
+func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
+	r.Log.Info("checking if the cluster is upgrading")
+	clusterUpgrading, err := r.clusterUpgradeStatusChecker.check()
+	if err != nil {
+		// log the error but don't return - if we can't reliably tell if
+		// the cluster is upgrading then just continue with remediation.
+		// TODO finer error handling may help to decide otherwise here.
+		r.Log.Info("failed to check if the cluster is upgrading. Proceed with remediation as if it is not upgrading")
+	}
+	if clusterUpgrading {
+		r.Log.Info("skip remediation - the cluster is currently upgrading.")
+		return true
+	}
 	return false
 }
 

@@ -52,6 +52,11 @@ endif
 
 all: manager
 
+# CI uses a non-writable home dir, make sure .cache is writable
+ifeq ("${HOME}", "/")
+HOME=/tmp
+endif
+
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: generate fmt vet manifests
@@ -174,8 +179,8 @@ test-e2e:
 # Deploy poison-pill to a running cluster
 .PHONY: deploy-poison-pill
 PPIL_DIR = $(shell pwd)/testdata/.remediators/poison-pill
-PPIL_GIT_REF ?= ab2fe35
-PPILL_VERSION ?= 0.1.2-11-gab2fe35
+PPIL_GIT_REF ?= v0.1.4
+PPILL_VERSION ?= 0.1.4
 deploy-poison-pill:
 	mkdir -p ${PPIL_DIR}
 	test -f ${PPIL_DIR}/Makefile || curl -L https://github.com/medik8s/poison-pill/tarball/${PPIL_GIT_REF} | tar -C ${PPIL_DIR} -xzv --strip=1
