@@ -43,6 +43,13 @@ For that NHC will stop remediating new unhealthy nodes in case in detects that a
 At the moment only OpenShift is supported since [ClusterVersionOperator](https://github.com/openshift/cluster-version-operator)
 is automatically managing the cluster upgrade state.
 
+If running on k8s, where this feature isn't supported yet, you can pause
+any new remediation using the resource `_pauseRequests_` spec field.
+
+`oc patch nhc/nhc-worker-default --patch '{"spec":{"pauseRequests":["pause for cluster upgrade by @admin"]}}' --type=merge`
+
+See the [healthcheck CR](#nodehealthcheck-custom-resource) for more details.
+
 ## Installation
 
 Install the Node Healthcheck operator using [operator hub]. The installation
@@ -92,6 +99,7 @@ spec:
 | _remediationTemplate_ | yes | n/a | A reference to a remediation template provided by an infrastructure provider. If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider.|
 | _selector_ | no | empty selector that selects all nodes | a nodes selector of type [metav1.LabelSelector](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#LabelSelector) | 
 | _maxUnhealthy_ | no | 49% | Any further remediation is only allowed if at most "MaxUnhealthy" nodes selected by "selector" are not healthy.| 
+| _pauseRequests_ | no | n/a | prevents any new remdiation from starting, while in-flight remediations keep running. Each entry is free form, and ideally represents the requested party reason for this pausing e.g "imaginary-cluster-upgrade-manager-operator" |
 | _unhealthyConditions_ | no | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.|
 
 ## NodeHealthCheck life-cycle

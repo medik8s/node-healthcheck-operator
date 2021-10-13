@@ -73,6 +73,12 @@ spec:
           all remediation.
         displayName: Max Unhealthy
         path: maxUnhealthy
+      - description: 'PauseRequests will prevent any new remdiation to start, while
+          in-flight remediations keep running. Each entry is free form, and ideally
+          represents the requested party reason for this pausing.
+          e.g "imaginary-cluster-upgrade-manager-operator"'
+        displayName: Pause Requests
+        path: pauseRequests
       - description: "RemediationTemplate is a reference to a remediation template
           provided by an infrastructure provider. \n If a node needs remediation the
           controller will create an object from this template and then it should be
