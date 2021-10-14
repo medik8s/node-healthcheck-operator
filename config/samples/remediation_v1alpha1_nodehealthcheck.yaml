@@ -18,7 +18,7 @@ spec:
 #        values:
 #          - another-node-label-value
 
-  maxUnhealthy: "49%"
+  minHealthy: "51%"
   unhealthyConditions:
     - type: Ready
       status: "False"
