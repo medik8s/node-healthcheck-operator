@@ -63,7 +63,7 @@ type NodeHealthCheckReconciler struct {
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get
+// +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -164,7 +164,7 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 		// log the error but don't return - if we can't reliably tell if
 		// the cluster is upgrading then just continue with remediation.
 		// TODO finer error handling may help to decide otherwise here.
-		r.Log.Info("failed to check if the cluster is upgrading. Proceed with remediation as if it is not upgrading")
+		r.Log.Error(err, "failed to check if the cluster is upgrading. Proceed with remediation as if it is not upgrading")
 	}
 	if clusterUpgrading {
 		r.Log.Info("skip remediation - the cluster is currently upgrading.")
