@@ -66,17 +66,15 @@ spec:
         name: nodehealthchecks
         version: v1alpha1
       specDescriptors:
-      - description: Any further remediation is allowed if "MinHealthy"
-          nodes selected by "selector" are healthy. Expects either a positive
-          integer value or a percentage value. Percentage values must be positive
-          whole numbers and are capped at 100%. Both 0 and 0% are valid and will block
-          all remediation.
+      - description: Remediation is allowed if at least "MinHealthy" nodes selected
+          by "selector" are healthy. Expects either a positive integer value or a
+          percentage value. Percentage values must be positive whole numbers and are
+          capped at 100%. 100% is valid and will block all remediation.
         displayName: Min Healthy
         path: minHealthy
       - description: 'PauseRequests will prevent any new remdiation to start, while
           in-flight remediations keep running. Each entry is free form, and ideally
-          represents the requested party reason for this pausing.
-          e.g "imaginary-cluster-upgrade-manager-operator"'
+          represents the requested party reason for this pausing - i.e:     "imaginary-cluster-upgrade-manager-operator"'
         displayName: Pause Requests
         path: pauseRequests
       - description: "RemediationTemplate is a reference to a remediation template
@@ -122,6 +120,13 @@ spec:
     spec:
       clusterPermissions:
       - rules:
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - clusterversions
+          verbs:
+          - get
+          - list
         - apiGroups:
           - ""
           resources:
