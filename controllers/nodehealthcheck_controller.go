@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/client-go/tools/record"
+
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
@@ -48,6 +50,11 @@ const (
 	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
 	templateSuffix                = "Template"
 	remediationCRAlertTimeout     = time.Hour * 48
+	eventReasonRemediationCreated = "RemediationCreated"
+	eventReasonRemediationSkipped = "RemediationSkipped"
+	eventReasonRemediationRemoved = "RemediationRemoved"
+	eventTypeNormal               = "Normal"
+	eventTypeWarning              = "Warning"
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
@@ -56,6 +63,7 @@ type NodeHealthCheckReconciler struct {
 	DynamicClient               dynamic.Interface
 	Log                         logr.Logger
 	Scheme                      *runtime.Scheme
+	recorder                    record.EventRecorder
 	clusterUpgradeStatusChecker clusterUpgradeChecker
 }
 
@@ -140,20 +148,24 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 
 	healthyNodes := len(nodes) - len(unhealthyNodes)
 	if healthyNodes >= minHealthy {
-		// trigger remediation per node
 		if len(nhc.Spec.PauseRequests) > 0 {
 			// some actors want to pause remediation.
-			r.Log.Info("remediation is paused because there are pause requests", "pauseRequestsCount", len(nhc.Spec.PauseRequests))
+			msg := "Skipping remediation because there are pause requests"
+			r.Log.Info(msg)
+			r.recorder.Event(&nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 			return false
 		}
 		if r.isClusterUpgrading() {
 			updateResultNextReconcile(result, 1*time.Minute)
+			r.recorder.Event(&nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
 			return false
 		}
 		return true
 	}
-	r.Log.Info("Skipping remediation - not enough healthy nodes in the list of nodes selected by the selector",
+	msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", healthyNodes, minHealthy)
+	r.Log.Info(msg,
 		"healthyNodes", healthyNodes, "minHealthy", minHealthy)
+	r.recorder.Event(&nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 	return false
 }
 
@@ -167,7 +179,7 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 		r.Log.Error(err, "failed to check if the cluster is upgrading. Proceed with remediation as if it is not upgrading")
 	}
 	if clusterUpgrading {
-		r.Log.Info("skip remediation - the cluster is currently upgrading.")
+		r.Log.Info("Skipping remediation because the cluster is currently upgrading.")
 		return true
 	}
 	return false
@@ -220,6 +232,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 	if err == nil {
 		// deleted an actual object
 		r.Log.Info("deleted node external remediation object", "Node name", n.Name)
+		r.recorder.Eventf(&nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
 	}
 	return nil
 }
@@ -312,6 +325,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n v1.Node, nh
 		}
 		return nextReconcile, nil
 	}
+	r.recorder.Event(&nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
 	return nil, nil
 }
 

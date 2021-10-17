@@ -79,6 +79,9 @@ manager: generate fmt vet
 run: generate fmt vet manifests
 	go run ./main.go -leader-elect=false
 
+debug: manager
+	dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec bin/manager -- -leader-elect=false
+
 # Install CRDs into a cluster
 install: manifests kustomize
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -

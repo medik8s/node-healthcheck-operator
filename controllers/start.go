@@ -44,6 +44,7 @@ func NewNodeHealthcheckController(mgr manager.Manager) error {
 		DynamicClient:               dynamic.NewForConfigOrDie(mgr.GetConfig()),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
 		Scheme:                      mgr.GetScheme(),
+		recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		clusterUpgradeStatusChecker: upgradeChecker,
 	}).SetupWithManager(mgr); err != nil {
 		return errors.Wrap(err, "unable to create controller")

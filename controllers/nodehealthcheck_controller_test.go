@@ -21,6 +21,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -173,7 +174,13 @@ var _ = Describe("Node Health Check CR", func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
 			dynamicClient := newDynamicClient()
 			reconciler = NodeHealthCheckReconciler{
-				Client: client, DynamicClient: dynamicClient, Log: controllerruntime.Log, Scheme: scheme.Scheme, clusterUpgradeStatusChecker: &upgradeChecker}
+				Client: client,
+				DynamicClient: dynamicClient,
+				Log: controllerruntime.Log,
+				Scheme: scheme.Scheme,
+				clusterUpgradeStatusChecker: &upgradeChecker,
+				recorder: record.NewFakeRecorder(3),
+			}
 			reconcileResult, reconcileError = reconciler.Reconcile(
 				context.Background(),
 				controllerruntime.Request{NamespacedName: types.NamespacedName{Name: underTest.Name}})
