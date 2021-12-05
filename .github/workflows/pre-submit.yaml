@@ -2,10 +2,12 @@ name: Pre Submit
 on:
   push:
     branches:
-      - master
+      - main
+      - release-*
   pull_request:
     branches:
-      - master
+      - main
+      - release-*
 jobs:
   build:
     runs-on: ubuntu-20.04
