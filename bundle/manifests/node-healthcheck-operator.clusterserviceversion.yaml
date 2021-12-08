@@ -48,6 +48,7 @@ metadata:
     createdAt: "2021-04-20 12:00:00"
     description: An operator to monitor node healthcheck and remdiate via 3rd party
       providers like poison-pill.
+    operators.openshift.io/infrastructure-features: '["disconnected"]'
     operators.operatorframework.io/builder: operator-sdk-v1.14.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/medik8s/node-healthcheck-operator
