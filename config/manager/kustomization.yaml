@@ -14,4 +14,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/medik8s/node-healthcheck-operator
-  newTag: 0.1.0-3-g024903e
+  newTag: latest
