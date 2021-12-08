@@ -9,6 +9,7 @@ metadata:
     createdAt: "2021-04-20 12:00:00"
     description: An operator to monitor node healthcheck and remdiate via 3rd party
       providers like poison-pill.
+    operators.openshift.io/infrastructure-features: '["disconnected"]'
     repository: https://github.com/medik8s/node-healthcheck-operator
   name: node-healthcheck-operator.v0.0.0
   namespace: placeholder
