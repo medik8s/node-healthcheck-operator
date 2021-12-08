@@ -29,10 +29,10 @@ jobs:
           registry: quay.io
 
       - name: Build and push CSV 0.0.1 + latest images, for pushes
-        if: ${{ $GITHUB_REF_TYPE != 'tag' }}
+        if: ${{ github.ref_type != 'tag' }}
         run: make docker-build bundle bundle-build docker-push bundle-push
 
       - name: Build and push versioned CSV and images, for tags
-        if: ${{ $GITHUB_REF_TYPE == 'tag' }}
+        if: ${{ github.ref_type == 'tag' }}
         # remove leading 'v' from tag!
         run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make docker-build bundle bundle-build docker-push bundle-push
