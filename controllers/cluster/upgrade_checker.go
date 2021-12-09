@@ -1,12 +1,15 @@
-package controllers
+package cluster
 
 import (
 	"context"
 	"errors"
+
 	"github.com/go-logr/logr"
+	gerrors "github.com/pkg/errors"
+
 	v1 "github.com/openshift/api/config/v1"
 	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
-	gerrors "github.com/pkg/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -19,12 +22,12 @@ var unsupportedUpgradeCheckerErr = errors.New(
 	"the cluster doesn't have any upgrade state representation." +
 		" Currently only OpenShift/OKD is supported")
 
-// clusterUpgradeChecker checks if the cluster is currently under upgrade.
+// UpgradeChecker checks if the cluster is currently under upgrade.
 // error should be thrown if it can't reliably determine if it's under upgrade or not.
-type clusterUpgradeChecker interface {
-	// check if the cluster is currently under upgrade.
+type UpgradeChecker interface {
+	// Check if the cluster is currently under upgrade.
 	// error should be thrown if it can't reliably determine if it's under upgrade or not.
-	check() (bool, error)
+	Check() (bool, error)
 }
 
 type openshiftClusterUpgradeStatusChecker struct {
@@ -33,7 +36,10 @@ type openshiftClusterUpgradeStatusChecker struct {
 	logger                logr.Logger
 }
 
-func (o openshiftClusterUpgradeStatusChecker) check() (bool, error) {
+// force implementation of interface
+var _ UpgradeChecker = openshiftClusterUpgradeStatusChecker{}
+
+func (o openshiftClusterUpgradeStatusChecker) Check() (bool, error) {
 	cvs, err := o.clusterVersionsClient.List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return false, gerrors.Wrap(err, "failed to check for Openshift cluster upgrade status")
@@ -52,13 +58,16 @@ func (o openshiftClusterUpgradeStatusChecker) check() (bool, error) {
 type noopClusterUpgradeStatusChecker struct {
 }
 
-func (n noopClusterUpgradeStatusChecker) check() (bool, error) {
+// force implementation of interface
+var _ UpgradeChecker = noopClusterUpgradeStatusChecker{}
+
+func (n noopClusterUpgradeStatusChecker) Check() (bool, error) {
 	return false, nil
 }
 
-// newClusterUpgradeStatusChecker will return some implementation of a checker or err in case it can't
+// NewClusterUpgradeStatusChecker will return some implementation of a checker or err in case it can't
 // reliably detect which implementation to use.
-func newClusterUpgradeStatusChecker(mgr manager.Manager) (clusterUpgradeChecker, error) {
+func NewClusterUpgradeStatusChecker(mgr manager.Manager) (UpgradeChecker, error) {
 	openshift, err := isOnOpenshift(mgr.GetConfig(), mgr.GetLogger())
 	if err != nil || !openshift {
 		if errors.Is(err, unsupportedUpgradeCheckerErr) {
