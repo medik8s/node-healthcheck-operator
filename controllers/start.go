@@ -9,6 +9,7 @@ import (
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/defaults"
+	"github.com/medik8s/node-healthcheck-operator/controllers/rbac"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
@@ -41,6 +42,10 @@ func NewNodeHealthcheckController(mgr manager.Manager) error {
 	ns, err := utils.GetDeploymentNamespace()
 	if err != nil {
 		return errors.Wrap(err, "unable to get the deployment namespace")
+	}
+
+	if err = rbac.NewAggregation(mgr, ns).CreateOrUpdateAggregation(); err != nil {
+		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
 	}
 
 	if err = defaults.CreateDefaultNHC(mgr, ns); err != nil {
