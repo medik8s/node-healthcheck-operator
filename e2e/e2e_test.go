@@ -17,7 +17,8 @@ import (
 const (
 	blockingPodName               = "api-blocker-pod"
 	safeToAssumeNodeRebootTimeout = 180 * time.Second
-	testNamespace                 = "node-healthcheck-operator-system"
+	// keep this aligned with CI config!
+	testNamespace = "default"
 )
 
 var _ = Describe("e2e", func() {

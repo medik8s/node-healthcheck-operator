@@ -237,10 +237,7 @@ index-push: ## Push a catalog image.
 # Run end to end tests
 PHONY: test-e2e
 test-e2e:
-	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeocnfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
-	#TODO not sure needed @if [ -z ${PPIL_IMG} ]; then echo "[WARN] PPIL_IMG is not set"; fi
-	$(MAKE) deploy KUSTOMIZE_OVERLAY=config/overlays/e2e
-	$(MAKE) deploy-poison-pill
+	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
 	go test ./e2e -coverprofile cover.out -v -timeout 15m
 
 # Deploy poison-pill to a running cluster
