@@ -19,8 +19,8 @@ const (
 	deploymentName      = "node-healthcheck-operator-controller-manager"
 )
 
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=*,resourceNames=node-healthcheck-operator-aggregation
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=*,resourceNames=node-healthcheck-operator-aggregation
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=*
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=*
 
 // Aggregation defines the functions needed for setting up RBAC aggregation
 type Aggregation interface {
