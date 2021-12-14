@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -24,12 +25,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 )
 
 var _ = Describe("Node Health Check CR", func() {
@@ -174,12 +176,12 @@ var _ = Describe("Node Health Check CR", func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
 			dynamicClient := newDynamicClient()
 			reconciler = NodeHealthCheckReconciler{
-				Client: client,
-				DynamicClient: dynamicClient,
-				Log: controllerruntime.Log,
-				Scheme: scheme.Scheme,
+				Client:                      client,
+				DynamicClient:               dynamicClient,
+				Log:                         controllerruntime.Log,
+				Scheme:                      scheme.Scheme,
 				clusterUpgradeStatusChecker: &upgradeChecker,
-				recorder: record.NewFakeRecorder(3),
+				recorder:                    record.NewFakeRecorder(3),
 			}
 			reconcileResult, reconcileError = reconciler.Reconcile(
 				context.Background(),
@@ -605,6 +607,9 @@ type fakeClusterUpgradeChecker struct {
 	err       error
 }
 
-func (c *fakeClusterUpgradeChecker) check() (bool, error) {
+// force implementation of interface
+var _ cluster.UpgradeChecker = fakeClusterUpgradeChecker{}
+
+func (c fakeClusterUpgradeChecker) Check() (bool, error) {
 	return c.upgrading, c.err
 }

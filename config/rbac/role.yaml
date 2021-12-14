@@ -22,6 +22,22 @@ rules:
   - list
   - watch
 - apiGroups:
+  - rbac.authorization.k8s.io
+  resourceNames:
+  - node-healthcheck-operator-aggregation
+  resources:
+  - clusterrolebindings
+  verbs:
+  - '*'
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resourceNames:
+  - node-healthcheck-operator-aggregation
+  resources:
+  - clusterroles
+  verbs:
+  - '*'
+- apiGroups:
   - remediation.medik8s.io
   resources:
   - nodehealthchecks

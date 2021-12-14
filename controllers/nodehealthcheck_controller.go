@@ -22,10 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/client-go/tools/record"
-
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
+
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -64,7 +65,7 @@ type NodeHealthCheckReconciler struct {
 	Log                         logr.Logger
 	Scheme                      *runtime.Scheme
 	recorder                    record.EventRecorder
-	clusterUpgradeStatusChecker clusterUpgradeChecker
+	clusterUpgradeStatusChecker cluster.UpgradeChecker
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -171,7 +172,7 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 
 func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 	r.Log.Info("checking if the cluster is upgrading")
-	clusterUpgrading, err := r.clusterUpgradeStatusChecker.check()
+	clusterUpgrading, err := r.clusterUpgradeStatusChecker.Check()
 	if err != nil {
 		// log the error but don't return - if we can't reliably tell if
 		// the cluster is upgrading then just continue with remediation.

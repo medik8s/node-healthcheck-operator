@@ -4,6 +4,8 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
+  labels:
+    app: node-healthcheck-operator
   name: nodehealthchecks.remediation.medik8s.io
 spec:
   group: remediation.medik8s.io

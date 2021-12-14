@@ -9,8 +9,8 @@ namespace: node-healthcheck-operator-system
 namePrefix: node-healthcheck-operator-
 
 # Labels to add to all resources and selectors.
-#commonLabels:
-#  someName: someValue
+commonLabels:
+  app: node-healthcheck-operator
 
 bases:
 - ../crd
@@ -30,7 +30,6 @@ patchesStrategicMerge:
 # endpoint w/o any authn/z, please comment the following line.
 - manager_auth_proxy_patch.yaml
 - manager_role_patch.yaml
-- manager_aggregator_role_patch.yaml
 
 # Mount the controller config file for loading manager configurations
 # through a ComponentConfig type

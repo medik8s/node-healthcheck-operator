@@ -3,6 +3,7 @@ kind: Service
 metadata:
   creationTimestamp: null
   labels:
+    app: node-healthcheck-operator
     control-plane: controller-manager
   name: node-healthcheck-operator-controller-manager-metrics-service
 spec:
@@ -11,6 +12,7 @@ spec:
     port: 8443
     targetPort: https
   selector:
+    app: node-healthcheck-operator
     control-plane: controller-manager
 status:
   loadBalancer: {}
