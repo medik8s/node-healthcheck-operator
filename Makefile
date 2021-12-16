@@ -84,7 +84,8 @@ endif
 
 # Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-test: test-no-verify manifests bundle verify
+test: test-no-verify
+	VERSION=0.0.1 $(MAKE) manifests bundle verify
 
 # Generate and format code, and run tests
 test-no-verify: fmt vet generate
