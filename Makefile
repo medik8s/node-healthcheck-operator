@@ -82,9 +82,13 @@ ifeq ("${HOME}", "/")
 HOME=/tmp
 endif
 
-# Run tests
+# Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-test: generate fmt vet manifests
+test: test-no-verify
+	VERSION=0.0.1 $(MAKE) manifests bundle verify
+
+# Generate and format code, and run tests
+test-no-verify: fmt vet generate
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./controllers/... -coverprofile cover.out -v -ginkgo.v
@@ -128,15 +132,15 @@ undeploy:
 manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
-# Run go fmt against code
-fmt:
-	go fmt ./...
+# Run go fmt against code (skip vendor)
+fmt: goimports
+	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e
 
 # Run go vet against code
 vet:
 	go vet ./...
 
-verify-no-changes: ## verify no there are no un-staged changes
+verify: ## verify there are no un-committed changes
 	./hack/verify-diff.sh
 
 fetch-mutation: ## fetch mutation package.
@@ -146,8 +150,8 @@ fetch-mutation: ## fetch mutation package.
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-# Build the docker image
-docker-build: test
+# Build the docker image; skip linters and verification to not break CI
+docker-build: test-no-verify
 	podman build -t ${IMG} .
 
 # Push the docker image
@@ -189,6 +193,10 @@ ifeq (,$(wildcard $(OPM)))
 	chmod +x $(OPM) ;\
 	}
 endif
+
+GOIMPORTS = $(shell pwd)/bin/goimports
+goimports: ## Download goimports locally if necessary.
+	$(call go-get-tool,$(GOIMPORTS),golang.org/x/tools/cmd/goimports@v0.1.6)
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
