@@ -12,9 +12,9 @@ VERSION ?= $(DEFAULT_VERSION)
 export VERSION
 
 # use candidate channel
-CHANNELS = candidate
+CHANNELS = alpha
 export CHANNELS
-DEFAULT_CHANNEL = candidate
+DEFAULT_CHANNEL = alpha
 export DEFAULT_CHANNEL
 
 # CHANNELS define the bundle channels used in the bundle. 
