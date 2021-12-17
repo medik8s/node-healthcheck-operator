@@ -2,6 +2,12 @@
 FROM quay.io/centos/centos:stream8 AS builder
 RUN yum install golang -y
 
+# Ensure go 1.16
+RUN go install golang.org/dl/go1.16@latest
+RUN ~/go/bin/go1.16 download
+RUN /bin/cp -f ~/go/bin/go1.16 /usr/bin/go
+RUN go version
+
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod

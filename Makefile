@@ -6,7 +6,16 @@ SHELL := /bin/bash
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= $(shell git describe --match="v*"| sed 's/v//')
+DEFAULT_VERSION := 0.0.1
+# Let CI set VERSION based on git tags. But heads up, VERSION should not have the 'v' prefix!
+VERSION ?= $(DEFAULT_VERSION)
+export VERSION
+
+# use candidate channel
+CHANNELS = alpha
+export CHANNELS
+DEFAULT_CHANNEL = alpha
+export DEFAULT_CHANNEL
 
 # CHANNELS define the bundle channels used in the bundle. 
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "preview,fast,stable")
@@ -27,12 +36,24 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
+# Override this when building images for dev only!
+IMAGE_REGISTRY ?= quay.io/medik8s
+
+# For the default version, use 'latest' image tags.
+# Otherwise version prefixed with 'v'
+ifeq ($(VERSION), $(DEFAULT_VERSION))
+IMAGE_TAG = latest
+else
+IMAGE_TAG = v$(VERSION)
+endif
+export IMAGE_TAG
+
 # BUNDLE_IMG defines the image:tag used for the bundle. 
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= quay.io/medik8s/node-healthcheck-operator-bundle:$(VERSION)
+BUNDLE_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-bundle:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/medik8s/node-healthcheck-operator:$(VERSION)
+IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator:$(IMAGE_TAG)
 
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
@@ -128,6 +149,7 @@ docker-build: test
 # Push the docker image
 docker-push:
 	podman push ${IMG}
+
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
@@ -137,6 +159,19 @@ controller-gen:
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize:
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+
+.PHONY: operator-sdk
+OPERATOR_SDK = ./bin/operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
+ifeq (,$(wildcard $(OPERATOR_SDK)))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(OPERATOR_SDK)) ;\
+	OS=linux && ARCH=amd64 && \
+	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.15.0/operator-sdk_$${OS}_$${ARCH} ;\
+	chmod +x $(OPERATOR_SDK) ;\
+	}
+endif
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -154,11 +189,11 @@ endef
 
 # Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle
-bundle: manifests kustomize
-	operator-sdk generate --verbose kustomize manifests -q
+bundle: manifests kustomize operator-sdk
+	$(OPERATOR_SDK) generate --verbose kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	operator-sdk bundle validate ./bundle
+	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(OPERATOR_SDK) bundle validate ./bundle
 
 # Build the bundle image.
 .PHONY: bundle-build
@@ -190,10 +225,3 @@ deploy-poison-pill:
 	# must override IMG because openshift CI overrides IMG as well.
 	# must override VERSION because this makefile has VERSION and ppill uses the env variable for substition in the deploy
 	$(MAKE) -C ${PPIL_DIR} deploy IMG=quay.io/medik8s/poison-pill-operator:$(PPILL_VERSION) VERSION=$(PPILL_VERSION)
-
-docker-push-latest: IMG_ORIG:=$(IMG)
-docker-push-latest: VERSION=$(shell git describe --abbrev=0 | sed 's/v//')-latest
-docker-push-latest:
-	podman tag $(IMG_ORIG) $(IMG)
-	$(MAKE) docker-push IMG=$(IMG)
-

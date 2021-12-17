@@ -5,13 +5,10 @@ on:
       - master
     tags:
       - 'v*'
-  release:
-    types:
-      - created
 
 jobs:
   push_to_registry:
-    name: Push a container image to quay.io/medik8s
+    name: Build and push images to quay.io/medik8s
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
@@ -31,8 +28,11 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
           registry: quay.io
 
-      - name: Prepare Container Image
-        run: make docker-build bundle-build
+      - name: Build and push CSV 0.0.1 + latest images, for pushes
+        if: ${{ github.ref_type != 'tag' }}
+        run: make docker-build bundle bundle-build docker-push bundle-push
 
-      - name: Push to Quay.io
-        run: make docker-push docker-push-latest
+      - name: Build and push versioned CSV and images, for tags
+        if: ${{ github.ref_type == 'tag' }}
+        # remove leading 'v' from tag!
+        run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make docker-build bundle bundle-build docker-push bundle-push
