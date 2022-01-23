@@ -9,6 +9,7 @@ import (
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/defaults"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/rbac"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
@@ -22,7 +23,12 @@ func NewNodeHealthcheckController(mgr manager.Manager) error {
 
 	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
 	if err != nil {
-		return errors.Wrap(err, "unable to determine a cluster upgrade status upgradeChecker")
+		return errors.Wrap(err, "unable initialize cluster upgrade checker")
+	}
+
+	mhcChecker, err := mhc.NewMHCChecker(mgr)
+	if err != nil {
+		return errors.Wrap(err, "unable initialize MHC checker")
 	}
 
 	if err := (&NodeHealthCheckReconciler{
@@ -35,6 +41,7 @@ func NewNodeHealthcheckController(mgr manager.Manager) error {
 		Scheme:                      mgr.GetScheme(),
 		recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		clusterUpgradeStatusChecker: upgradeChecker,
+		mhcChecker:                  mhcChecker,
 	}).SetupWithManager(mgr); err != nil {
 		return errors.Wrap(err, "unable to create controller")
 	}

@@ -26,8 +26,11 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
+	"github.com/openshift/api/machine/v1beta1"
+
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,13 +41,17 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -55,6 +62,8 @@ const (
 	eventReasonRemediationCreated = "RemediationCreated"
 	eventReasonRemediationSkipped = "RemediationSkipped"
 	eventReasonRemediationRemoved = "RemediationRemoved"
+	eventReasonDisabled           = "Disabled"
+	eventReasonEnabled            = "Enabled"
 	eventTypeNormal               = "Normal"
 	eventTypeWarning              = "Warning"
 )
@@ -67,13 +76,15 @@ type NodeHealthCheckReconciler struct {
 	Scheme                      *runtime.Scheme
 	recorder                    record.EventRecorder
 	clusterUpgradeStatusChecker cluster.UpgradeChecker
+	mhcChecker                  mhc.Checker
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list
+// +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -98,6 +109,44 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return result, err
 	}
+
+	// check if we need to disable NHC because of existimg MHCs
+	disable, err := r.mhcChecker.NeedDisableNHC()
+	if err != nil {
+		log.Error(err, "failed to check for MHCs")
+		return result, err
+	}
+	if disable {
+		// update status if needed
+		if !meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
+			log.Info("disabling NHC in order to avoid conflict with custom MHCs configured in the cluster")
+			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+				Type:    remediationv1alpha1.ConditionTypeDisabled,
+				Status:  metav1.ConditionTrue,
+				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
+				Message: "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts",
+			})
+			r.recorder.Eventf(&nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
+			err = r.Client.Status().Update(context.Background(), &nhc)
+			if err != nil {
+				log.Error(err, "failed to update NHC status conditions")
+				return result, err
+			}
+		}
+		// stop reconciling
+		return result, nil
+	}
+	if meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
+		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
+		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
+		r.recorder.Eventf(&nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
+		err = r.Client.Status().Update(context.Background(), &nhc)
+		if err != nil {
+			log.Error(err, "failed to update NHC status conditions")
+			return result, err
+		}
+	}
+
 	// select nodes using the nhc.selector
 	nodes, err := r.fetchNodes(ctx, nhc.Spec.Selector)
 	if err != nil {
@@ -211,6 +260,10 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remedi
 				return nil, err
 			}
 		} else {
+			// ignore nodes handled by MHC
+			if r.mhcChecker.NeedIgnoreNode(&n) {
+				continue
+			}
 			unhealthy = append(unhealthy, n)
 		}
 	}
@@ -278,6 +331,13 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
 		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(nhcByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger()))).
+		Watches(&source.Kind{Type: &v1beta1.MachineHealthCheck{}},
+			handler.EnqueueRequestsFromMapFunc(nhcByMachineHealthCheckMapperFunc(mgr.GetClient(), mgr.GetLogger())),
+			builder.WithPredicates(predicate.Funcs{
+				// skip updates
+				UpdateFunc: func(_ event.UpdateEvent) bool { return false },
+			}),
+		).
 		Complete(r)
 }
 
@@ -313,6 +373,27 @@ func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 		return r
 	}
 	return delegate
+}
+
+func nhcByMachineHealthCheckMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+	// return all NHCs
+	// they potentially need to be disabled / re-enables, based on existing MHCs
+	return func(o client.Object) []reconcile.Request {
+		logger.Info("triggering reconcile for MHC", "Name", o.GetName())
+
+		var r []reconcile.Request
+
+		var nhcList remediationv1alpha1.NodeHealthCheckList
+		err := c.List(context.Background(), &nhcList, &client.ListOptions{})
+		if err != nil {
+			return nil
+		}
+		for _, nhc := range nhcList.Items {
+			r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
+		}
+
+		return r
+	}
 }
 
 func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
