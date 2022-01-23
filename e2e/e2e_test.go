@@ -5,18 +5,24 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/openshift/api/machine/v1beta1"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
+	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	blockingPodName               = "api-blocker-pod"
-	safeToAssumeNodeRebootTimeout = 180 * time.Second
+	blockingPodName                = "api-blocker-pod"
+	safeToAssumeremediationStarted = 10 * time.Minute
+	safeToAssumeNodeRebootTimeout  = 180 * time.Second
 	// keep this aligned with CI config!
 	testNamespace = "default"
 )
@@ -27,20 +33,137 @@ var _ = Describe("e2e", func() {
 	BeforeEach(func() {
 		// randomly pick a host (or let the scheduler do it by running the blocking pod)
 		// block the api port to make it go Ready Unknown
-		nodeName, err := makeNodeUnready(time.Minute * 10)
-		Expect(err).NotTo(HaveOccurred())
-		nodeUnderTest, err = clientSet.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
-		Expect(err).NotTo(HaveOccurred())
+		if nodeUnderTest == nil {
+			nodeName, err := makeNodeUnready(time.Minute, time.Minute*10)
+			Expect(err).NotTo(HaveOccurred())
+			nodeUnderTest, err = clientSet.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
 
+			// set terminating node condition now, to prevent remediation start before "with terminating node" test runs
+			Expect(client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
+			conditions := nodeUnderTest.Status.Conditions
+			conditions = append(conditions, v1.NodeCondition{
+				Type:   mhc.NodeConditionTerminating,
+				Status: "True",
+			})
+			nodeUnderTest.Status.Conditions = conditions
+			Expect(client.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
+		}
 	})
 
 	AfterEach(func() {
-		removeAPIBlockingPod()
+		// keep it running for all tests
+		//removeAPIBlockingPod()
 	})
+
+	Context("with custom MHC", func() {
+		var mhc *v1beta1.MachineHealthCheck
+		BeforeEach(func() {
+			mhc = &v1beta1.MachineHealthCheck{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-mhc",
+					Namespace: "default",
+				},
+				Spec: v1beta1.MachineHealthCheckSpec{
+					Selector: metav1.LabelSelector{},
+					UnhealthyConditions: []v1beta1.UnhealthyCondition{
+						{
+							Type:    "Dummy",
+							Status:  "Dummy",
+							Timeout: metav1.Duration{Duration: 1 * time.Minute},
+						},
+					},
+				},
+			}
+			Expect(client.Create(context.Background(), mhc)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(client.Delete(context.Background(), mhc)).To(Succeed())
+		})
+
+		It("should report disabled NHC", func() {
+			Eventually(func() (bool, error) {
+				nhcList := &v1alpha1.NodeHealthCheckList{}
+				Expect(client.List(context.Background(), nhcList)).To(Succeed())
+				if len(nhcList.Items) != 1 {
+					return false, errors.New("less or more than 1 NHC found")
+				}
+				return meta.IsStatusConditionTrue(nhcList.Items[0].Status.Conditions, v1alpha1.ConditionTypeDisabled), nil
+			}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "NHC should be disabled because of custom MHC")
+		})
+	})
+
+	Context("with terminating node", func() {
+		BeforeEach(func() {
+			// ensure node is terminating
+			Eventually(func() (bool, error) {
+				if err := client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
+					return false, err
+				}
+				for _, cond := range nodeUnderTest.Status.Conditions {
+					if cond.Type == mhc.NodeConditionTerminating {
+						return true, nil
+					}
+				}
+				return false, nil
+			}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "node should not be terminating")
+
+			// ensure NHC is not disabled from previous test
+			Eventually(func() (bool, error) {
+				nhcList := &v1alpha1.NodeHealthCheckList{}
+				if err := client.List(context.Background(), nhcList); err != nil {
+					return false, err
+				}
+				if len(nhcList.Items) != 1 {
+					return false, errors.New("less or more than 1 NHC found")
+				}
+				return meta.IsStatusConditionTrue(nhcList.Items[0].Status.Conditions, v1alpha1.ConditionTypeDisabled), nil
+			}, 1*time.Minute, 5*time.Second).Should(BeFalse(), "NHC should be enabled")
+
+		})
+
+		AfterEach(func() {
+			Expect(client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
+			conditions := nodeUnderTest.Status.Conditions
+			for i, cond := range conditions {
+				if cond.Type == mhc.NodeConditionTerminating {
+					conditions = append(conditions[:i], conditions[i+1:]...)
+					break
+				}
+			}
+			nodeUnderTest.Status.Conditions = conditions
+			Expect(client.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
+		})
+
+		It("should not remediate", func() {
+			Consistently(
+				fetchPPRByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 30*time.Second).
+				ShouldNot(Succeed())
+		})
+	})
+
 	When("Node conditions meets the unhealthy criteria", func() {
+
+		BeforeEach(func() {
+			// ensure node is not terminating
+			Eventually(func() (bool, error) {
+				if err := client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
+					return false, err
+				}
+				for _, cond := range nodeUnderTest.Status.Conditions {
+					if cond.Type == mhc.NodeConditionTerminating {
+						return true, nil
+					}
+				}
+				return false, nil
+			}, 1*time.Minute, 5*time.Second).Should(BeFalse(), "node should not be terminating")
+		})
+
 		It("Remediates a host", func() {
 			Eventually(
-				fetchPPRByName(nodeUnderTest.Name), 10*time.Minute, 10*time.Second).
+				fetchPPRByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 10*time.Second).
 				Should(Succeed())
 			Eventually(
 				nodeCreationTime(nodeUnderTest.Name), safeToAssumeNodeRebootTimeout+30*time.Second, 250*time.Millisecond).
@@ -93,7 +216,7 @@ func getPPRTemplateNS() (string, error) {
 
 //makeNodeUnready puts a node in an unready condition by disrupting the network
 // for the duration passed
-func makeNodeUnready(duration time.Duration) (string, error) {
+func makeNodeUnready(delayDuration, sleepDuration time.Duration) (string, error) {
 	// run a privileged pod that blocks the api port
 
 	directory := v1.HostPathDirectory
@@ -107,10 +230,16 @@ func makeNodeUnready(duration time.Duration) (string, error) {
 				RunAsGroup: pointer.Int64Ptr(0),
 			},
 			Containers: []v1.Container{{
-				Env: []v1.EnvVar{{
-					Name:  "SLEEPDURATION",
-					Value: fmt.Sprintf("%v", duration.Seconds()),
-				}},
+				Env: []v1.EnvVar{
+					{
+						Name:  "DELAYDURATION",
+						Value: fmt.Sprintf("%v", delayDuration.Seconds()),
+					},
+					{
+						Name:  "SLEEPDURATION",
+						Value: fmt.Sprintf("%v", sleepDuration.Seconds()),
+					},
+				},
 				Name:  "main",
 				Image: "registry.access.redhat.com/ubi8/ubi-minimal",
 				Command: []string{
@@ -119,6 +248,7 @@ func makeNodeUnready(duration time.Duration) (string, error) {
 					`#!/bin/bash -ex
 microdnf install iptables
 port=$(awk -F[\:] '/server\:/ {print $NF}' /etc/kubernetes/kubeconfig 2>/dev/null || awk -F[\:] '/server\:/ {print $NF}' /etc/kubernetes/kubelet.conf)
+sleep ${DELAYDURATION}
 iptables -A OUTPUT -p tcp --dport ${port} -j REJECT
 sleep ${SLEEPDURATION}
 iptables -D OUTPUT -p tcp --dport ${port} -j REJECT

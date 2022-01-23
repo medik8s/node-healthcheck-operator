@@ -68,12 +68,10 @@ func (c *checker) NeedDisableNHC() (bool, error) {
 
 	if len(mhcList.Items) == 0 {
 		// no MHC found, we are fine
-		//c.logger.Info("no MHC found, running NHC as configured")
 		c.mhcStatus = noMHC
 		return false, nil
 	} else if len(mhcList.Items) > 1 {
 		// multiple MHCs found, disable NHC
-		//c.logger.Info("multiple MHCs found, disabling NHC in order to prevent conflicts")
 		c.mhcStatus = customMHC
 		return true, nil
 	}
@@ -82,13 +80,15 @@ func (c *checker) NeedDisableNHC() (bool, error) {
 	// NHC will ignore those nodes
 	mhc := mhcList.Items[0]
 	if len(mhc.Spec.UnhealthyConditions) == 1 && mhc.Spec.UnhealthyConditions[0].Type == NodeConditionTerminating {
-		c.logger.Info("found termination handler MHC, will ignore Nodes with Terminating condition")
-		c.mhcStatus = terminationMHCOnly
+		// log once only
+		if c.mhcStatus != terminationMHCOnly {
+			c.logger.Info("found termination handler MHC, will ignore Nodes with Terminating condition")
+			c.mhcStatus = terminationMHCOnly
+		}
 		return false, nil
 	}
 
 	// Everything else might cause conflicts
-	c.logger.Info("MHC(s) found, disabling NHC in order to prevent conflicts")
 	c.mhcStatus = customMHC
 	return true, nil
 }
