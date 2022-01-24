@@ -102,7 +102,7 @@ test-mutation-ci: fetch-mutation ## Run mutation tests as part of auto build pro
 
 # Build manager binary
 manager: generate fmt vet
-	go build -o bin/manager main.go
+	./hack/build.sh
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet manifests
