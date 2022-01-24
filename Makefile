@@ -140,7 +140,7 @@ fmt: goimports
 vet:
 	go vet ./...
 
-verify: ## verify there are no un-committed changes
+verify: bundle-date-reset ## verify there are no un-committed changes
 	./hack/verify-diff.sh
 
 fetch-mutation: ## fetch mutation package.
@@ -219,10 +219,27 @@ bundle: manifests kustomize operator-sdk
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OPERATOR_SDK) bundle validate ./bundle
+	$(MAKE) bundle-fixes bundle-date
+
+# Some fixes in the bundle
+.PHONY: bundle-fixes
+bundle-fixes:
+    # update container image
+	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+
+# Set createdAt date in the bundle's CSV. Do not commit changes!
+.PHONY: bundle-date
+bundle-date:
+	sed -r -i "s|createdAt: .*|createdAt: `date '+%Y-%m-%d %T'`|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+
+# Reset createdAt date to empty value
+.PHONY: bundle-date-reset
+bundle-date-reset:
+	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
 
 # Build the bundle image.
 .PHONY: bundle-build
-bundle-build:
+bundle-build: bundle-date
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 # Push the bundle image
