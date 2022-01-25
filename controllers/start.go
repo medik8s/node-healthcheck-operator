@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
 	"k8s.io/client-go/dynamic"
@@ -19,7 +20,7 @@ import (
 // If there is no NHC resource it will create one with the name in #DefaultCRName
 // that works with poison-pill template by the name in #DefaultPoisonPillTemplateName
 // on the same namespace this controller is deployed.
-func NewNodeHealthcheckController(mgr manager.Manager) error {
+func NewNodeHealthcheckController(mgr manager.Manager, log logr.Logger) error {
 
 	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
 	if err != nil {
@@ -55,7 +56,7 @@ func NewNodeHealthcheckController(mgr manager.Manager) error {
 		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
 	}
 
-	if err = defaults.CreateDefaultNHC(mgr, ns); err != nil {
+	if err = defaults.CreateDefaultNHC(mgr, ns, log); err != nil {
 		return errors.Wrap(err, "failed to create a default NHC resource")
 	}
 

@@ -180,7 +180,7 @@ var _ = Describe("Node Health Check CR", func() {
 			reconciler = NodeHealthCheckReconciler{
 				Client:                      client,
 				DynamicClient:               dynamicClient,
-				Log:                         controllerruntime.Log,
+				Log:                         controllerruntime.Log.WithName("NHC Test Reconciler"),
 				Scheme:                      scheme.Scheme,
 				clusterUpgradeStatusChecker: &upgradeChecker,
 				mhcChecker:                  mhcChecker,

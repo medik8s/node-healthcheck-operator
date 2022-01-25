@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +26,7 @@ const DefaultCRName = "nhc-worker-default"
 const DefaultPoisonPillTemplateName = "poison-pill-default-template"
 
 // CreateDefaultNHC creates the default config
-func CreateDefaultNHC(mgr ctrl.Manager, namespace string) error {
+func CreateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logger) error {
 	list := remediationv1alpha1.NodeHealthCheckList{}
 	var err error
 	stop := make(chan struct{})
@@ -46,7 +47,7 @@ func CreateDefaultNHC(mgr ctrl.Manager, namespace string) error {
 	if len(list.Items) > 0 {
 		// if we have already some NHC then this is a restart, an upgrade, or a redeploy
 		// then we preserve whatever we have.
-		ctrl.Log.Info("there are existing NHC resources, skip creating a default one", "numOfNHC", len(list.Items))
+		log.Info("there are existing NHC resources, skip creating a default one", "numOfNHC", len(list.Items))
 		return nil
 	}
 	nhc := remediationv1alpha1.NodeHealthCheck{
@@ -73,6 +74,6 @@ func CreateDefaultNHC(mgr ctrl.Manager, namespace string) error {
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return errors.Wrap(err, "failed to create a default node-healthcheck resource")
 	}
-	ctrl.Log.Info("created a default NHC resource", "name", DefaultCRName)
+	log.Info("created a default NHC resource", "name", DefaultCRName)
 	return nil
 }

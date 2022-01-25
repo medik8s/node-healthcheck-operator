@@ -35,7 +35,7 @@ func NewMHCChecker(mgr manager.Manager) (Checker, error) {
 
 	return &checker{
 		client:    mgr.GetClient(),
-		logger:    mgr.GetLogger(),
+		logger:    mgr.GetLogger().WithName("MHCChecker"),
 		mhcStatus: noMHC,
 	}, nil
 }

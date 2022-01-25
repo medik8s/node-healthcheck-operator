@@ -23,6 +23,8 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap/zapcore"
+
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -65,7 +67,12 @@ var _ = BeforeSuite(func() {
 	if _, isFound := os.LookupEnv(envVarKUBECTL); !isFound {
 		Expect(os.Setenv(envVarKUBECTL, "../testbin/bin/kubectl")).To(Succeed())
 	}
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	opts := zap.Options{
+		Development: true,
+		TimeEncoder: zapcore.RFC3339NanoTimeEncoder,
+	}
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseFlagOptions(&opts)))
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
@@ -85,7 +92,7 @@ var _ = BeforeSuite(func() {
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	os.Setenv("DEPLOYMENT_NAMESPACE", "default")
-	err = NewNodeHealthcheckController(k8sManager)
+	err = NewNodeHealthcheckController(k8sManager, k8sManager.GetLogger().WithName("test setup"))
 	Expect(err).NotTo(HaveOccurred())
 	go func() {
 		err := k8sManager.Start(ctrl.SetupSignalHandler())

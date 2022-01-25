@@ -5,7 +5,9 @@ import (
 	"errors"
 
 	"github.com/go-logr/logr"
+
 	v1 "github.com/openshift/api/config/v1"
+
 	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	gerrors "github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -87,6 +89,6 @@ func newOpenshiftClusterUpgradeChecker(mgr manager.Manager) (*openshiftClusterUp
 	return &openshiftClusterUpgradeStatusChecker{
 		client:                mgr.GetClient(),
 		clusterVersionsClient: configV1Client.ClusterVersions(),
-		logger:                mgr.GetLogger(),
+		logger:                mgr.GetLogger().WithName("OpenshiftClusterUpgradeChecker"),
 	}, nil
 }
