@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -222,6 +223,14 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 		return err
 	}
 
+	// check if CR is deleted already
+	err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	} else if apierrors.IsNotFound(err) || cr.GetDeletionTimestamp() != nil {
+		return nil
+	}
+
 	r.Log.V(5).Info("node seems healthy", "Node name", n.Name)
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
@@ -383,9 +392,19 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 }
 
 func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int, remediations map[string]metav1.Time) error {
+
+	healthyNodes := observedNodes - unhealthyNodes
+
+	// skip when no changes
+	if nhc.Status.ObservedNodes == observedNodes &&
+		nhc.Status.HealthyNodes == healthyNodes &&
+		reflect.DeepEqual(nhc.Status.InFlightRemediations, remediations) {
+		return nil
+	}
+
 	updatedNHC := *nhc.DeepCopy()
 	updatedNHC.Status.ObservedNodes = observedNodes
-	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
+	updatedNHC.Status.HealthyNodes = healthyNodes
 	updatedNHC.Status.InFlightRemediations = remediations
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
