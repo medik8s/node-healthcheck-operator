@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -383,9 +384,19 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 }
 
 func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int, remediations map[string]metav1.Time) error {
+
+	healthyNodes := observedNodes - unhealthyNodes
+
+	// skip when no changes
+	if nhc.Status.ObservedNodes == observedNodes &&
+		nhc.Status.HealthyNodes == healthyNodes &&
+		reflect.DeepEqual(nhc.Status.InFlightRemediations, remediations) {
+		return nil
+	}
+
 	updatedNHC := *nhc.DeepCopy()
 	updatedNHC.Status.ObservedNodes = observedNodes
-	updatedNHC.Status.HealthyNodes = observedNodes - unhealthyNodes
+	updatedNHC.Status.HealthyNodes = healthyNodes
 	updatedNHC.Status.InFlightRemediations = remediations
 	// all values to be patched expected to be updated on the current nhc.status
 	patch := client.MergeFrom(nhc.DeepCopy())
