@@ -223,6 +223,14 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 		return err
 	}
 
+	// check if CR is deleted already
+	err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	} else if apierrors.IsNotFound(err) || cr.GetDeletionTimestamp() != nil {
+		return nil
+	}
+
 	r.Log.V(5).Info("node seems healthy", "Node name", n.Name)
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
