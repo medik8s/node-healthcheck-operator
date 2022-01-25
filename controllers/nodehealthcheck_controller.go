@@ -479,7 +479,7 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 	// skip when no changes
 	if nhc.Status.ObservedNodes == observedNodes &&
 		nhc.Status.HealthyNodes == healthyNodes &&
-		reflect.DeepEqual(nhc.Status.InFlightRemediations, remediations) {
+		((len(nhc.Status.InFlightRemediations) == 0 && len(remediations) == 0) || reflect.DeepEqual(nhc.Status.InFlightRemediations, remediations)) {
 		return nil
 	}
 
