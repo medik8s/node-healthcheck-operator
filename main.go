@@ -23,6 +23,8 @@ import (
 	"runtime"
 	"time"
 
+	"go.uber.org/zap/zapcore"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -33,6 +35,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers"
@@ -51,6 +55,9 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(remediationv1alpha1.AddToScheme(scheme))
+
+	utilruntime.Must(machinev1beta1.Install(scheme))
+
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -63,8 +70,10 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+
 	opts := zap.Options{
 		Development: true,
+		TimeEncoder: zapcore.RFC3339NanoTimeEncoder,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -87,7 +96,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = controllers.NewNodeHealthcheckController(mgr); err != nil {
+	if err = controllers.NewNodeHealthcheckController(mgr, setupLog); err != nil {
 		setupLog.Error(err, "controller NodeHealthcheckController")
 		os.Exit(1)
 	}

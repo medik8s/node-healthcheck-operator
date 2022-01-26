@@ -5,17 +5,16 @@ import (
 	"errors"
 
 	"github.com/go-logr/logr"
-	gerrors "github.com/pkg/errors"
 
 	v1 "github.com/openshift/api/config/v1"
-	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
+	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	gerrors "github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 var unsupportedUpgradeCheckerErr = errors.New(
@@ -68,11 +67,12 @@ func (n noopClusterUpgradeStatusChecker) Check() (bool, error) {
 // NewClusterUpgradeStatusChecker will return some implementation of a checker or err in case it can't
 // reliably detect which implementation to use.
 func NewClusterUpgradeStatusChecker(mgr manager.Manager) (UpgradeChecker, error) {
-	openshift, err := isOnOpenshift(mgr.GetConfig(), mgr.GetLogger())
-	if err != nil || !openshift {
-		if errors.Is(err, unsupportedUpgradeCheckerErr) {
-			return noopClusterUpgradeStatusChecker{}, nil
-		}
+	openshift, err := utils.IsOnOpenshift(mgr.GetConfig())
+	if err != nil {
+		return nil, err
+	}
+	if !openshift {
+		return noopClusterUpgradeStatusChecker{}, nil
 	}
 	checker, err := newOpenshiftClusterUpgradeChecker(mgr)
 	if err != nil {
@@ -89,24 +89,6 @@ func newOpenshiftClusterUpgradeChecker(mgr manager.Manager) (*openshiftClusterUp
 	return &openshiftClusterUpgradeStatusChecker{
 		client:                mgr.GetClient(),
 		clusterVersionsClient: configV1Client.ClusterVersions(),
-		logger:                mgr.GetLogger(),
+		logger:                mgr.GetLogger().WithName("OpenshiftClusterUpgradeChecker"),
 	}, nil
-}
-
-// isOpenshift returns true if the cluster has the openshift config group
-func isOnOpenshift(config *rest.Config, logger logr.Logger) (bool, error) {
-	dc, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return false, err
-	}
-	apiGroups, err := dc.ServerGroups()
-	kind := schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "ClusterVersion"}
-	for _, apiGroup := range apiGroups.Groups {
-		for _, supportedVersion := range apiGroup.Versions {
-			if supportedVersion.GroupVersion == kind.GroupVersion().String() {
-				return true, nil
-			}
-		}
-	}
-	return false, unsupportedUpgradeCheckerErr
 }

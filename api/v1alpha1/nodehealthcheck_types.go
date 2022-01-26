@@ -22,6 +22,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const (
+	// ConditionTypeDisabled is the condition type used when NHC will get disabled
+	ConditionTypeDisabled = "Disabled"
+
+	// ConditionReasonDisabledMHC is the condition reason for type Disabled in case NHC is disabled because
+	// of conflicts with MHC
+	ConditionReasonDisabledMHC = "MachineHealthCheckDetected"
+)
+
 // NodeHealthCheckSpec defines the desired state of NodeHealthCheck
 type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
@@ -104,6 +113,16 @@ type NodeHealthCheckStatus struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:inFlightRemediations"
 	//InFlightRemediations records the timestamp when remediation triggered per node
 	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations,omitempty"`
+
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="conditions",xDescriptors="urn:alm:descriptor:com.tectonic.ui:conditions"
+	// Represents the observations of a NodeHealthCheck's current state.
+	// Known .status.conditions.type are: "Disabled"
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

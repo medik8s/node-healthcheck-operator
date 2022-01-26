@@ -95,6 +95,12 @@ spec:
         displayName: Unhealthy Conditions
         path: unhealthyConditions
       statusDescriptors:
+      - description: 'Represents the observations of a NodeHealthCheck''s current
+          state. Known .status.conditions.type are: "Disabled"'
+        displayName: conditions
+        path: conditions
+        x-descriptors:
+        - urn:alm:descriptor:com.tectonic.ui:conditions
       - description: HealthyNodes specified the number of healthy nodes observed
         displayName: healthynodes
         path: healthyNodes
@@ -129,10 +135,19 @@ spec:
           verbs:
           - get
           - list
+          - watch
         - apiGroups:
           - ""
           resources:
           - nodes
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - machine.openshift.io
+          resources:
+          - machinehealthchecks
           verbs:
           - get
           - list

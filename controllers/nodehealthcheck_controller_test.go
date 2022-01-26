@@ -32,6 +32,7 @@ import (
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 )
 
 var _ = Describe("Node Health Check CR", func() {
@@ -160,6 +161,7 @@ var _ = Describe("Node Health Check CR", func() {
 			objects         []runtime.Object
 			reconciler      NodeHealthCheckReconciler
 			upgradeChecker  fakeClusterUpgradeChecker
+			mhcChecker      mhc.DummyChecker
 			reconcileError  error
 			reconcileResult controllerruntime.Result
 			getNHCError     error
@@ -178,9 +180,10 @@ var _ = Describe("Node Health Check CR", func() {
 			reconciler = NodeHealthCheckReconciler{
 				Client:                      client,
 				DynamicClient:               dynamicClient,
-				Log:                         controllerruntime.Log,
+				Log:                         controllerruntime.Log.WithName("NHC Test Reconciler"),
 				Scheme:                      scheme.Scheme,
 				clusterUpgradeStatusChecker: &upgradeChecker,
+				mhcChecker:                  mhcChecker,
 				recorder:                    record.NewFakeRecorder(3),
 			}
 			reconcileResult, reconcileError = reconciler.Reconcile(
