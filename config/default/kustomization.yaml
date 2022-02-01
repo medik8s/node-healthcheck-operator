@@ -9,8 +9,13 @@ namespace: node-healthcheck-operator-system
 namePrefix: node-healthcheck-operator-
 
 # Labels to add to all resources and selectors.
-commonLabels:
-  app: node-healthcheck-operator
+#
+# *** STOP! ***
+# Adding labels breaks updates, because the label selector in the deployment is immutable,
+# and OLM does not deal with it by creating a new deployment instead.
+#
+# commonLabels:
+#   app: node-healthcheck-operator
 
 bases:
 - ../crd
