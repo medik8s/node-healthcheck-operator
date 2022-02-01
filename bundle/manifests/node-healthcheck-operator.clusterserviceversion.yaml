@@ -209,13 +209,11 @@ spec:
           replicas: 1
           selector:
             matchLabels:
-              app: node-healthcheck-operator
               control-plane: controller-manager
           strategy: {}
           template:
             metadata:
               labels:
-                app: node-healthcheck-operator
                 control-plane: controller-manager
             spec:
               containers:
