@@ -37,7 +37,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -71,7 +70,6 @@ const (
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
 type NodeHealthCheckReconciler struct {
 	client.Client
-	DynamicClient               dynamic.Interface
 	Log                         logr.Logger
 	Scheme                      *runtime.Scheme
 	recorder                    record.EventRecorder
@@ -99,8 +97,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	log := r.Log.WithValues("NodeHealthCheck", req.NamespacedName)
 
 	// fetch nhc
-	nhc := remediationv1alpha1.NodeHealthCheck{}
-	err := r.Get(ctx, req.NamespacedName, &nhc)
+	nhc := &remediationv1alpha1.NodeHealthCheck{}
+	err := r.Get(ctx, req.NamespacedName, nhc)
 	result := ctrl.Result{}
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check", "object", nhc)
@@ -126,8 +124,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
 				Message: "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts",
 			})
-			r.recorder.Eventf(&nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
-			err = r.Client.Status().Update(context.Background(), &nhc)
+			r.recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
+			err = r.Client.Status().Update(context.Background(), nhc)
 			if err != nil {
 				log.Error(err, "failed to update NHC status conditions")
 				return result, err
@@ -139,8 +137,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
 		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
 		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
-		r.recorder.Eventf(&nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
-		err = r.Client.Status().Update(context.Background(), &nhc)
+		r.recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
+		err = r.Client.Status().Update(context.Background(), nhc)
 		if err != nil {
 			log.Error(err, "failed to update NHC status conditions")
 			return result, err
@@ -159,7 +157,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	minHealthy, err := r.getMinHealthy(nhc, len(nodes))
+	minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true)
 	if err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
@@ -167,8 +165,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if r.shouldTryRemediation(nhc, nodes, unhealthyNodes, minHealthy, &result) {
-		for _, n := range unhealthyNodes {
-			nextReconcile, err := r.remediate(ctx, n, nhc)
+		for i := range unhealthyNodes {
+			nextReconcile, err := r.remediate(ctx, &unhealthyNodes[i], nhc)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -192,7 +190,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 func (r *NodeHealthCheckReconciler) shouldTryRemediation(
-	nhc remediationv1alpha1.NodeHealthCheck, nodes []v1.Node, unhealthyNodes []v1.Node, minHealthy int, result *ctrl.Result) bool {
+	nhc *remediationv1alpha1.NodeHealthCheck, nodes []v1.Node, unhealthyNodes []v1.Node, minHealthy int, result *ctrl.Result) bool {
+
 	if len(unhealthyNodes) == 0 {
 		return false
 	}
@@ -203,12 +202,12 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 			// some actors want to pause remediation.
 			msg := "Skipping remediation because there are pause requests"
 			r.Log.Info(msg)
-			r.recorder.Event(&nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+			r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 			return false
 		}
 		if r.isClusterUpgrading() {
 			updateResultNextReconcile(result, 1*time.Minute)
-			r.recorder.Event(&nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
+			r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
 			return false
 		}
 		return true
@@ -216,12 +215,11 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 	msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", healthyNodes, minHealthy)
 	r.Log.Info(msg,
 		"healthyNodes", healthyNodes, "minHealthy", minHealthy)
-	r.recorder.Event(&nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
+	r.recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 	return false
 }
 
 func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
-	r.Log.Info("checking if the cluster is upgrading")
 	clusterUpgrading, err := r.clusterUpgradeStatusChecker.Check()
 	if err != nil {
 		// log the error but don't return - if we can't reliably tell if
@@ -251,9 +249,10 @@ func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelecto
 	return nodes.Items, err
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remediationv1alpha1.NodeHealthCheck) ([]v1.Node, error) {
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) ([]v1.Node, error) {
 	var unhealthy []v1.Node
-	for _, n := range nodes {
+	for i := range nodes {
+		n := &nodes[i]
 		if isHealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
 			err := r.markHealthy(n, nhc)
 			if err != nil {
@@ -261,16 +260,16 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc remedi
 			}
 		} else {
 			// ignore nodes handled by MHC
-			if r.mhcChecker.NeedIgnoreNode(&n) {
+			if r.mhcChecker.NeedIgnoreNode(n) {
 				continue
 			}
-			unhealthy = append(unhealthy, n)
+			unhealthy = append(unhealthy, *n)
 		}
 	}
 	return unhealthy, nil
 }
 
-func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) markHealthy(n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) error {
 	cr, err := r.generateRemediationCR(n, nhc)
 	if err != nil {
 		return err
@@ -295,16 +294,9 @@ func (r *NodeHealthCheckReconciler) markHealthy(n v1.Node, nhc remediationv1alph
 	if err == nil {
 		// deleted an actual object
 		r.Log.Info("deleted node external remediation object", "Node name", n.Name)
-		r.recorder.Eventf(&nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
+		r.recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
 	}
 	return nil
-}
-
-func (r *NodeHealthCheckReconciler) getMinHealthy(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int) (int, error) {
-	if nhc.Spec.MinHealthy.Type == 0 {
-		return nhc.Spec.MinHealthy.IntValue(), nil
-	}
-	return intstr.GetValueFromIntOrPercent(nhc.Spec.MinHealthy, observedNodes, true)
 }
 
 func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
@@ -396,31 +388,39 @@ func nhcByMachineHealthCheckMapperFunc(c client.Client, logger logr.Logger) hand
 	}
 }
 
-func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
+func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
 	cr, err := r.generateRemediationCR(n, nhc)
 	if err != nil {
 		return nil, err
 	}
-	r.Log.Info("node seems unhealthy. Creating an external remediation object",
-		"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
-	resource := crToResource(*cr)
-	if req := r.getExternalRemediationRequest(ctx, cr, nhc, n.Name); req == nil {
-		if _, err = r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).Create(context.Background(), cr, metav1.CreateOptions{}); err != nil {
+
+	// check if CR already exists
+	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
+		if !apierrors.IsNotFound(err) {
+			r.Log.Error(err, "failed to check for existing external remediation object")
+			return nil, err
+		}
+
+		// create CR
+		r.Log.Info("node seems unhealthy. Creating an external remediation object",
+			"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
+		if err = r.Client.Create(ctx, cr); err != nil {
 			r.Log.Error(err, "failed to create an external remediation object")
 			return nil, err
 		}
-	} else {
-		isAlert, nextReconcile := r.alertOldRemediationCR(req)
-		if isAlert {
-			metrics.ObserveNodeHealthCheckOldRemediationCR(n.Name, n.Namespace)
-		}
-		return nextReconcile, nil
+		r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
+		return nil, nil
 	}
-	r.recorder.Event(&nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
-	return nil, nil
+
+	// CR exists
+	isAlert, nextReconcile := r.alertOldRemediationCR(cr)
+	if isAlert {
+		metrics.ObserveNodeHealthCheckOldRemediationCR(n.Name, n.Namespace)
+	}
+	return nextReconcile, nil
 }
 
-func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
+func (r *NodeHealthCheckReconciler) generateRemediationCR(n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
 	t, err := r.fetchTemplate(nhc)
 	if err != nil {
 		return nil, err
@@ -456,10 +456,11 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n v1.Node, nhc remedia
 	u.SetFinalizers(nil)
 	u.SetUID("")
 	u.SetSelfLink("")
+	u.SetCreationTimestamp(metav1.Now())
 	return &u, nil
 }
 
-func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
+func (r *NodeHealthCheckReconciler) fetchTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
 	t := nhc.Spec.RemediationTemplate.DeepCopy()
 	obj := new(unstructured.Unstructured)
 	obj.SetAPIVersion(t.APIVersion)
@@ -472,7 +473,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc remediationv1alpha1.NodeHe
 	return obj, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int, remediations map[string]metav1.Time) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc *remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int, remediations map[string]metav1.Time) error {
 
 	healthyNodes := observedNodes - unhealthyNodes
 
@@ -483,26 +484,26 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc remediationv1alpha1.NodeHeal
 		return nil
 	}
 
-	updatedNHC := *nhc.DeepCopy()
-	updatedNHC.Status.ObservedNodes = observedNodes
-	updatedNHC.Status.HealthyNodes = healthyNodes
-	updatedNHC.Status.InFlightRemediations = remediations
+	base := nhc.DeepCopy()
+	mergeFrom := client.MergeFrom(base)
+
+	nhc.Status.ObservedNodes = observedNodes
+	nhc.Status.HealthyNodes = healthyNodes
+	nhc.Status.InFlightRemediations = remediations
+
 	// all values to be patched expected to be updated on the current nhc.status
-	patch := client.MergeFrom(nhc.DeepCopy())
-	r.Log.Info("Patching NHC object", "patch", updatedNHC.Status)
-	return r.Client.Status().Patch(context.Background(), &updatedNHC, patch, &client.PatchOptions{})
+	r.Log.Info("Patching NHC object", "patch", nhc.Status)
+	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom, &client.PatchOptions{})
 }
 
-func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error) {
-	cr, err := r.generateRemediationCR(v1.Node{}, nhc)
+func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error) {
+	cr, err := r.generateRemediationCR(&v1.Node{}, nhc)
 	if err != nil {
 		return nil, err
 	}
-	resource := crToResource(*cr)
-	list, err := r.DynamicClient.Resource(resource).Namespace(cr.GetNamespace()).List(
-		context.Background(),
-		metav1.ListOptions{},
-	)
+	crList := &unstructured.UnstructuredList{Object: cr.Object}
+	err = r.Client.List(context.Background(), crList)
+
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil,
 			errors.Wrapf(err, "failed to fetch all remediation objects from kind %s and apiVersion %s",
@@ -511,7 +512,7 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc remediationv1alp
 	}
 
 	remediations := make(map[string]metav1.Time)
-	for _, remediationCR := range list.Items {
+	for _, remediationCR := range crList.Items {
 		for _, ownerRefs := range remediationCR.GetOwnerReferences() {
 			if ownerRefs.Name == nhc.Name &&
 				ownerRefs.Kind == nhc.Kind &&
@@ -553,30 +554,8 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 
 }
 
-// getExternalRemediationRequest gets reference to External Remediation Request, unstructured object.
-func (r *NodeHealthCheckReconciler) getExternalRemediationRequest(ctx context.Context, req *unstructured.Unstructured, nhc remediationv1alpha1.NodeHealthCheck, nodeName string) *unstructured.Unstructured {
-	obj := req.DeepCopy()
-	key := client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}
-	if err := r.Client.Get(ctx, key, obj); err != nil {
-		if !apierrors.IsNotFound(err) {
-			r.Log.Error(err, "error retrieving external remediation  %v %q for node %q in namespace %q: %v", nhc.Spec.RemediationTemplate.GroupVersionKind(), nhc.Spec.RemediationTemplate.Name, nodeName, nhc.Namespace, err)
-		}
-		return nil
-	}
-	return obj
-
-}
-
 func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Duration) {
 	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = updatedRequeueAfter
-	}
-}
-
-func crToResource(cr unstructured.Unstructured) schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    cr.GroupVersionKind().Group,
-		Version:  cr.GroupVersionKind().Version,
-		Resource: fmt.Sprintf("%ss", strings.ToLower(cr.GetKind())),
 	}
 }
