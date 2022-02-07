@@ -75,7 +75,7 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
-all: manager
+all: docker-build docker-push bundle bundle-build bundle-push index-build index-push
 
 # CI uses a non-writable home dir, make sure .cache is writable
 ifeq ("${HOME}", "/")

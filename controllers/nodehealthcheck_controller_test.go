@@ -12,16 +12,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -176,10 +173,8 @@ var _ = Describe("Node Health Check CR", func() {
 
 		JustBeforeEach(func() {
 			client := fake.NewClientBuilder().WithRuntimeObjects(objects...).Build()
-			dynamicClient := newDynamicClient()
 			reconciler = NodeHealthCheckReconciler{
 				Client:                      client,
-				DynamicClient:               dynamicClient,
 				Log:                         controllerruntime.Log.WithName("NHC Test Reconciler"),
 				Scheme:                      scheme.Scheme,
 				clusterUpgradeStatusChecker: &upgradeChecker,
@@ -203,19 +198,17 @@ var _ = Describe("Node Health Check CR", func() {
 			It("create a remediation CR for each unhealthy node", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				cr := newRemediationCR("unhealthy-node-1")
-				o, err := reconciler.DynamicClient.Resource(crToResource(cr)).
-					Namespace(cr.GetNamespace()).
-					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
+				err := reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(o.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
-				Expect(o.GetOwnerReferences()).
+				Expect(cr.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
+				Expect(cr.GetOwnerReferences()).
 					To(ContainElement(metav1.OwnerReference{
 						Kind:       underTest.Kind,
 						APIVersion: underTest.APIVersion,
 						Name:       underTest.Name,
 						Controller: pointer.BoolPtr(false),
 					}))
-				Expect(o.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
+				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
 			})
 
 			It("updates the NHC status with number of healthy nodes", func() {
@@ -275,17 +268,11 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(getNHCError).NotTo(HaveOccurred())
 
 				cr := newRemediationCR("unhealthy-node-1")
-				_, err := reconciler.DynamicClient.
-					Resource(crToResource(cr)).
-					Namespace(cr.GetNamespace()).
-					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
+				err := reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
 
 				cr = newRemediationCR("unhealthy-node-2")
-				_, err = reconciler.DynamicClient.
-					Resource(crToResource(cr)).
-					Namespace(cr.GetNamespace()).
-					Get(context.Background(), cr.GetName(), metav1.GetOptions{})
+				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 			})
 
@@ -580,29 +567,6 @@ var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
 			},
 		},
 	},
-}
-
-func newDynamicClient() *dynamicfake.FakeDynamicClient {
-	gvrToListKind := make(map[schema.GroupVersionResource]string)
-	gvrToListKind[schema.GroupVersionResource{
-		Group:    TestRemediationCRD.Spec.Group,
-		Version:  TestRemediationCRD.Spec.Versions[0].Name,
-		Resource: TestRemediationCRD.Spec.Names.Plural,
-	}] = TestRemediationCRD.Spec.Names.Kind + "List"
-	// updated fake client needs mapping ahead of time - see https://github.com/kubernetes/client-go/issues/949#issuecomment-811154420
-	c := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme.Scheme, gvrToListKind)
-	c.PrependReactor("create", "*", func(action testing.Action) (handled bool, ret runtime.Object, err error) {
-		createAction := action.(testing.CreateAction)
-		object := createAction.GetObject()
-		accessor, err := meta.Accessor(object)
-		if err != nil {
-			return false, object, err
-		}
-		accessor.SetCreationTimestamp(metav1.Now())
-		accessor.SetUID(types.UID(fmt.Sprintf("FAKE-UID-%s", accessor.GetCreationTimestamp())))
-		return false, object, nil
-	})
-	return c
 }
 
 type fakeClusterUpgradeChecker struct {

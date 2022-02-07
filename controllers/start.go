@@ -4,7 +4,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
-	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -37,7 +36,6 @@ func NewNodeHealthcheckController(mgr manager.Manager, log logr.Logger) error {
 		// the dynamic client is here only because the fake client from client-go
 		// couldn't List correctly unstructuredList. The fake dynamic client works.
 		// See https://github.com/kubernetes-sigs/controller-runtime/issues/702
-		DynamicClient:               dynamic.NewForConfigOrDie(mgr.GetConfig()),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
 		Scheme:                      mgr.GetScheme(),
 		recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
