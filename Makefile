@@ -158,6 +158,10 @@ debug: manager
 
 ##@ Time fixes
 
+.PHONY: csv-date
+csv-date: ## Set createdAt date in the CSV.
+	sed -r -i "s|createdAt: .*|createdAt: `date '+%Y-%m-%d %T'`|;"  ./config/manifests/bases/$(OPERATOR_NAME)operator.clusterserviceversion.yaml
+
 # Some fixes in the bundle
 .PHONY: bundle-fixes
 bundle-fixes: ## update container image
@@ -250,7 +254,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OPERATOR_SDK) bundle validate ./bundle
-	$(MAKE) bundle-fixes bundle-date
+	$(MAKE) csv-date bundle-date
 
 .PHONY: bundle-build
 bundle-build: bundle-date ## Build the bundle image.
