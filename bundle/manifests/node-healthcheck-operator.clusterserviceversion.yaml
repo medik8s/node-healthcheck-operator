@@ -9,15 +9,15 @@ metadata:
           "kind": "NodeHealthCheck",
           "metadata": {
             "name": "nodehealthcheck-sample",
-            "namespace": "system"
+            "namespace": "openshift-operators"
           },
           "spec": {
             "minHealthy": "51%",
             "remediationTemplate": {
               "apiVersion": "poison-pill.medik8s.io/v1alpha1",
               "kind": "PoisonPillRemediationTemplate",
-              "name": "group-x",
-              "namespace": "system"
+              "name": "poison-pill-default-template",
+              "namespace": "openshift-operators"
             },
             "selector": {
               "matchExpressions": [
