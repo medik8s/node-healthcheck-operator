@@ -2,9 +2,9 @@
 set -ex
 
 GIT_VERSION=$(git describe --always --tags || true)
-VERSION=${CI_UPSTREAM_VERSION:-${GIT_VERSION}}
+VERSION=${CI_VERSION:-${GIT_VERSION}}
 GIT_COMMIT=$(git rev-list -1 HEAD || true)
-COMMIT=${CI_UPSTREAM_COMMIT:-${GIT_COMMIT}}
+COMMIT=${CI_COMMIT:-${GIT_COMMIT}}
 BUILD_DATE=$(date --utc -Iseconds)
 
 mkdir -p bin
