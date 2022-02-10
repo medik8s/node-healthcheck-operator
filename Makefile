@@ -51,8 +51,8 @@ export IMAGE_TAG
 
 OPERATOR_NAME ?= node-healthcheck
 
-# For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# medik8s/node-maintenance-operator-bundle:$VERSION and medik8s/node-maintenance-operator-catalog:$VERSION.
+# For example, running 'make bundle-build bundle-push index-build index-push' will build and push both
+# medik8s/node-healthcheck-operator-bundle:$VERSION and medik8s/node-healthcheck-operator-index:$VERSION.
 IMAGE_TAG_BASE ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)
 
 # BUNDLE_IMG defines the image:tag used for the bundle. 
@@ -156,12 +156,7 @@ docker-push: ## Push the docker image
 debug: manager
 	dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec bin/manager -- -leader-elect=false
 
-##@ Time fixes
-
-.PHONY: csv-date
-csv-date: ## Set createdAt date in the CSV.
-	sed -r -i "s|createdAt: .*|createdAt: `date '+%Y-%m-%d %T'`|;"  ./config/manifests/bases/$(OPERATOR_NAME)operator.clusterserviceversion.yaml
-
+##@ Bundle fixes
 # Some fixes in the bundle
 .PHONY: bundle-fixes
 bundle-fixes: ## update container image
@@ -254,7 +249,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OPERATOR_SDK) bundle validate ./bundle
-	$(MAKE) csv-date bundle-date
+	$(MAKE) bundle-fixes bundle-date
 
 .PHONY: bundle-build
 bundle-build: bundle-date ## Build the bundle image.
