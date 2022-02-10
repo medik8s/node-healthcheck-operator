@@ -254,9 +254,6 @@ spec:
                   initialDelaySeconds: 5
                   periodSeconds: 10
                 resources:
-                  limits:
-                    cpu: 100m
-                    memory: 30Mi
                   requests:
                     cpu: 100m
                     memory: 20Mi
@@ -264,6 +261,7 @@ spec:
                   allowPrivilegeEscalation: false
               nodeSelector:
                 node-role.kubernetes.io/master: ""
+              priorityClassName: system-cluster-critical
               serviceAccountName: node-healthcheck-operator-controller-manager
               terminationGracePeriodSeconds: 10
               tolerations:
