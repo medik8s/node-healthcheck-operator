@@ -53,6 +53,7 @@ metadata:
     operators.operatorframework.io/builder: operator-sdk-v1.14.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/medik8s/node-healthcheck-operator
+    support: Medik8s
   name: node-healthcheck-operator.v0.0.1
   namespace: placeholder
 spec:
