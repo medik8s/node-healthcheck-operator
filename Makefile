@@ -83,15 +83,12 @@ HOME=/tmp
 endif
 
 # Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: test-no-verify
 	VERSION=0.0.1 $(MAKE) manifests bundle verify
 
 # Generate and format code, and run tests
-test-no-verify: fmt vet generate
-	mkdir -p ${ENVTEST_ASSETS_DIR}
-	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./controllers/... -coverprofile cover.out -v -ginkgo.v
+test-no-verify: fmt vet generate envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... -coverprofile cover.out -v -ginkgo.v
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
@@ -167,6 +164,11 @@ controller-gen:
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize:
 	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.4)
+
+ENVTEST = $(shell pwd)/bin/setup-envtest
+.PHONY: envtest
+envtest: ## Download envtest-setup locally if necessary.
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20220407132358-188b48630db2) # no tagged versions :/
 
 .PHONY: operator-sdk
 OPERATOR_SDK = ./bin/operator-sdk
