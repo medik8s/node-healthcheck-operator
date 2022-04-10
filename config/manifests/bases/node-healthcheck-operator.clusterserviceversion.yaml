@@ -35,7 +35,7 @@ spec:
         path: minHealthy
       - description: 'PauseRequests will prevent any new remdiation to start, while
           in-flight remediations keep running. Each entry is free form, and ideally
-          represents the requested party reason for this pausing - i.e:     "imaginary-cluster-upgrade-manager-operator"'
+          represents the requested party reason for this pausing - i.e: "imaginary-cluster-upgrade-manager-operator"'
         displayName: Pause Requests
         path: pauseRequests
       - description: "RemediationTemplate is a reference to a remediation template
