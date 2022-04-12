@@ -49,7 +49,6 @@ metadata:
     description: An operator to monitor node healthcheck and remdiate via 3rd party
       providers like poison-pill.
     olm.skipRange: '>=0.1.0 <0.2.0'
-    operators.openshift.io/infrastructure-features: '["disconnected"]'
     operators.operatorframework.io/builder: operator-sdk-v1.14.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/medik8s/node-healthcheck-operator
