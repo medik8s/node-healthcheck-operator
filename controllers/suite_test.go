@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,12 +46,8 @@ var cfg *rest.Config
 var k8sClient client.Client
 var k8sManager manager.Manager
 var testEnv *envtest.Environment
-
-const (
-	envVarAPIServer = "TEST_ASSET_KUBE_APISERVER"
-	envVarETCD      = "TEST_ASSET_ETCD"
-	envVarKUBECTL   = "TEST_ASSET_KUBECTL"
-)
+var ctx context.Context
+var cancel context.CancelFunc
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -58,16 +55,6 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	if _, isFound := os.LookupEnv(envVarAPIServer); !isFound {
-		Expect(os.Setenv(envVarAPIServer, "../testbin/bin/kube-apiserver")).To(Succeed())
-	}
-	if _, isFound := os.LookupEnv(envVarETCD); !isFound {
-		Expect(os.Setenv(envVarETCD, "../testbin/bin/etcd")).To(Succeed())
-	}
-	if _, isFound := os.LookupEnv(envVarKUBECTL); !isFound {
-		Expect(os.Setenv(envVarKUBECTL, "../testbin/bin/kubectl")).To(Succeed())
-	}
-
 	opts := zap.Options{
 		Development: true,
 		TimeEncoder: zapcore.RFC3339NanoTimeEncoder,
@@ -95,7 +82,9 @@ var _ = BeforeSuite(func() {
 	err = NewNodeHealthcheckController(k8sManager, k8sManager.GetLogger().WithName("test setup"))
 	Expect(err).NotTo(HaveOccurred())
 	go func() {
-		err := k8sManager.Start(ctrl.SetupSignalHandler())
+		// https://github.com/kubernetes-sigs/controller-runtime/issues/1571
+		ctx, cancel = context.WithCancel(ctrl.SetupSignalHandler())
+		err := k8sManager.Start(ctx)
 		Expect(err).NotTo(HaveOccurred())
 	}()
 
@@ -106,10 +95,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	cancel()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
-
-	Expect(os.Unsetenv(envVarAPIServer)).To(Succeed())
-	Expect(os.Unsetenv(envVarETCD)).To(Succeed())
-	Expect(os.Unsetenv(envVarKUBECTL)).To(Succeed())
 })

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -ex
 
+go version
+
 GIT_VERSION=$(git describe --always --tags || true)
 VERSION=${CI_VERSION:-${GIT_VERSION}}
 GIT_COMMIT=$(git rev-list -1 HEAD || true)

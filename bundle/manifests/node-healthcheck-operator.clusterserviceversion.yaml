@@ -49,7 +49,7 @@ metadata:
     description: An operator to monitor node healthcheck and remdiate via 3rd party
       providers like poison-pill.
     olm.skipRange: '>=0.1.0 <0.2.0'
-    operators.operatorframework.io/builder: operator-sdk-v1.14.0+git
+    operators.operatorframework.io/builder: operator-sdk-v1.18.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/medik8s/node-healthcheck-operator
     support: Medik8s
@@ -76,7 +76,7 @@ spec:
         path: minHealthy
       - description: 'PauseRequests will prevent any new remdiation to start, while
           in-flight remediations keep running. Each entry is free form, and ideally
-          represents the requested party reason for this pausing - i.e:     "imaginary-cluster-upgrade-manager-operator"'
+          represents the requested party reason for this pausing - i.e: "imaginary-cluster-upgrade-manager-operator"'
         displayName: Pause Requests
         path: pauseRequests
       - description: "RemediationTemplate is a reference to a remediation template
@@ -204,7 +204,9 @@ spec:
           - create
         serviceAccountName: node-healthcheck-operator-controller-manager
       deployments:
-      - name: node-healthcheck-operator-controller-manager
+      - label:
+          control-plane: controller-manager
+        name: node-healthcheck-operator-controller-manager
         spec:
           replicas: 1
           selector:
