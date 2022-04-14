@@ -10,6 +10,7 @@ require (
 	github.com/openshift/client-go v0.0.0-20211209144617-7385dd6338e3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
+	go.uber.org/zap v1.19.1
 	k8s.io/api v0.23.2
 	k8s.io/apiextensions-apiserver v0.23.2
 	k8s.io/apimachinery v0.23.2
@@ -52,7 +53,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	go.uber.org/zap v1.19.1 // indirect
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
 	golang.org/x/net v0.0.0-20211209124913-491a49abca63 // indirect
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f // indirect
