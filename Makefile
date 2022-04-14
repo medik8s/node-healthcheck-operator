@@ -87,7 +87,7 @@ test: test-no-verify
 	VERSION=0.0.1 $(MAKE) manifests bundle verify
 
 # Generate and format code, and run tests
-test-no-verify: fmt vet generate envtest
+test-no-verify: vendor fmt vet generate envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... -coverprofile cover.out -v -ginkgo.v
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
@@ -136,6 +136,14 @@ fmt: goimports
 # Run go vet against code
 vet:
 	go vet ./...
+
+# Run go mod tidy
+tidy:
+	go mod tidy
+
+# Run go mod vendor
+vendor: tidy
+	go mod vendor
 
 verify: bundle-date-reset ## verify there are no un-committed changes
 	./hack/verify-diff.sh
