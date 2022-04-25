@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package bootstrap
 
 import (
-	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -36,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	// +kubebuilder:scaffold:imports
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -46,12 +45,10 @@ var cfg *rest.Config
 var k8sClient client.Client
 var k8sManager manager.Manager
 var testEnv *envtest.Environment
-var ctx context.Context
-var cancel context.CancelFunc
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Bootstrap Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -63,10 +60,11 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
 	}
 
-	cfg, err := testEnv.Start()
+	var err error
+	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
@@ -74,33 +72,17 @@ var _ = BeforeSuite(func() {
 	err = remediationv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	// +kubebuilder:scaffold:scheme
-
-	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:             scheme.Scheme,
+		MetricsBindAddress: "0",
+	})
 	Expect(err).NotTo(HaveOccurred())
 
-	//upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(k8sManager)
-	//Expect(err).NotTo(HaveOccurred())
-	//
-	//mhcChecker, err := mhc.NewMHCChecker(k8sManager)
-	//Expect(err).NotTo(HaveOccurred())
-	//
-	//os.Setenv("DEPLOYMENT_NAMESPACE", "default")
-	//
-	//err = (&NodeHealthCheckReconciler{
-	//	Client:                      k8sManager.GetClient(),
-	//	Log:                         k8sManager.GetLogger().WithName("test reconciler"),
-	//	Scheme:                      k8sManager.GetScheme(),
-	//	Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
-	//	ClusterUpgradeStatusChecker: upgradeChecker,
-	//	MHCChecker:                  mhcChecker,
-	//}).SetupWithManager(k8sManager)
-	//Expect(err).NotTo(HaveOccurred())
+	os.Setenv("DEPLOYMENT_NAMESPACE", "default")
 
 	go func() {
-		// https://github.com/kubernetes-sigs/controller-runtime/issues/1571
-		ctx, cancel = context.WithCancel(ctrl.SetupSignalHandler())
-		err := k8sManager.Start(ctx)
+		GinkgoRecover()
+		err := k8sManager.Start(ctrl.SetupSignalHandler())
 		Expect(err).NotTo(HaveOccurred())
 	}()
 
@@ -111,7 +93,6 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	cancel()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

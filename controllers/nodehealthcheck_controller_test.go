@@ -33,6 +33,7 @@ import (
 )
 
 var _ = Describe("Node Health Check CR", func() {
+
 	Context("Defaults", func() {
 		var underTest *v1alpha1.NodeHealthCheck
 
@@ -177,9 +178,9 @@ var _ = Describe("Node Health Check CR", func() {
 				Client:                      client,
 				Log:                         controllerruntime.Log.WithName("NHC Test Reconciler"),
 				Scheme:                      scheme.Scheme,
-				clusterUpgradeStatusChecker: &upgradeChecker,
-				mhcChecker:                  mhcChecker,
-				recorder:                    record.NewFakeRecorder(3),
+				ClusterUpgradeStatusChecker: &upgradeChecker,
+				MHCChecker:                  mhcChecker,
+				Recorder:                    record.NewFakeRecorder(3),
 			}
 			reconcileResult, reconcileError = reconciler.Reconcile(
 				context.Background(),

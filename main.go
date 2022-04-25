@@ -23,6 +23,11 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/medik8s/node-healthcheck-operator/controllers/bootstrap"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers"
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"go.uber.org/zap/zapcore"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -39,7 +44,6 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/controllers"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 	// +kubebuilder:scaffold:imports
@@ -96,11 +100,37 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = controllers.NewNodeHealthcheckController(mgr, setupLog); err != nil {
-		setupLog.Error(err, "controller NodeHealthcheckController")
+	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
+	if err != nil {
+		setupLog.Error(err, "unable initialize cluster upgrade checker")
 		os.Exit(1)
 	}
+
+	mhcChecker, err := mhc.NewMHCChecker(mgr)
+	if err != nil {
+		setupLog.Error(err, "unable initialize MHC checker")
+		os.Exit(1)
+	}
+
+	if err := (&controllers.NodeHealthCheckReconciler{
+		Client:                      mgr.GetClient(),
+		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
+		ClusterUpgradeStatusChecker: upgradeChecker,
+		MHCChecker:                  mhcChecker,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
+
+	// Do some initialization, it potentially exits!
+	if err = bootstrap.Initialize(mgr, setupLog); err != nil {
+		setupLog.Error(err, "unable to init")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

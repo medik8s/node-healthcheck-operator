@@ -72,9 +72,9 @@ type NodeHealthCheckReconciler struct {
 	client.Client
 	Log                         logr.Logger
 	Scheme                      *runtime.Scheme
-	recorder                    record.EventRecorder
-	clusterUpgradeStatusChecker cluster.UpgradeChecker
-	mhcChecker                  mhc.Checker
+	Recorder                    record.EventRecorder
+	ClusterUpgradeStatusChecker cluster.UpgradeChecker
+	MHCChecker                  mhc.Checker
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -109,7 +109,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check if we need to disable NHC because of existimg MHCs
-	disable, err := r.mhcChecker.NeedDisableNHC()
+	disable, err := r.MHCChecker.NeedDisableNHC()
 	if err != nil {
 		log.Error(err, "failed to check for MHCs")
 		return result, err
@@ -124,7 +124,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
 				Message: "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts",
 			})
-			r.recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
+			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
 			err = r.Client.Status().Update(context.Background(), nhc)
 			if err != nil {
 				log.Error(err, "failed to update NHC status conditions")
@@ -137,7 +137,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
 		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
 		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
-		r.recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
 		err = r.Client.Status().Update(context.Background(), nhc)
 		if err != nil {
 			log.Error(err, "failed to update NHC status conditions")
@@ -202,12 +202,12 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 			// some actors want to pause remediation.
 			msg := "Skipping remediation because there are pause requests"
 			r.Log.Info(msg)
-			r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 			return false
 		}
 		if r.isClusterUpgrading() {
 			updateResultNextReconcile(result, 1*time.Minute)
-			r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
+			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
 			return false
 		}
 		return true
@@ -215,12 +215,12 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 	msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", healthyNodes, minHealthy)
 	r.Log.Info(msg,
 		"healthyNodes", healthyNodes, "minHealthy", minHealthy)
-	r.recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
+	r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 	return false
 }
 
 func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
-	clusterUpgrading, err := r.clusterUpgradeStatusChecker.Check()
+	clusterUpgrading, err := r.ClusterUpgradeStatusChecker.Check()
 	if err != nil {
 		// log the error but don't return - if we can't reliably tell if
 		// the cluster is upgrading then just continue with remediation.
@@ -260,7 +260,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 			}
 		} else {
 			// ignore nodes handled by MHC
-			if r.mhcChecker.NeedIgnoreNode(n) {
+			if r.MHCChecker.NeedIgnoreNode(n) {
 				continue
 			}
 			unhealthy = append(unhealthy, *n)
@@ -294,7 +294,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(n *v1.Node, nhc *remediationv1al
 	if err == nil {
 		// deleted an actual object
 		r.Log.Info("deleted node external remediation object", "Node name", n.Name)
-		r.recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
 	}
 	return nil
 }
@@ -408,7 +408,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n *v1.Node, n
 			r.Log.Error(err, "failed to create an external remediation object")
 			return nil, err
 		}
-		r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
+		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
 		return nil, nil
 	}
 
