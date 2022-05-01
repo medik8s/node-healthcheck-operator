@@ -15,10 +15,10 @@ import (
 const NodeConditionTerminating = "Terminating"
 
 // Checker provides functions for checking for conflicts with MachineHealthCheck
-// -
-// -
 type Checker interface {
-	NeedDisableNHC() (bool, error)
+	Start(context.Context) error
+	UpdateStatus() error
+	NeedDisableNHC() bool
 	NeedIgnoreNode(*v1.Node) bool
 }
 
@@ -33,11 +33,12 @@ func NewMHCChecker(mgr manager.Manager) (Checker, error) {
 		return DummyChecker{}, nil
 	}
 
-	return &checker{
+	c := &checker{
 		client:    mgr.GetClient(),
 		logger:    mgr.GetLogger().WithName("MHCChecker"),
-		mhcStatus: noMHC,
-	}, nil
+		mhcStatus: unknown,
+	}
+	return c, nil
 }
 
 type mhcStatus int
@@ -50,30 +51,41 @@ const (
 )
 
 type checker struct {
-	client    client.Client
-	logger    logr.Logger
-	mhcStatus mhcStatus
+	client     client.Client
+	logger     logr.Logger
+	mhcStatus  mhcStatus
+	mhcRunning bool
 }
 
 var _ Checker = &checker{}
 
-// NeedDisableNHC checks if NHC needs to be disabled, because custom MHCs are configured in the cluster,
-// in order to avoid conflicts
-func (c *checker) NeedDisableNHC() (bool, error) {
+// Start will start the component and update the initial status
+func (c *checker) Start(ctx context.Context) error {
+	if err := c.UpdateStatus(); err != nil {
+		return err
+	}
+
+	select {
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+func (c *checker) UpdateStatus() error {
 	mhcList := &v1beta1.MachineHealthCheckList{}
 	if err := c.client.List(context.Background(), mhcList); err != nil {
 		c.logger.Error(err, "failed to list MHC")
-		return false, err
+		return err
 	}
 
 	if len(mhcList.Items) == 0 {
 		// no MHC found, we are fine
 		c.mhcStatus = noMHC
-		return false, nil
+		return nil
 	} else if len(mhcList.Items) > 1 {
 		// multiple MHCs found, disable NHC
 		c.mhcStatus = customMHC
-		return true, nil
+		return nil
 	}
 
 	// Only the one MHC which targets nodes with only Terminating condition is fine
@@ -85,12 +97,26 @@ func (c *checker) NeedDisableNHC() (bool, error) {
 			c.logger.Info("found termination handler MHC, will ignore Nodes with Terminating condition")
 			c.mhcStatus = terminationMHCOnly
 		}
-		return false, nil
+		return nil
 	}
 
 	// Everything else might cause conflicts
 	c.mhcStatus = customMHC
-	return true, nil
+	return nil
+
+}
+
+// NeedDisableNHC checks if NHC needs to be disabled, because custom MHCs are configured in the cluster,
+// in order to avoid conflicts
+func (c *checker) NeedDisableNHC() bool {
+	switch c.mhcStatus {
+	case unknown, noMHC, terminationMHCOnly:
+		return false
+	case customMHC:
+		return true
+	default:
+		return false
+	}
 }
 
 // NeedIgnoreNode checks if remediation of a certain node needs to be ignored, because it is handled the default
@@ -119,9 +145,22 @@ type DummyChecker struct{}
 
 var _ Checker = DummyChecker{}
 
+// Start will start the component, no op on non openshift clusters
+func (d DummyChecker) Start(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+// UpdateStatus always return no error on non openshift clusters
+func (d DummyChecker) UpdateStatus() error {
+	return nil
+}
+
 // NeedDisableNHC always return false on non openshift clusters
-func (d DummyChecker) NeedDisableNHC() (bool, error) {
-	return false, nil
+func (d DummyChecker) NeedDisableNHC() bool {
+	return false
 }
 
 // NeedIgnoreNode always return false on non openshift clusters

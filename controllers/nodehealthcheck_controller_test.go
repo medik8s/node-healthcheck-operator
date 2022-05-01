@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -357,6 +359,7 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 	})
 
+	// TODO move to new suite in utils package
 	Context("Controller Watches", func() {
 		var (
 			underTest1 *v1alpha1.NodeHealthCheck
@@ -381,7 +384,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("creates a reconcile request", func() {
-				handler := nhcByNodeMapperFunc(client, controllerruntime.Log)
+				handler := utils.NHCByNodeMapperFunc(client, controllerruntime.Log)
 				updatedNode := v1.Node{
 					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
 				}
@@ -401,7 +404,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("creates 2 reconcile requests", func() {
-				handler := nhcByNodeMapperFunc(client, controllerruntime.Log)
+				handler := utils.NHCByNodeMapperFunc(client, controllerruntime.Log)
 				updatedNode := v1.Node{
 					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
 				}
@@ -417,7 +420,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("doesn't create reconcile requests", func() {
-				handler := nhcByNodeMapperFunc(client, controllerruntime.Log)
+				handler := utils.NHCByNodeMapperFunc(client, controllerruntime.Log)
 				updatedNode := v1.Node{
 					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
 				}

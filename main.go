@@ -111,6 +111,10 @@ func main() {
 		setupLog.Error(err, "unable initialize MHC checker")
 		os.Exit(1)
 	}
+	if err = mgr.Add(mhcChecker); err != nil {
+		setupLog.Error(err, "failed to add MHC checker to the manager")
+		os.Exit(1)
+	}
 
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
@@ -121,6 +125,18 @@ func main() {
 		MHCChecker:                  mhcChecker,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
+		os.Exit(1)
+	}
+
+	if err := (&controllers.MachineHealthCheckReconciler{
+		Client:                      mgr.GetClient(),
+		Log:                         ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
+		ClusterUpgradeStatusChecker: upgradeChecker,
+		MHCChecker:                  mhcChecker,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
 		os.Exit(1)
 	}
 

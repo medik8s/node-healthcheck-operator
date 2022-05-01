@@ -11,6 +11,9 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
+// Initialize runs some bootstrapping code:
+// - setup role aggregation
+// - create default NHC
 func Initialize(mgr ctrl.Manager, log logr.Logger) error {
 
 	ns, err := utils.GetDeploymentNamespace()
