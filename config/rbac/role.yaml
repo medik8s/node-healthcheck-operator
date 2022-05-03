@@ -28,23 +28,7 @@ rules:
   verbs:
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - machine.openshift.io
-  resources:
-  - machinehealthchecks/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - machine.openshift.io
-  resources:
-  - machinehealthchecks/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:
