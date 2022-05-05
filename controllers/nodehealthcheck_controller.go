@@ -26,8 +26,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
-	"github.com/openshift/api/machine/v1beta1"
-
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -35,22 +33,18 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -72,9 +66,9 @@ type NodeHealthCheckReconciler struct {
 	client.Client
 	Log                         logr.Logger
 	Scheme                      *runtime.Scheme
-	recorder                    record.EventRecorder
-	clusterUpgradeStatusChecker cluster.UpgradeChecker
-	mhcChecker                  mhc.Checker
+	Recorder                    record.EventRecorder
+	ClusterUpgradeStatusChecker cluster.UpgradeChecker
+	MHCChecker                  mhc.Checker
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -86,13 +80,6 @@ type NodeHealthCheckReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the NodeHealthCheck object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("NodeHealthCheck", req.NamespacedName)
 
@@ -109,12 +96,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check if we need to disable NHC because of existimg MHCs
-	disable, err := r.mhcChecker.NeedDisableNHC()
-	if err != nil {
-		log.Error(err, "failed to check for MHCs")
-		return result, err
-	}
-	if disable {
+	if disable := r.MHCChecker.NeedDisableNHC(); disable {
 		// update status if needed
 		if !meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
 			log.Info("disabling NHC in order to avoid conflict with custom MHCs configured in the cluster")
@@ -124,7 +106,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
 				Message: "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts",
 			})
-			r.recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
+			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
 			err = r.Client.Status().Update(context.Background(), nhc)
 			if err != nil {
 				log.Error(err, "failed to update NHC status conditions")
@@ -137,7 +119,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
 		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
 		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
-		r.recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
 		err = r.Client.Status().Update(context.Background(), nhc)
 		if err != nil {
 			log.Error(err, "failed to update NHC status conditions")
@@ -202,12 +184,12 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 			// some actors want to pause remediation.
 			msg := "Skipping remediation because there are pause requests"
 			r.Log.Info(msg)
-			r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 			return false
 		}
 		if r.isClusterUpgrading() {
 			updateResultNextReconcile(result, 1*time.Minute)
-			r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
+			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
 			return false
 		}
 		return true
@@ -215,12 +197,12 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 	msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", healthyNodes, minHealthy)
 	r.Log.Info(msg,
 		"healthyNodes", healthyNodes, "minHealthy", minHealthy)
-	r.recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
+	r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 	return false
 }
 
 func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
-	clusterUpgrading, err := r.clusterUpgradeStatusChecker.Check()
+	clusterUpgrading, err := r.ClusterUpgradeStatusChecker.Check()
 	if err != nil {
 		// log the error but don't return - if we can't reliably tell if
 		// the cluster is upgrading then just continue with remediation.
@@ -260,7 +242,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 			}
 		} else {
 			// ignore nodes handled by MHC
-			if r.mhcChecker.NeedIgnoreNode(n) {
+			if r.MHCChecker.NeedIgnoreNode(n) {
 				continue
 			}
 			unhealthy = append(unhealthy, *n)
@@ -294,7 +276,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(n *v1.Node, nhc *remediationv1al
 	if err == nil {
 		// deleted an actual object
 		r.Log.Info("deleted node external remediation object", "Node name", n.Name)
-		r.recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
 	}
 	return nil
 }
@@ -322,70 +304,8 @@ func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCond
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
-		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(nhcByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger()))).
-		Watches(&source.Kind{Type: &v1beta1.MachineHealthCheck{}},
-			handler.EnqueueRequestsFromMapFunc(nhcByMachineHealthCheckMapperFunc(mgr.GetClient(), mgr.GetLogger())),
-			builder.WithPredicates(predicate.Funcs{
-				// skip updates
-				UpdateFunc: func(_ event.UpdateEvent) bool { return false },
-			}),
-		).
+		Watches(&source.Kind{Type: &v1.Node{}}, handler.EnqueueRequestsFromMapFunc(utils.NHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger()))).
 		Complete(r)
-}
-
-func nhcByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
-	// This closure is meant to fetch all NHC to fill the reconcile queue.
-	// If we have multiple nhc then it is possible that we fetch nhc objects that
-	// are unrelated to this node. Its even possible that the node still doesn't
-	// have the right labels set to be picked up by the nhc selector.
-	delegate := func(o client.Object) []reconcile.Request {
-		var nhcList remediationv1alpha1.NodeHealthCheckList
-		err := c.List(context.Background(), &nhcList, &client.ListOptions{})
-		if err != nil {
-			return nil
-		}
-		var r []reconcile.Request
-		for _, nhc := range nhcList.Items {
-			nodes := v1.NodeList{}
-			selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
-			if err != nil {
-				logger.Error(err, "failed to use the NHC selector.")
-			} else {
-				_ = c.List(context.Background(), &nodes, &client.ListOptions{
-					LabelSelector: selector,
-				})
-				for _, node := range nodes.Items {
-					if node.GetName() == o.GetName() {
-						r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
-						break
-					}
-				}
-			}
-		}
-		return r
-	}
-	return delegate
-}
-
-func nhcByMachineHealthCheckMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
-	// return all NHCs
-	// they potentially need to be disabled / re-enables, based on existing MHCs
-	return func(o client.Object) []reconcile.Request {
-		logger.Info("triggering reconcile for MHC", "Name", o.GetName())
-
-		var r []reconcile.Request
-
-		var nhcList remediationv1alpha1.NodeHealthCheckList
-		err := c.List(context.Background(), &nhcList, &client.ListOptions{})
-		if err != nil {
-			return nil
-		}
-		for _, nhc := range nhcList.Items {
-			r = append(r, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
-		}
-
-		return r
-	}
 }
 
 func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
@@ -408,7 +328,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n *v1.Node, n
 			r.Log.Error(err, "failed to create an external remediation object")
 			return nil, err
 		}
-		r.recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
+		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
 		return nil, nil
 	}
 
