@@ -27,7 +27,7 @@ spec:
       status: Unknown
       duration: 300s
   remediationTemplate:
-    kind: PoisonPillRemediationTemplate
-    apiVersion: poison-pill.medik8s.io/v1alpha1
-    name: poison-pill-default-template
+    apiVersion: self-node-remediation.medik8s.io/v1alpha1
+    kind: SelfNodeRemediationTemplate
+    name: self-node-remediation-resource-deletion-template
     namespace: openshift-operators

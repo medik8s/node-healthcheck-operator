@@ -22,52 +22,12 @@ $ operator-sdk olm install
     ```
 
 
-By default, OLM will resolve Poison-Pill as a dependency and will install the
+By default, OLM will resolve the Self Node Remediation operator as a dependency and will install the
 latest available version in the current catalog or other catalog with higher
 priority.
 
-## Post install
-
 >NOTE: OLM on k8s install operators under the `operators` namespace while
 >      in OCP or OKD it is under `openshift-operators`
-
-- create a poison pill remediation template
-```shell
-cat << EOF | kubectl create -f -
-apiVersion: poison-pill.medik8s.io/v1alpha1
-kind: PoisonPillRemediationTemplate
-metadata:
-  namespace: default
-  name: ppill-template
-spec:
-  template:
-    spec: {}
-EOF
-```
-
-- create Node-Healthcheck CR that points to poison-pill remediation
-```shell
-cat << EOF | kubectl create -f -
-apiVersion: remediation.medik8s.io/v1alpha1
-kind: NodeHealthCheck
-metadata:
-  namespace: default
-  name: nodehealthcheck-sample
-spec:
-  unhealthyConditions:
-    - type: Ready
-      status: Unknown
-      duration: 300s
-    - type: Ready
-      status: "False"
-      duration: 300s
-  remediationTemplate:
-    kind: PoisonPillRemediationTemplate
-    apiVersion: poison-pill.medik8s.io/v1alpha1
-    name: ppill-template
-    namespace: default
-EOF
-```
 
 Your cluster should have 2 deployments and 1 daemonset:
 
@@ -75,11 +35,11 @@ Your cluster should have 2 deployments and 1 daemonset:
 $ kubectl get deploy -n operators
 NAME                                           READY   UP-TO-DATE   AVAILABLE   AGE
 node-healthcheck-operator-controller-manager   1/1     1            1           3m8s
-poison-pill-controller-manager                 1/1     1            1           3m10s
+self-node-remediation-controller-manager       1/1     1            1           3m10s
 
 $ kubectl get ds -n operators
-NAME             DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
-poison-pill-ds   3         3         3       3            3           <none>          3h6m
+NAME                       DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+self-node-remediation-ds   3         3         3       3            3           <none>          3h6m
 ```
 
 ### Customizations:
