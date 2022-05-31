@@ -275,14 +275,12 @@ test-e2e:
 	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
 	go test ./e2e -coverprofile cover.out -v -timeout 15m
 
-# Deploy poison-pill to a running cluster
-.PHONY: deploy-poison-pill
-PPIL_DIR = $(shell pwd)/testdata/.remediators/poison-pill
-PPIL_GIT_REF ?= v0.1.4
-PPILL_VERSION ?= 0.1.4
-deploy-poison-pill:
-	mkdir -p ${PPIL_DIR}
-	test -f ${PPIL_DIR}/Makefile || curl -L https://github.com/medik8s/poison-pill/tarball/${PPIL_GIT_REF} | tar -C ${PPIL_DIR} -xzv --strip=1
-	# must override IMG because openshift CI overrides IMG as well.
-	# must override VERSION because this makefile has VERSION and ppill uses the env variable for substition in the deploy
-	$(MAKE) -C ${PPIL_DIR} deploy IMG=quay.io/medik8s/poison-pill-operator:$(PPILL_VERSION) VERSION=$(PPILL_VERSION)
+# Deploy self node remediation to a running cluster
+.PHONY: deploy-snr
+SNR_DIR = $(shell pwd)/testdata/.remediators/snr
+SNR_GIT_REF ?= main
+SNR_VERSION ?= 0.0.1
+deploy-snr:
+	mkdir -p ${SNR_DIR}
+	test -f ${SNR_DIR}/Makefile || curl -L https://github.com/medik8s/self-node-remediation/tarball/${SNR_GIT_REF} | tar -C ${SNR_DIR} -xzv --strip=1
+	$(MAKE) -C ${SNR_DIR} docker-build docker-push deploy VERSION=$(SNR_VERSION)
