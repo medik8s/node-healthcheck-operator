@@ -28,18 +28,18 @@ func TestE2e(t *testing.T) {
 }
 
 var (
-	dynamicClient         dynamic.Interface
-	clientSet             *kubernetes.Clientset
-	client                ctrl.Client
-	poisonPillTemplateGVR = schema.GroupVersionResource{
-		Group:    "poison-pill.medik8s.io",
+	dynamicClient          dynamic.Interface
+	clientSet              *kubernetes.Clientset
+	client                 ctrl.Client
+	remediationTemplateGVR = schema.GroupVersionResource{
+		Group:    "self-node-remediation.medik8s.io/v1alpha1",
 		Version:  "v1alpha1",
-		Resource: "poisonpillremediationtemplates",
+		Resource: "selfnoderemediationtemplates",
 	}
-	poisonPillRemediationGVR = schema.GroupVersionResource{
-		Group:    "poison-pill.medik8s.io",
+	remediationGVR = schema.GroupVersionResource{
+		Group:    "self-node-remediation.medik8s.io/v1alpha1",
 		Version:  "v1alpha1",
-		Resource: "poisonpillremediations",
+		Resource: "selfnoderemediations",
 	}
 	nhcGVR = schema.GroupVersionResource{
 		Group:    v1alpha1.GroupVersion.Group,

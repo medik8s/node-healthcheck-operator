@@ -25,8 +25,8 @@ func Initialize(mgr ctrl.Manager, log logr.Logger) error {
 		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
 	}
 
-	if err = defaults.CreateDefaultNHC(mgr, ns, ctrl.Log.WithName("defaults")); err != nil {
-		return errors.Wrap(err, "failed to create a default NHC resource")
+	if err = defaults.CreateOrUpdateDefaultNHC(mgr, ns, ctrl.Log.WithName("defaults")); err != nil {
+		return errors.Wrap(err, "failed to create or update a default NHC resource")
 	}
 
 	return nil

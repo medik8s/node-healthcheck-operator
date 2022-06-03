@@ -29,7 +29,7 @@ considered candidates for concurrent remediation.
 
 When the controller starts it will create a default [healthcheck CR](#nodehealthcheck-custom-resource),
 if there is no healthcheck CR at all in the cluster already(supporting upgrades
-with existing configurations). The default CR works with [poison-pill], that
+with existing configurations). The default CR works with the [self-node-remediation](https://github.com/medik8s/self-node-remediation), that
 should be installed automatically if you deployed using the [operator hub].
 The CR uses all defaults except a selector to select only worker nodes.
 
@@ -53,13 +53,13 @@ See the [healthcheck CR](#nodehealthcheck-custom-resource) for more details.
 ## Installation
 
 Install the Node Healthcheck operator using [operator hub]. The installation
-will also install the [poison-pill] operator as a default remediator.
+will also install the [self-node-remediation] operator as a default remediator.
 
-For development environments you can run `make deploy deploy-poison-pill`.
+For development environments you can run `make deploy deploy-snr`.
 See the [Makefile](./Makefile) for more variables.
 
 On start the controller creates a default resource name `nhc-worker-default`,
-that remediates using Poison Pill, and will check for worker-only heath issues.
+that remediates using Self Node Remediation, and will check for worker-only heath issues.
 See [NodeHealthCheck Custom Resource](#nodehealthcheck-custom-resource) for the default properties.
 If there is an existing resource the controller will not create a default one.
 
@@ -75,10 +75,10 @@ metadata:
 spec:
   # mandatory
   remediationTemplate:
-    kind: PoisonPillRemediationTemplate
-    apiVersion: medik8s.io/v1alpha1
-    name: poison-pill-default-template
-    namespace: poison-pill
+    apiVersion: self-node-remediation.medik8s.io/v1alpha1
+    kind: SelfNodeRemediationTemplate
+    namespace: <SNR namespace>
+    name: self-node-remediation-resource-deletion-template
   # see k8s doc on selectors https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#resources-that-support-set-based-requirements
   selector:
     matchExpressions:
@@ -118,7 +118,7 @@ When a node turns healthy:
 ### External Remediation Resources
 
 External remediation resources are custom resource meant to be reconciled by speciallized remediation providers.
-The NHC object has a property of a External Remediaiton Template, and this template Spec will be
+The NHC object has a property of a External Remediation Template, and this template Spec will be
 copied over to the External Remediation Object Spec.
 For example this example NHC has this template defined:
 
@@ -126,37 +126,35 @@ For example this example NHC has this template defined:
 apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
-  name: nodehealthcheck-sameple
+  name: nodehealthcheck-sample
 spec:
   remediationTemplate:
-    kind: PoisonPillRemediationTemplate
-    apiVersion: poison-pill.medik8s.io/v1alpha1
-    name: group-x
+    apiVersion: self-node-remediation.medik8s.io/v1alpha1
+    kind: SelfNodeRemediationTemplate
     namespace: default
-
-
+    name: test-template
 ```
 
-- it is the admin's responsiblity to create a template object from the template kind `ProviderXRemdiationTemplate`
-  with the name `group-x`.
+- For the default configuration this will work out of the box. For other remediators or configurations
+  it is the admin's responsibility to ensure the relevant template resource exists. 
 
 ```yaml
-apiVersion: poison-pill.medik8s.io/v1alpha1
-kind: PoisonPillRemediationTemplate
+apiVersion: self-node-remediation.medik8s.io/v1alpha1
+kind: SelfNodeRemediationTemplate
 metadata:
-  name: group-x
+  name: test-template
   namespace: default
 spec:
   template:
     spec: {}
 ```
 
-- the controller will create an object with the kind `ProviderPillRemdiation` (postfix 'Template' trimmed)
-  and the object will have ownerReference set to the co-responding NHC object
+- the controller will create an object with the kind `SelfNodeRemediation` (kind of the template with trimmed 'Template' postfix)
+  and the object will have ownerReference set to the corresponding NHC object
 
 ```yaml
-apiVersion: poison-pill.medik8s.io/v1alpha1
-kind: PoisonPillRemdiation
+apiVersion: self-node-remediation.medik8s.io/v1alpha1
+kind: SelfNodeRemediation
 metadata:
   # named after the target node
   name: worker-0-21
@@ -164,7 +162,7 @@ metadata:
   ownerReferences:
     - kind: NodeHealthCheck
       apiVersion: remediation.medik8s.io/v1alpha1
-      name: nhc-worker-default
+      name: nodehealthcheck-sample
 spec: {}
 
 ```
@@ -181,4 +179,4 @@ Each provider must label it's rules with `rbac.ext-remediation/aggregate-to-ext-
 will aggreate its rules and will have the proper permission to create/delete external remediation objects.
 
 [operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
-[poison-pill]: https://github.com/medik8s/poison-pill
+[self-node-remediation]: https://github.com/medik8s/self-node-remediation

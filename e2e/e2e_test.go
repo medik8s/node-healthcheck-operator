@@ -184,11 +184,11 @@ func nodeCreationTime(nodeName string) func() time.Time {
 
 func fetchPPRByName(name string) func() error {
 	return func() error {
-		ns, err := getPPRTemplateNS()
+		ns, err := getTemplateNS()
 		if err != nil {
 			return err
 		}
-		get, err := dynamicClient.Resource(poisonPillRemediationGVR).Namespace(ns).
+		get, err := dynamicClient.Resource(remediationGVR).Namespace(ns).
 			Get(context.Background(),
 				name,
 				metav1.GetOptions{})
@@ -200,18 +200,18 @@ func fetchPPRByName(name string) func() error {
 	}
 }
 
-func getPPRTemplateNS() (string, error) {
-	list, err := dynamicClient.Resource(poisonPillTemplateGVR).List(context.Background(), metav1.ListOptions{})
+func getTemplateNS() (string, error) {
+	list, err := dynamicClient.Resource(remediationTemplateGVR).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}
 	for _, t := range list.Items {
-		if t.GetName() == "poison-pill-default-template" {
+		if t.GetName() == "self-node-remediation-resource-deletion-template" {
 			return t.GetNamespace(), err
 		}
 	}
 
-	return "", fmt.Errorf("failed to find the default poison-pill template")
+	return "", fmt.Errorf("failed to find the default remediation template")
 }
 
 //makeNodeUnready puts a node in an unready condition by disrupting the network

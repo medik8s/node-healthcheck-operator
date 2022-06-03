@@ -14,9 +14,9 @@ metadata:
           "spec": {
             "minHealthy": "51%",
             "remediationTemplate": {
-              "apiVersion": "poison-pill.medik8s.io/v1alpha1",
-              "kind": "PoisonPillRemediationTemplate",
-              "name": "poison-pill-default-template",
+              "apiVersion": "self-node-remediation.medik8s.io/v1alpha1",
+              "kind": "SelfNodeRemediationTemplate",
+              "name": "self-node-remediation-resource-deletion-template",
               "namespace": "openshift-operators"
             },
             "selector": {
@@ -46,9 +46,9 @@ metadata:
     categories: OpenShift Optional
     containerImage: quay.io/medik8s/node-healthcheck-operator:latest
     createdAt: ""
-    description: An operator to monitor node healthcheck and remdiate via 3rd party
-      providers like poison-pill.
-    olm.skipRange: '>=0.1.0 <0.2.0'
+    description: An operator to monitor node healthcheck and remediate via 3rd party
+      providers like Self Node Remediation.
+    olm.skipRange: '>=0.2.0 <0.3.0'
     operators.operatorframework.io/builder: operator-sdk-v1.18.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/medik8s/node-healthcheck-operator
@@ -316,8 +316,8 @@ spec:
     type: AllNamespaces
   keywords:
   - NHC
-  - Poison Pill
-  - PP
+  - Self Node Remediation
+  - SNR
   - Remediation
   - Fencing
   - medik8s
