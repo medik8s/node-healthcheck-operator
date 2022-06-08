@@ -139,7 +139,7 @@ var _ = Describe("e2e", func() {
 
 		It("should not remediate", func() {
 			Consistently(
-				fetchPPRByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 30*time.Second).
+				fetchRemediationResourceByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 30*time.Second).
 				ShouldNot(Succeed())
 		})
 	})
@@ -163,7 +163,7 @@ var _ = Describe("e2e", func() {
 
 		It("Remediates a host", func() {
 			Eventually(
-				fetchPPRByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 10*time.Second).
+				fetchRemediationResourceByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 10*time.Second).
 				Should(Succeed())
 			Eventually(
 				nodeCreationTime(nodeUnderTest.Name), safeToAssumeNodeRebootTimeout+30*time.Second, 250*time.Millisecond).
@@ -182,7 +182,7 @@ func nodeCreationTime(nodeName string) func() time.Time {
 	}
 }
 
-func fetchPPRByName(name string) func() error {
+func fetchRemediationResourceByName(name string) func() error {
 	return func() error {
 		ns, err := getTemplateNS()
 		if err != nil {
@@ -195,7 +195,7 @@ func fetchPPRByName(name string) func() error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(GinkgoWriter, "found a ppil object %v  that should remediate node %v\n", get.GetName(), name)
+		fmt.Fprintf(GinkgoWriter, "found remediation resource %v  that should remediate node %v\n", get.GetName(), name)
 		return nil
 	}
 }

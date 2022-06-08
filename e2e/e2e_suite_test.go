@@ -32,12 +32,12 @@ var (
 	clientSet              *kubernetes.Clientset
 	client                 ctrl.Client
 	remediationTemplateGVR = schema.GroupVersionResource{
-		Group:    "self-node-remediation.medik8s.io/v1alpha1",
+		Group:    "self-node-remediation.medik8s.io",
 		Version:  "v1alpha1",
 		Resource: "selfnoderemediationtemplates",
 	}
 	remediationGVR = schema.GroupVersionResource{
-		Group:    "self-node-remediation.medik8s.io/v1alpha1",
+		Group:    "self-node-remediation.medik8s.io",
 		Version:  "v1alpha1",
 		Resource: "selfnoderemediations",
 	}
