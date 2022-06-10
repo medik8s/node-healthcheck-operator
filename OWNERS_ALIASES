@@ -2,12 +2,11 @@
 
 aliases:
   approvers:
-      - rgolangh
       - slintes
       - mshitrit
       - beekhof
+      - razo7
   code-reviewers:
-      - rgolangh
       - slintes
       - mshitrit
       - beekhof
@@ -15,3 +14,4 @@ aliases:
 
   emeritus_approvers:
       - n1r1
+      - rgolangh
