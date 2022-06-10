@@ -31,6 +31,7 @@ const (
 	ConditionReasonDisabledMHC = "MachineHealthCheckDetected"
 )
 
+// NHCPhase is the string used for NHC.Status.Phase
 type NHCPhase string
 
 const (

@@ -400,6 +400,22 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc *remediationv1alpha1.NodeH
 
 func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
 
+	// calculate phase and reason
+	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
+	if disabledCondition != nil && disabledCondition.Status == metav1.ConditionTrue {
+		nhc.Status.Phase = remediationv1alpha1.PhaseDisabled
+		nhc.Status.Reason = fmt.Sprintf("NHC is disabled: %s", disabledCondition.Reason)
+	} else if len(nhc.Spec.PauseRequests) > 0 {
+		nhc.Status.Phase = remediationv1alpha1.PhasePaused
+		nhc.Status.Reason = fmt.Sprintf("NHC is paused: %s", strings.Join(nhc.Spec.PauseRequests, ","))
+	} else if len(nhc.Status.InFlightRemediations) > 0 {
+		nhc.Status.Phase = remediationv1alpha1.PhaseRemediating
+		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.InFlightRemediations))
+	} else {
+		nhc.Status.Phase = remediationv1alpha1.PhaseEnabled
+		nhc.Status.Reason = "NHC is enabled, no ongoing remediation"
+	}
+
 	// skip when no changes
 	if reflect.DeepEqual(nhc.Status, nhcOrig.Status) {
 		return nil

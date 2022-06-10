@@ -61,11 +61,8 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		When("creating a resource", func() {
-			It("CR is cluster scoped", func() {
+			It("it should have all default values set", func() {
 				Expect(underTest.Namespace).To(BeEmpty())
-			})
-
-			It("sets a default conditions", func() {
 				Expect(underTest.Spec.UnhealthyConditions).To(HaveLen(2))
 				Expect(underTest.Spec.UnhealthyConditions[0].Type).To(Equal(v1.NodeReady))
 				Expect(underTest.Spec.UnhealthyConditions[0].Status).To(Equal(v1.ConditionFalse))
@@ -73,13 +70,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Spec.UnhealthyConditions[1].Type).To(Equal(v1.NodeReady))
 				Expect(underTest.Spec.UnhealthyConditions[1].Status).To(Equal(v1.ConditionUnknown))
 				Expect(underTest.Spec.UnhealthyConditions[1].Duration).To(Equal(metav1.Duration{Duration: time.Minute * 5}))
-			})
-
-			It("sets min healthy to 51%", func() {
 				Expect(underTest.Spec.MinHealthy.StrVal).To(Equal(intstr.FromString("51%").StrVal))
-			})
-
-			It("sets an empty selector to select all nodes", func() {
 				Expect(underTest.Spec.Selector.MatchLabels).To(BeEmpty())
 				Expect(underTest.Spec.Selector.MatchExpressions).To(BeEmpty())
 			})
@@ -214,23 +205,16 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
 			})
 
-			It("updates the NHC status with number of healthy nodes", func() {
+			It("succeeds and correctly updates the status", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
-			})
-
-			It("updates the NHC status with number of observed nodes", func() {
-				Expect(reconcileError).NotTo(HaveOccurred())
-				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 			})
 
-			It("updates the NHC status with in-flight remediations", func() {
-				Expect(reconcileError).NotTo(HaveOccurred())
-				Expect(getNHCError).NotTo(HaveOccurred())
-				Expect(underTest.Status.InFlightRemediations).NotTo(BeEmpty())
-			})
 		})
 
 		When("few nodes are unhealthy and healthy nodes above min healthy", func() {
@@ -238,25 +222,20 @@ var _ = Describe("Node Health Check CR", func() {
 				setupObjects(4, 3)
 			})
 
-			It("skips remediation - CR is not created", func() {
+			It("skips remediation - CR is not created, status updated correctly", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(getNHCError).NotTo(HaveOccurred())
 				o := newRemediationCR("unhealthy-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
-			})
-
-			It("updates the NHC status with number of healthy nodes", func() {
-				Expect(reconcileError).NotTo(HaveOccurred())
-				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.HealthyNodes).To(Equal(3))
+				Expect(underTest.Status.ObservedNodes).To(Equal(7))
+				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
+				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 			})
 
-			It("updates the NHC status with number of observed nodes", func() {
-				Expect(reconcileError).NotTo(HaveOccurred())
-				Expect(getNHCError).NotTo(HaveOccurred())
-				Expect(underTest.Status.ObservedNodes).To(Equal(7))
-			})
 		})
 
 		When("few nodes become healthy", func() {
@@ -279,10 +258,14 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 			})
 
-			It("updates the NHC status with number of healthy nodes", func() {
+			It("updates the NHC status correctly", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 			})
 		})
 
@@ -329,6 +312,9 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(getNHCError).NotTo(HaveOccurred())
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhasePaused))
+				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 			})
 		})
 
@@ -342,20 +328,16 @@ var _ = Describe("Node Health Check CR", func() {
 				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
 			})
 
-			It("requeues reconciliation to 1 minute from now", func() {
+			It("requeues reconciliation to 1 minute from now and updates status", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(reconcileResult.RequeueAfter).To(Equal(1 * time.Minute))
-			})
-
-			It("does not remediate any node", func() {
-				Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
-			})
-
-			It("still updates the status", func() {
-				// we have 1 unhealthy and 2 healthy here
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
+				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 			})
+
 		})
 	})
 
@@ -414,7 +396,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest2.GetName()}}))
 			})
 		})
-		When("a node changes status and is and there are no NHC objects", func() {
+		When("a node changes status and there are no NHC objects", func() {
 			BeforeEach(func() {
 				objects = newNodes(3, 10)
 			})
