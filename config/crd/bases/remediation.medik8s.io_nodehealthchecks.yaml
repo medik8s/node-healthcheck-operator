@@ -37,23 +37,6 @@ spec:
           spec:
             description: NodeHealthCheckSpec defines the desired state of NodeHealthCheck
             properties:
-              backoff:
-                description: TODO document this
-                properties:
-                  duration:
-                    description: Expects a string of decimal numbers each with optional
-                      fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m". Valid
-                      time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
-                    type: string
-                  type:
-                    description: todo rename to strategy instead of type? not sure
-                      we need to support more backoff types
-                    type: string
-                required:
-                - duration
-                - type
-                type: object
               minHealthy:
                 anyOf:
                 - type: integer
