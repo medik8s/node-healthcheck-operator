@@ -290,6 +290,15 @@ spec:
                 description: ObservedNodes specified the number of nodes observed
                   by using the NHC spec.selecor
                 type: integer
+              phase:
+                description: Phase represents the current phase of this Config. Known
+                  phases are Disabled, Paused, Remediating and Enabled, based on:\n
+                  - the status of the Disabled condition\n - the value of PauseRequests\n
+                  - the value of InFlightRemediations
+                type: string
+              reason:
+                description: Reason explains the current phase in more detail.
+                type: string
             type: object
         type: object
     served: true

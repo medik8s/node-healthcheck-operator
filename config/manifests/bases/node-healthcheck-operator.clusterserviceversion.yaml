@@ -77,6 +77,19 @@ spec:
         path: observedNodes
         x-descriptors:
         - urn:alm:descriptor:com.tectonic.ui:observedNodes
+      - description: Phase represents the current phase of this Config. Known phases
+          are Disabled, Paused, Remediating and Enabled, based on:\n - the status
+          of the Disabled condition\n - the value of PauseRequests\n - the value of
+          InFlightRemediations
+        displayName: phase
+        path: phase
+        x-descriptors:
+        - urn:alm:descriptor:com.tectonic.ui:text
+      - description: Reason explains the current phase in more detail.
+        displayName: reason
+        path: reason
+        x-descriptors:
+        - urn:alm:descriptor:com.tectonic.ui:text
       version: v1alpha1
   description: This operator deploys the Node Health Check operator
   displayName: Node Health Check Operator

@@ -31,6 +31,22 @@ const (
 	ConditionReasonDisabledMHC = "MachineHealthCheckDetected"
 )
 
+type NHCPhase string
+
+const (
+	// PhaseDisabled is used when the Disabled condition is true
+	PhaseDisabled NHCPhase = "Disabled"
+
+	// PhasePaused is used when not disabled, but PauseRequests is set
+	PhasePaused NHCPhase = "Paused"
+
+	// PhaseRemediating is used when not disabled and not paused, and InFlightRemediations is set
+	PhaseRemediating NHCPhase = "Remediating"
+
+	// PhaseEnabled is used in all other cases
+	PhaseEnabled NHCPhase = "Enabled"
+)
+
 // NodeHealthCheckSpec defines the desired state of NodeHealthCheck
 type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
@@ -123,6 +139,20 @@ type NodeHealthCheckStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="phase",xDescriptors="urn:alm:descriptor:com.tectonic.ui:text"
+	// Phase represents the current phase of this Config.
+	// Known phases are Disabled, Paused, Remediating and Enabled, based on:\n
+	// - the status of the Disabled condition\n
+	// - the value of PauseRequests\n
+	// - the value of InFlightRemediations
+	// +optional
+	Phase NHCPhase `json:"phase,omitempty"`
+
+	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="reason",xDescriptors="urn:alm:descriptor:com.tectonic.ui:text"
+	// Reason explains the current phase in more detail.
+	// +optional
+	Reason string `json:"reason,omitempty"`
 }
 
 // +kubebuilder:object:root=true
