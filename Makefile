@@ -270,7 +270,7 @@ index-push: ## Push a catalog image.
 	podman push $(INDEX_IMG)
 
 # Run end to end tests
-PHONY: test-e2e
+.PHONY: test-e2e
 test-e2e:
 	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
 	go test ./e2e -coverprofile cover.out -v -timeout 15m

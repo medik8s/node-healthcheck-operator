@@ -73,10 +73,6 @@ type NodeHealthCheckSpec struct {
 	// +optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	PauseRequests []string `json:"pauseRequests,omitempty"`
-
-	// TODO document this
-	// +optional
-	Backoff *Backoff `json:"backoff,omitempty"`
 }
 
 // UnhealthyCondition represents a Node condition type and value with a
@@ -147,23 +143,6 @@ type NodeHealthCheckList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []NodeHealthCheck `json:"items"`
 }
-
-type Backoff struct {
-	//todo rename to strategy instead of type? not sure we need to support more backoff types
-	Type BackoffType `json:"type"`
-	// Expects a string of decimal numbers each with optional
-	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
-	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-	// +kubebuilder:validation:Type=string
-	Limit metav1.Duration `json:"duration"`
-}
-
-type BackoffType string
-
-const (
-	BackoffTypeExponential BackoffType = "exponential"
-)
 
 func init() {
 	SchemeBuilder.Register(&NodeHealthCheck{}, &NodeHealthCheckList{})
