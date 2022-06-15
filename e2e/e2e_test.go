@@ -5,39 +5,57 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/openshift/api/machine/v1beta1"
 	"github.com/pkg/errors"
+
+	"github.com/openshift/api/machine/v1beta1"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
 )
 
 const (
-	blockingPodName                = "api-blocker-pod"
-	safeToAssumeremediationStarted = 10 * time.Minute
-	safeToAssumeNodeRebootTimeout  = 180 * time.Second
 	// keep this aligned with CI config!
 	testNamespace = "default"
+
+	blockingPodName           = "api-blocker-pod"
+	remediationStartedTimeout = 10 * time.Minute
+	nodeRebootedTimeout       = 10 * time.Minute
 )
 
 var _ = Describe("e2e", func() {
 	var nodeUnderTest *v1.Node
+	var testStart time.Time
 
 	BeforeEach(func() {
 		// randomly pick a host (or let the scheduler do it by running the blocking pod)
 		// block the api port to make it go Ready Unknown
 		if nodeUnderTest == nil {
-			nodeName, err := makeNodeUnready(time.Minute, time.Minute*10)
+
+			// find a worker node
+			workers := &v1.NodeList{}
+			selector := labels.NewSelector()
+			req, _ := labels.NewRequirement("node-role.kubernetes.io/worker", selection.Exists, []string{})
+			selector = selector.Add(*req)
+			Expect(client.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
+			Expect(len(workers.Items)).To(BeNumerically(">=", 2))
+			nodeUnderTest = &workers.Items[0]
+			err := makeNodeUnready(nodeUnderTest.Name)
 			Expect(err).NotTo(HaveOccurred())
-			nodeUnderTest, err = clientSet.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
-			Expect(err).NotTo(HaveOccurred())
+
+			// save boot time
+			testStart = time.Now()
 
 			// set terminating node condition now, to prevent remediation start before "with terminating node" test runs
 			Expect(client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
@@ -49,6 +67,7 @@ var _ = Describe("e2e", func() {
 			nodeUnderTest.Status.Conditions = conditions
 			Expect(client.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
 		}
+
 	})
 
 	AfterEach(func() {
@@ -139,7 +158,7 @@ var _ = Describe("e2e", func() {
 
 		It("should not remediate", func() {
 			Consistently(
-				fetchRemediationResourceByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 30*time.Second).
+				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 30*time.Second).
 				ShouldNot(Succeed())
 		})
 	})
@@ -163,24 +182,20 @@ var _ = Describe("e2e", func() {
 
 		It("Remediates a host", func() {
 			Eventually(
-				fetchRemediationResourceByName(nodeUnderTest.Name), safeToAssumeremediationStarted, 10*time.Second).
+				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 10*time.Second).
 				Should(Succeed())
-			Eventually(
-				nodeCreationTime(nodeUnderTest.Name), safeToAssumeNodeRebootTimeout+30*time.Second, 250*time.Millisecond).
-				Should(BeTemporally(">", nodeUnderTest.GetCreationTimestamp().Time))
+			Eventually(func() (time.Time, error) {
+				bootTime, err := utils.GetBootTime(clientSet, nodeUnderTest.Name)
+				if bootTime != nil && err == nil {
+					return *bootTime, nil
+				}
+				return time.Time{}, err
+			}, nodeRebootedTimeout, 30*time.Second).Should(
+				BeTemporally(">", testStart),
+			)
 		})
 	})
 })
-
-func nodeCreationTime(nodeName string) func() time.Time {
-	return func() time.Time {
-		n, err := clientSet.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
-		if err != nil {
-			return time.Now()
-		}
-		return n.GetCreationTimestamp().Time
-	}
-}
 
 func fetchRemediationResourceByName(name string) func() error {
 	return func() error {
@@ -216,13 +231,14 @@ func getTemplateNS() (string, error) {
 
 //makeNodeUnready puts a node in an unready condition by disrupting the network
 // for the duration passed
-func makeNodeUnready(delayDuration, sleepDuration time.Duration) (string, error) {
+func makeNodeUnready(nodeName string) error {
 	// run a privileged pod that blocks the api port
 
 	directory := v1.HostPathDirectory
 	var p = v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: blockingPodName},
 		Spec: v1.PodSpec{
+			NodeName: nodeName,
 			// for running iptables in the host namespace
 			HostNetwork: true,
 			SecurityContext: &v1.PodSecurityContext{
@@ -233,11 +249,11 @@ func makeNodeUnready(delayDuration, sleepDuration time.Duration) (string, error)
 				Env: []v1.EnvVar{
 					{
 						Name:  "DELAYDURATION",
-						Value: fmt.Sprintf("%v", delayDuration.Seconds()),
+						Value: fmt.Sprintf("%v", time.Minute.Seconds()),
 					},
 					{
 						Name:  "SLEEPDURATION",
-						Value: fmt.Sprintf("%v", sleepDuration.Seconds()),
+						Value: fmt.Sprintf("%v", 10*time.Minute.Seconds()),
 					},
 				},
 				Name:  "main",
@@ -280,9 +296,8 @@ sleep infinity
 		Pods(testNamespace).
 		Create(context.Background(), &p, metav1.CreateOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "Failed to run the api-blocker pod")
+		return errors.Wrap(err, "Failed to run the api-blocker pod")
 	}
-	var runsOnNode string
 	err = wait.Poll(5*time.Second, 60*time.Second, func() (done bool, err error) {
 		get, err := clientSet.CoreV1().Pods(testNamespace).Get(context.Background(), blockingPodName, metav1.GetOptions{})
 		fmt.Fprint(GinkgoWriter, "attempting to run a pod to block the api port\n")
@@ -290,13 +305,12 @@ sleep infinity
 			return false, err
 		}
 		if get.Status.Phase == v1.PodRunning {
-			runsOnNode = get.Spec.NodeName
 			fmt.Fprint(GinkgoWriter, "API blocker pod is running\n")
 			return true, nil
 		}
 		return false, nil
 	})
-	return runsOnNode, err
+	return err
 }
 
 func removeAPIBlockingPod() {
