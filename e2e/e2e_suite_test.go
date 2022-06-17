@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
@@ -51,6 +52,8 @@ var (
 		Version:  v1beta1.GroupVersion.Version,
 		Resource: "machinehealthchecks",
 	}
+
+	log logr.Logger
 )
 
 var _ = BeforeSuite(func() {
@@ -59,6 +62,7 @@ var _ = BeforeSuite(func() {
 		TimeEncoder: zapcore.RFC3339NanoTimeEncoder,
 	}
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseFlagOptions(&opts)))
+	log = logf.Log
 
 	// +kubebuilder:scaffold:scheme
 

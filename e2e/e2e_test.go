@@ -185,10 +185,12 @@ var _ = Describe("e2e", func() {
 				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 10*time.Second).
 				Should(Succeed())
 			Eventually(func() (time.Time, error) {
-				bootTime, err := utils.GetBootTime(clientSet, nodeUnderTest.Name)
+				bootTime, err := utils.GetBootTime(clientSet, nodeUnderTest.Name, log)
 				if bootTime != nil && err == nil {
+					log.Info("got boot time", "time", *bootTime)
 					return *bootTime, nil
 				}
+				log.Error(err, "failed to get boot time")
 				return time.Time{}, err
 			}, nodeRebootedTimeout, 30*time.Second).Should(
 				BeTemporally(">", testStart),
@@ -210,7 +212,7 @@ func fetchRemediationResourceByName(name string) func() error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(GinkgoWriter, "found remediation resource %v  that should remediate node %v\n", get.GetName(), name)
+		log.Info("found remediation resource", "name", get.GetName())
 		return nil
 	}
 }
@@ -300,12 +302,12 @@ sleep infinity
 	}
 	err = wait.Poll(5*time.Second, 60*time.Second, func() (done bool, err error) {
 		get, err := clientSet.CoreV1().Pods(testNamespace).Get(context.Background(), blockingPodName, metav1.GetOptions{})
-		fmt.Fprint(GinkgoWriter, "attempting to run a pod to block the api port\n")
+		log.Info("attempting to run a pod to block the api port")
 		if err != nil {
 			return false, err
 		}
 		if get.Status.Phase == v1.PodRunning {
-			fmt.Fprint(GinkgoWriter, "API blocker pod is running\n")
+			log.Info("API blocker pod is running")
 			return true, nil
 		}
 		return false, nil

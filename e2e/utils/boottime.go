@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -21,7 +23,7 @@ import (
 // This code is for big parts from https://github.com/openshift-kni/performance-addon-operators/tree/master/functests/utils
 
 // GetBootTime gets the boot time of the given node by running a pod on it executing uptime command
-func GetBootTime(c *kubernetes.Clientset, nodeName string) (*time.Time, error) {
+func GetBootTime(c *kubernetes.Clientset, nodeName string, log logr.Logger) (*time.Time, error) {
 
 	// create a pod and wait that it's running
 	pod := getBootTimePod(nodeName)
@@ -34,6 +36,8 @@ func GetBootTime(c *kubernetes.Clientset, nodeName string) (*time.Time, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	log.Info("boot time pod is running, going to execute uptime command")
 
 	// get boot time
 	// ubi does noy have uptime command, so we need to install it...
