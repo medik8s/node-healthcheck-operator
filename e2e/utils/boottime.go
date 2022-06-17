@@ -148,6 +148,13 @@ func getBootTimePod(nodeName string) *corev1.Pod {
 				RunAsUser:  pointer.Int64Ptr(0),
 				RunAsGroup: pointer.Int64Ptr(0),
 			},
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "medik8s.io/remediation",
+					Operator: "Exists",
+					Effect:   "NoExecute",
+				},
+			},
 			Containers: []corev1.Container{
 				{
 					Name:    "test",
