@@ -84,15 +84,13 @@ var _ = Describe("e2e", func() {
 		})
 
 		It("should report disabled NHC", func() {
-			Eventually(func() error {
+			Eventually(func(g Gomega) {
 				nhcList := &v1alpha1.NodeHealthCheckList{}
-				Expect(client.List(context.Background(), nhcList)).To(Succeed())
-				if len(nhcList.Items) != 1 {
-					return errors.New("less or more than 1 NHC found")
-				}
-				Expect(meta.IsStatusConditionTrue(nhcList.Items[0].Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
-				Expect(nhcList.Items[0].Status.Phase).To(Equal(v1alpha1.PhaseDisabled), "phase should be Disabled")
-				return nil
+				g.Expect(client.List(context.Background(), nhcList)).To(Succeed())
+				g.Expect(nhcList.Items).To(HaveLen(1), "less or more than 1 NHC found")
+				nhc := nhcList.Items[0]
+				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
+				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseDisabled), "phase should be Disabled")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
 		})
 	})
@@ -113,18 +111,14 @@ var _ = Describe("e2e", func() {
 			}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "node should not be terminating")
 
 			// ensure NHC is not disabled from previous test
-			Eventually(func() error {
+			Eventually(func(g Gomega) {
 				nhcList := &v1alpha1.NodeHealthCheckList{}
-				if err := client.List(context.Background(), nhcList); err != nil {
-					return err
-				}
-				if len(nhcList.Items) != 1 {
-					return errors.New("less or more than 1 NHC found")
-				}
-				Expect(meta.IsStatusConditionTrue(nhcList.Items[0].Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
-				Expect(nhcList.Items[0].Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
-				return nil
-			}, 1*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled")
+				g.Expect(client.List(context.Background(), nhcList)).To(Succeed())
+				g.Expect(nhcList.Items).To(HaveLen(1), "less or more than 1 NHC found")
+				nhc := nhcList.Items[0]
+				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
+				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
+			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled")
 
 		})
 
