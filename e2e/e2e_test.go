@@ -93,7 +93,7 @@ var _ = Describe("e2e", func() {
 				Expect(meta.IsStatusConditionTrue(nhcList.Items[0].Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
 				Expect(nhcList.Items[0].Status.Phase).To(Equal(v1alpha1.PhaseDisabled), "phase should be Disabled")
 				return nil
-			}, 1*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
+			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
 		})
 	})
 
