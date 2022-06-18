@@ -80,10 +80,17 @@ func (c *checker) UpdateStatus() error {
 
 	if len(mhcList.Items) == 0 {
 		// no MHC found, we are fine
+		if c.mhcStatus != noMHC {
+			c.logger.Info("no MHC found")
+		}
 		c.mhcStatus = noMHC
 		return nil
 	} else if len(mhcList.Items) > 1 {
 		// multiple MHCs found, disable NHC
+		// log once only
+		if c.mhcStatus != customMHC {
+			c.logger.Info("found custom MHC, will disable NHC")
+		}
 		c.mhcStatus = customMHC
 		return nil
 	}
@@ -101,6 +108,10 @@ func (c *checker) UpdateStatus() error {
 	}
 
 	// Everything else might cause conflicts
+	// log once only
+	if c.mhcStatus != customMHC {
+		c.logger.Info("found custom MHC, will disable NHC")
+	}
 	c.mhcStatus = customMHC
 	return nil
 
