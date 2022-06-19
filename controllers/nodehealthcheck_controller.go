@@ -80,13 +80,13 @@ type NodeHealthCheckReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := r.Log.WithValues("NodeHealthCheck", req.NamespacedName)
 
 	// fetch nhc
 	nhc := &remediationv1alpha1.NodeHealthCheck{}
-	err := r.Get(ctx, req.NamespacedName, nhc)
-	result := ctrl.Result{}
+	err = r.Get(ctx, req.NamespacedName, nhc)
+	result = ctrl.Result{}
 	if err != nil {
 		log.Error(err, "failed fetching Node Health Check", "object", nhc)
 		if apierrors.IsNotFound(err) {
@@ -95,7 +95,16 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	// check if we need to disable NHC because of existimg MHCs
+	// check if we need to patch status before we exit Reconcile
+	nhcOrig := nhc.DeepCopy()
+	defer func() {
+		err = r.patchStatus(nhc, nhcOrig)
+		if err != nil {
+			log.Error(err, "failed to patch NHC status")
+		}
+	}()
+
+	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
 		// update status if needed
 		if !meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
@@ -107,11 +116,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Message: "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts",
 			})
 			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
-			err = r.Client.Status().Update(context.Background(), nhc)
-			if err != nil {
-				log.Error(err, "failed to update NHC status conditions")
-				return result, err
-			}
 		}
 		// stop reconciling
 		return result, nil
@@ -120,11 +124,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
 		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
 		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
-		err = r.Client.Status().Update(context.Background(), nhc)
-		if err != nil {
-			log.Error(err, "failed to update NHC status conditions")
-			return result, err
-		}
 	}
 
 	// select nodes using the nhc.selector
@@ -132,12 +131,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return result, err
 	}
+	nhc.Status.ObservedNodes = len(nodes)
 
 	// check nodes health
 	unhealthyNodes, err := r.checkNodesHealth(nodes, nhc)
 	if err != nil {
 		return result, err
 	}
+	nhc.Status.HealthyNodes = len(nodes) - len(unhealthyNodes)
 
 	minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true)
 	if err != nil {
@@ -146,11 +147,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
+	var reconcileErr error
 	if r.shouldTryRemediation(nhc, nodes, unhealthyNodes, minHealthy, &result) {
 		for i := range unhealthyNodes {
-			nextReconcile, err := r.remediate(ctx, &unhealthyNodes[i], nhc)
-			if err != nil {
-				return ctrl.Result{}, err
+			var nextReconcile *time.Duration
+			nextReconcile, reconcileErr = r.remediate(ctx, &unhealthyNodes[i], nhc)
+			if reconcileErr != nil {
+				// don't try to remediate other nodes
+				break
 			}
 			if nextReconcile != nil {
 				updateResultNextReconcile(&result, *nextReconcile)
@@ -158,16 +162,17 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	// update inFlightRemediations before checking reconcile error
 	inFlightRemediations, err := r.getInflightRemediations(nhc)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed fetching remediation objects of the NHC")
+		return result, errors.Wrapf(err, "failed fetching remediation objects of the NHC")
+	}
+	nhc.Status.InFlightRemediations = inFlightRemediations
+
+	if reconcileErr != nil {
+		return result, reconcileErr
 	}
 
-	err = r.patchStatus(nhc, len(nodes), len(unhealthyNodes), inFlightRemediations)
-	if err != nil {
-		log.Error(err, "failed to patch NHC status")
-		return ctrl.Result{}, err
-	}
 	return result, nil
 }
 
@@ -393,23 +398,30 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc *remediationv1alpha1.NodeH
 	return obj, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc *remediationv1alpha1.NodeHealthCheck, observedNodes int, unhealthyNodes int, remediations map[string]metav1.Time) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
 
-	healthyNodes := observedNodes - unhealthyNodes
+	// calculate phase and reason
+	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
+	if disabledCondition != nil && disabledCondition.Status == metav1.ConditionTrue {
+		nhc.Status.Phase = remediationv1alpha1.PhaseDisabled
+		nhc.Status.Reason = fmt.Sprintf("NHC is disabled: %s", disabledCondition.Reason)
+	} else if len(nhc.Spec.PauseRequests) > 0 {
+		nhc.Status.Phase = remediationv1alpha1.PhasePaused
+		nhc.Status.Reason = fmt.Sprintf("NHC is paused: %s", strings.Join(nhc.Spec.PauseRequests, ","))
+	} else if len(nhc.Status.InFlightRemediations) > 0 {
+		nhc.Status.Phase = remediationv1alpha1.PhaseRemediating
+		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.InFlightRemediations))
+	} else {
+		nhc.Status.Phase = remediationv1alpha1.PhaseEnabled
+		nhc.Status.Reason = "NHC is enabled, no ongoing remediation"
+	}
 
 	// skip when no changes
-	if nhc.Status.ObservedNodes == observedNodes &&
-		nhc.Status.HealthyNodes == healthyNodes &&
-		((len(nhc.Status.InFlightRemediations) == 0 && len(remediations) == 0) || reflect.DeepEqual(nhc.Status.InFlightRemediations, remediations)) {
+	if reflect.DeepEqual(nhc.Status, nhcOrig.Status) {
 		return nil
 	}
 
-	base := nhc.DeepCopy()
-	mergeFrom := client.MergeFrom(base)
-
-	nhc.Status.ObservedNodes = observedNodes
-	nhc.Status.HealthyNodes = healthyNodes
-	nhc.Status.InFlightRemediations = remediations
+	mergeFrom := client.MergeFrom(nhcOrig)
 
 	// all values to be patched expected to be updated on the current nhc.status
 	r.Log.Info("Patching NHC object", "patch", nhc.Status)
