@@ -94,8 +94,6 @@ test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual 
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
 	./hack/test-mutation.sh
 
-test-mutation-ci: fetch-mutation ## Run mutation tests as part of auto build process.
-	./hack/test-mutation.sh
 
 # Build manager binary
 manager: generate fmt vet
@@ -284,3 +282,17 @@ deploy-snr:
 	mkdir -p ${SNR_DIR}
 	test -f ${SNR_DIR}/Makefile || curl -L https://github.com/medik8s/self-node-remediation/tarball/${SNR_GIT_REF} | tar -C ${SNR_DIR} -xzv --strip=1
 	$(MAKE) -C ${SNR_DIR} docker-build docker-push deploy VERSION=$(SNR_VERSION)
+
+##@ Targets used by CI
+
+.PHONY: container-build
+container-build: ## Build containers
+	make docker-build bundle bundle-build
+
+.PHONY: container-push
+container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
+	make docker-push bundle-push index-build index-push
+
+.PHONY: test-mutation-ci
+test-mutation-ci: fetch-mutation ## Run mutation tests as part of auto build process.
+	./hack/test-mutation.sh
