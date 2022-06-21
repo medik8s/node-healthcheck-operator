@@ -31,6 +31,13 @@ const (
 	// ConditionReasonEnabledNoMHC is the condition reason for type Disabled in case NHC is disabled because
 	// of conflicts with MHC
 	ConditionReasonEnabledNoMHC = "NoConflictingMachineHealthCheckDetected"
+
+	// ConditionTypeTemplateNotFound is the condition type used when NHC will get disabled
+	ConditionTypeTemplateNotFound = "RemediationTemplateNotFound"
+	// ConditionReasonTemplateNotFound is the reason for type RemediationTemplateNotFound when the template wasn't found
+	ConditionReasonTemplateNotFound = "RemediationTemplateNotFound"
+	// ConditionReasonTemplateFound is the reason for type RemediationTemplateNotFound when the template was found
+	ConditionReasonTemplateFound = "RemediationTemplateFound"
 )
 
 // NHCPhase is the string used for NHC.Status.Phase
@@ -42,6 +49,9 @@ const (
 
 	// PhasePaused is used when not disabled, but PauseRequests is set
 	PhasePaused NHCPhase = "Paused"
+
+	// PhaseTemplateNotFound is used when not disabled and not paused, but the remediation template is not found
+	PhaseTemplateNotFound NHCPhase = "RemediationTemplateNotFound"
 
 	// PhaseRemediating is used when not disabled and not paused, and InFlightRemediations is set
 	PhaseRemediating NHCPhase = "Remediating"
