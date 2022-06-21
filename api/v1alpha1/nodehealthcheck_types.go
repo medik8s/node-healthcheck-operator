@@ -25,10 +25,12 @@ import (
 const (
 	// ConditionTypeDisabled is the condition type used when NHC will get disabled
 	ConditionTypeDisabled = "Disabled"
-
 	// ConditionReasonDisabledMHC is the condition reason for type Disabled in case NHC is disabled because
 	// of conflicts with MHC
-	ConditionReasonDisabledMHC = "MachineHealthCheckDetected"
+	ConditionReasonDisabledMHC = "ConflictingMachineHealthCheckDetected"
+	// ConditionReasonEnabledNoMHC is the condition reason for type Disabled in case NHC is disabled because
+	// of conflicts with MHC
+	ConditionReasonEnabledNoMHC = "NoConflictingMachineHealthCheckDetected"
 )
 
 // NHCPhase is the string used for NHC.Status.Phase

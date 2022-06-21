@@ -120,10 +120,16 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// stop reconciling
 		return result, nil
 	}
-	if meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
-		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
-		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
+	// update status if needed
+	if !meta.IsStatusConditionFalse(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
+		log.Info("enabling NHC, no conflicting MHC configured in the cluster")
+		meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+			Type:    remediationv1alpha1.ConditionTypeDisabled,
+			Status:  metav1.ConditionFalse,
+			Reason:  remediationv1alpha1.ConditionReasonEnabledNoMHC,
+			Message: "No conflicting MachineHealthCheck(s) detected",
+		})
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "No conflicting MachineHealthCheck(s) detected, NHC is enabled")
 	}
 
 	// select nodes using the nhc.selector

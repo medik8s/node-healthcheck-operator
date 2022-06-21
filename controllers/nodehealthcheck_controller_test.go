@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -32,6 +30,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 var _ = Describe("Node Health Check CR", func() {
