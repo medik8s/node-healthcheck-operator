@@ -57,6 +57,8 @@ const (
 	eventReasonRemediationRemoved = "RemediationRemoved"
 	eventReasonDisabled           = "Disabled"
 	eventReasonEnabled            = "Enabled"
+	eventReasonTemplateNotFound   = "RemediationTemplateNotFound"
+	eventReasonTemplateFound      = "RemediationTemplateFound"
 	eventTypeNormal               = "Normal"
 	eventTypeWarning              = "Warning"
 )
@@ -120,10 +122,16 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// stop reconciling
 		return result, nil
 	}
-	if meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
-		log.Info("re-enabling NHC, no conflicting MHC configured in the cluster")
-		meta.RemoveStatusCondition(&nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "Custom MachineHealthCheck(s) removed, re-enabling NHC")
+	// update status if needed
+	if !meta.IsStatusConditionFalse(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
+		log.Info("enabling NHC, no conflicting MHC configured in the cluster")
+		meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+			Type:    remediationv1alpha1.ConditionTypeDisabled,
+			Status:  metav1.ConditionFalse,
+			Reason:  remediationv1alpha1.ConditionReasonEnabledNoMHC,
+			Message: "No conflicting MachineHealthCheck(s) detected",
+		})
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "No conflicting MachineHealthCheck(s) detected, NHC is enabled")
 	}
 
 	// select nodes using the nhc.selector
@@ -393,7 +401,29 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc *remediationv1alpha1.NodeH
 	obj.SetName(t.Name)
 	key := client.ObjectKey{Name: obj.GetName(), Namespace: t.Namespace}
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			// set condition and send event
+			if !meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeTemplateNotFound) {
+				meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+					Type:    remediationv1alpha1.ConditionTypeTemplateNotFound,
+					Status:  metav1.ConditionTrue,
+					Reason:  remediationv1alpha1.ConditionReasonTemplateNotFound,
+					Message: fmt.Sprintf("Remediation Template not found. Kind %s, Namespace: %s, Name %s", t.GroupVersionKind().Kind, key.Namespace, key.Name),
+				})
+				r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonTemplateNotFound, "Remediation Template not found. Kind: %s, Namespace: %s, Name %s", t.GroupVersionKind().Kind, key.Namespace, key.Name)
+			}
+		}
 		return nil, errors.Wrapf(err, "failed to retrieve %s external remdiation template %q/%q", obj.GetKind(), key.Namespace, key.Name)
+	}
+	// set condition and send event
+	if !meta.IsStatusConditionFalse(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeTemplateNotFound) {
+		meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+			Type:    remediationv1alpha1.ConditionTypeTemplateNotFound,
+			Status:  metav1.ConditionFalse,
+			Reason:  remediationv1alpha1.ConditionReasonTemplateFound,
+			Message: fmt.Sprintf("Remediation Template found. Kind: %s, Namespace: %s, Name %s", t.GroupVersionKind().Kind, key.Namespace, key.Name),
+		})
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonTemplateFound, "Remediation Template found. Kind: %s, Namespace: %s, Name %s", t.GroupVersionKind().Kind, key.Namespace, key.Name)
 	}
 	return obj, nil
 }
@@ -402,12 +432,20 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 
 	// calculate phase and reason
 	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
+	templateNotFoundCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeTemplateNotFound)
 	if disabledCondition != nil && disabledCondition.Status == metav1.ConditionTrue {
 		nhc.Status.Phase = remediationv1alpha1.PhaseDisabled
 		nhc.Status.Reason = fmt.Sprintf("NHC is disabled: %s", disabledCondition.Reason)
 	} else if len(nhc.Spec.PauseRequests) > 0 {
 		nhc.Status.Phase = remediationv1alpha1.PhasePaused
 		nhc.Status.Reason = fmt.Sprintf("NHC is paused: %s", strings.Join(nhc.Spec.PauseRequests, ","))
+	} else if templateNotFoundCondition != nil && templateNotFoundCondition.Status == metav1.ConditionTrue {
+		nhc.Status.Phase = remediationv1alpha1.PhaseTemplateNotFound
+		template := "<nil>"
+		if nhc.Spec.RemediationTemplate != nil {
+			template = fmt.Sprintf("%+v", nhc.Spec.RemediationTemplate)
+		}
+		nhc.Status.Reason = fmt.Sprintf("NHC is broken, remediation template not found: %v", template)
 	} else if len(nhc.Status.InFlightRemediations) > 0 {
 		nhc.Status.Phase = remediationv1alpha1.PhaseRemediating
 		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.InFlightRemediations))

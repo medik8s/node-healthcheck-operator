@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -32,6 +30,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 var _ = Describe("Node Health Check CR", func() {
@@ -173,7 +172,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Scheme:                      scheme.Scheme,
 				ClusterUpgradeStatusChecker: &upgradeChecker,
 				MHCChecker:                  mhcChecker,
-				Recorder:                    record.NewFakeRecorder(3),
+				Recorder:                    record.NewFakeRecorder(20),
 			}
 			reconcileResult, reconcileError = reconciler.Reconcile(
 				context.Background(),
@@ -213,6 +212,19 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 				Expect(underTest.Status.Reason).ToNot(BeEmpty())
+				Expect(underTest.Status.Conditions).To(ContainElement(
+					And(
+						HaveField("Type", v1alpha1.ConditionTypeTemplateNotFound),
+						HaveField("Status", metav1.ConditionFalse),
+						HaveField("Reason", v1alpha1.ConditionReasonTemplateFound),
+					)))
+				Expect(underTest.Status.Conditions).To(ContainElement(
+					And(
+						HaveField("Type", v1alpha1.ConditionTypeDisabled),
+						HaveField("Status", metav1.ConditionFalse),
+						HaveField("Reason", v1alpha1.ConditionReasonEnabledNoMHC),
+					)))
+
 			})
 
 		})
@@ -336,6 +348,29 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 				Expect(underTest.Status.Reason).ToNot(BeEmpty())
+			})
+
+		})
+
+		When("Nodes are candidates for remediation but remediation template is broken", func() {
+			BeforeEach(func() {
+				objects = newNodes(1, 2)
+				underTest = newNodeHealthCheck()
+				underTest.Spec.RemediationTemplate.Name = "dummy"
+				remediationTemplate := newRemediationTemplate()
+				objects = append(objects, underTest, remediationTemplate)
+			})
+
+			It("should set corresponding condition", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseTemplateNotFound))
+				Expect(underTest.Status.Reason).To(ContainSubstring("dummy"))
+				Expect(underTest.Status.Conditions).To(ContainElement(
+					And(
+						HaveField("Type", v1alpha1.ConditionTypeTemplateNotFound),
+						HaveField("Status", metav1.ConditionTrue),
+						HaveField("Reason", v1alpha1.ConditionReasonTemplateNotFound),
+					)))
 			})
 
 		})
