@@ -36,3 +36,18 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         # remove leading 'v' from tag!
         run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make container-build container-push
+
+      - name: Build and push index image with versioned NHC + SNR images
+        run: |
+          # get script from github
+          NAME=build-nhc-snr.sh
+          curl https://raw.githubusercontent.com/medik8s/tools/main/scripts/${NAME} -o $NAME
+          chmod +x $NAME
+          
+          # set version vars
+          export NHC_VERSION=0.3.0-ci
+          export SNR_VERSION=0.4.0-ci
+          export INDEX_VERSION=4.11-ci
+          
+          # build and push images
+          ./$NAME --skip-deploy
