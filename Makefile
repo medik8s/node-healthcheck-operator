@@ -11,10 +11,10 @@ DEFAULT_VERSION := 0.0.1
 VERSION ?= $(DEFAULT_VERSION)
 export VERSION
 
-# use candidate channel
-CHANNELS = candidate
+# use candidate for easier upgrades from Tch Preview to GA version. Stable will be the new default though
+CHANNELS = candidate,stable
 export CHANNELS
-DEFAULT_CHANNEL = candidate
+DEFAULT_CHANNEL = stable
 export DEFAULT_CHANNEL
 
 # CHANNELS define the bundle channels used in the bundle. 
