@@ -119,7 +119,9 @@ spec:
   - k8s
   links:
   - name: Node Healthcheck Operator
-    url: https://node-healthcheck-operator.domain
+    url: https://medik8s.io
+  - name: Source Code
+    url: https://github.com/medik8s/node-healthcheck-operator
   maintainers:
   - email: medik8s@googlegroups.com
     name: medik8s team
