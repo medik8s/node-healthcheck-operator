@@ -226,7 +226,7 @@ var _ = Describe("Node Health Check CR", func() {
 					And(
 						HaveField("Type", v1alpha1.ConditionTypeDisabled),
 						HaveField("Status", metav1.ConditionFalse),
-						HaveField("Reason", v1alpha1.ConditionReasonEnabledNoMHC),
+						HaveField("Reason", v1alpha1.ConditionReasonEnabled),
 					)))
 
 			})
@@ -358,11 +358,8 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("Nodes are candidates for remediation but remediation template is broken", func() {
 			BeforeEach(func() {
-				objects = newNodes(1, 2)
-				underTest = newNodeHealthCheck()
+				setupObjects(1, 2)
 				underTest.Spec.RemediationTemplate.Name = "dummy"
-				remediationTemplate := newRemediationTemplate()
-				objects = append(objects, underTest, remediationTemplate)
 			})
 
 			It("should set corresponding condition", func() {
@@ -376,7 +373,29 @@ var _ = Describe("Node Health Check CR", func() {
 						HaveField("Reason", v1alpha1.ConditionReasonTemplateNotFound),
 					)))
 			})
+		})
 
+		// Remove this and corresponding code when kubebuilder supports minimum on IntOrStr types
+		// and don't skip earlier validation test anymore
+		When("minHealthy is negative", func() {
+			BeforeEach(func() {
+				setupObjects(1, 2)
+				underTest.Spec.RemediationTemplate.Name = "dummy"
+				mh := intstr.FromInt(-10)
+				underTest.Spec.MinHealthy = &mh
+			})
+
+			It("should set corresponding phase and condition", func() {
+				Expect(reconcileError).NotTo(HaveOccurred())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+				Expect(underTest.Status.Reason).To(ContainSubstring("MinHealthy is negative"))
+				Expect(underTest.Status.Conditions).To(ContainElement(
+					And(
+						HaveField("Type", v1alpha1.ConditionTypeDisabled),
+						HaveField("Status", metav1.ConditionTrue),
+						HaveField("Reason", v1alpha1.ConditionReasonDisabledInvalidConfig),
+					)))
+			})
 		})
 	})
 

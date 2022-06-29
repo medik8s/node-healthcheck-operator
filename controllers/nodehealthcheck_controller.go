@@ -106,32 +106,51 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}()
 
+	// check if we need to disable NHC because of invalid configuration
+	// Remove this and corresponding test when kubebuilder supports minimum on IntOrStr types
+	if err = utils.ValidateMinHealthy(nhc); err != nil {
+		// update status if needed
+		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledInvalidConfig) {
+			log.Info("disabling NHC because of invalid config")
+			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+				Type:    remediationv1alpha1.ConditionTypeDisabled,
+				Status:  metav1.ConditionTrue,
+				Reason:  remediationv1alpha1.ConditionReasonDisabledInvalidConfig,
+				Message: err.Error(),
+			})
+			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Invalid configuration: %s", err.Error())
+		}
+		// stop reconciling
+		return result, nil
+	}
+
 	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
 		// update status if needed
-		if !meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
+		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledMHC) {
 			log.Info("disabling NHC in order to avoid conflict with custom MHCs configured in the cluster")
 			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
 				Type:    remediationv1alpha1.ConditionTypeDisabled,
 				Status:  metav1.ConditionTrue,
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
-				Message: "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts",
+				Message: "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts",
 			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NHC to avoid conflicts")
+			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
 		}
 		// stop reconciling
 		return result, nil
 	}
+
 	// update status if needed
 	if !meta.IsStatusConditionFalse(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
-		log.Info("enabling NHC, no conflicting MHC configured in the cluster")
+		log.Info("enabling NHC, valid config, no conflicting MHC configured in the cluster")
 		meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
 			Type:    remediationv1alpha1.ConditionTypeDisabled,
 			Status:  metav1.ConditionFalse,
-			Reason:  remediationv1alpha1.ConditionReasonEnabledNoMHC,
-			Message: "No conflicting MachineHealthCheck(s) detected",
+			Reason:  remediationv1alpha1.ConditionReasonEnabled,
+			Message: "Valid config, and no conflicting MachineHealthCheck(s) detected",
 		})
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "No conflicting MachineHealthCheck(s) detected, NHC is enabled")
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, "NHC is enabled, valid config, and no conflicting MachineHealthCheck(s) detected")
 	}
 
 	// select nodes using the nhc.selector
@@ -435,7 +454,7 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 	templateNotFoundCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeTemplateNotFound)
 	if disabledCondition != nil && disabledCondition.Status == metav1.ConditionTrue {
 		nhc.Status.Phase = remediationv1alpha1.PhaseDisabled
-		nhc.Status.Reason = fmt.Sprintf("NHC is disabled: %s", disabledCondition.Reason)
+		nhc.Status.Reason = fmt.Sprintf("NHC is disabled: %s: %s", disabledCondition.Reason, disabledCondition.Message)
 	} else if len(nhc.Spec.PauseRequests) > 0 {
 		nhc.Status.Phase = remediationv1alpha1.PhasePaused
 		nhc.Status.Reason = fmt.Sprintf("NHC is paused: %s", strings.Join(nhc.Spec.PauseRequests, ","))
