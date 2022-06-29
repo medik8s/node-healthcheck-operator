@@ -82,9 +82,9 @@ type NodeHealthCheckSpec struct {
 	// Percentage values must be positive whole numbers and are capped at 100%.
 	// 100% is valid and will block all remediation.
 	// +kubebuilder:default="51%"
+	// +kubebuilder:validation:XIntOrString
 	// +kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
-	// +kubebuilder:validation:Type=string
-	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	// +operator-sdk:csv:customresourcedefinitions:type=spec
 	MinHealthy *intstr.IntOrString `json:"minHealthy,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template

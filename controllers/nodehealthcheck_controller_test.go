@@ -133,7 +133,11 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("fails creation on negative number", func() {
-				Skip("TODO find out how to validate a minimum for IntOrString")
+				Skip("Does not work yet")
+				invalidInt := intstr.FromInt(-10)
+				underTest.Spec.MinHealthy = &invalidInt
+				err := k8sClient.Create(context.Background(), underTest)
+				Expect(errors.IsInvalid(err)).To(BeTrue())
 			})
 
 			It("succeeds creation on percentage between 0%-100%", func() {

@@ -48,7 +48,6 @@ spec:
                   whole numbers and are capped at 100%. 100% is valid and will block
                   all remediation.
                 pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
-                type: string
                 x-kubernetes-int-or-string: true
               pauseRequests:
                 description: 'PauseRequests will prevent any new remdiation to start,
