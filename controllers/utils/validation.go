@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// ValidateMinHealthy validates the minHealthy field
 func ValidateMinHealthy(nhc *v1alpha1.NodeHealthCheck) error {
 	if nhc.Spec.MinHealthy == nil {
 		return fmt.Errorf("MinHealthy is nil")
