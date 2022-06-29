@@ -218,12 +218,6 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 				Expect(underTest.Status.Conditions).To(ContainElement(
 					And(
-						HaveField("Type", v1alpha1.ConditionTypeTemplateNotFound),
-						HaveField("Status", metav1.ConditionFalse),
-						HaveField("Reason", v1alpha1.ConditionReasonTemplateFound),
-					)))
-				Expect(underTest.Status.Conditions).To(ContainElement(
-					And(
 						HaveField("Type", v1alpha1.ConditionTypeDisabled),
 						HaveField("Status", metav1.ConditionFalse),
 						HaveField("Reason", v1alpha1.ConditionReasonEnabled),
@@ -368,9 +362,9 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Reason).To(ContainSubstring("dummy"))
 				Expect(underTest.Status.Conditions).To(ContainElement(
 					And(
-						HaveField("Type", v1alpha1.ConditionTypeTemplateNotFound),
+						HaveField("Type", v1alpha1.ConditionTypeDisabled),
 						HaveField("Status", metav1.ConditionTrue),
-						HaveField("Reason", v1alpha1.ConditionReasonTemplateNotFound),
+						HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateNotFound),
 					)))
 			})
 		})

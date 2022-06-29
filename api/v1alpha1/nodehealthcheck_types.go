@@ -31,15 +31,10 @@ const (
 	// ConditionReasonDisabledInvalidConfig is the condition reason for type Disabled in case NHC is disabled because
 	// of invalid configuration
 	ConditionReasonDisabledInvalidConfig = "InvalidConfiguration"
+	// ConditionReasonDisabledTemplateNotFound is the reason for type Disabled when the template wasn't found
+	ConditionReasonDisabledTemplateNotFound = "RemediationTemplateNotFound"
 	// ConditionReasonEnabled is the condition reason for type Disabled and status False
 	ConditionReasonEnabled = "NodeHealthCheckEnabled"
-
-	// ConditionTypeTemplateNotFound is the condition type used when NHC will get disabled
-	ConditionTypeTemplateNotFound = "RemediationTemplateNotFound"
-	// ConditionReasonTemplateNotFound is the reason for type RemediationTemplateNotFound when the template wasn't found
-	ConditionReasonTemplateNotFound = "RemediationTemplateNotFound"
-	// ConditionReasonTemplateFound is the reason for type RemediationTemplateNotFound when the template was found
-	ConditionReasonTemplateFound = "RemediationTemplateFound"
 )
 
 // NHCPhase is the string used for NHC.Status.Phase
