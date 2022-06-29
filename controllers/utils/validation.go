@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )

@@ -358,8 +358,12 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("should set corresponding condition", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
-				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseTemplateNotFound))
-				Expect(underTest.Status.Reason).To(ContainSubstring("dummy"))
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+				Expect(underTest.Status.Reason).To(
+					And(
+						ContainSubstring("dummy"),
+						ContainSubstring("not found"),
+					))
 				Expect(underTest.Status.Conditions).To(ContainElement(
 					And(
 						HaveField("Type", v1alpha1.ConditionTypeDisabled),

@@ -140,7 +140,25 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, nil
 	}
 
-	// update status if needed
+	// check if we need to disable NHC because of missing template CR
+	var template *unstructured.Unstructured
+	if template, err = r.fetchTemplate(nhc); err != nil && apierrors.IsNotFound(errors.Cause(err)) {
+		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledTemplateNotFound) {
+			rt := nhc.Spec.RemediationTemplate
+			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+				Type:    remediationv1alpha1.ConditionTypeDisabled,
+				Status:  metav1.ConditionTrue,
+				Reason:  remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
+				Message: fmt.Sprintf("Remediation Template not found. Kind %s, Namespace: %s, Name %s", rt.GroupVersionKind().Kind, rt.Namespace, rt.Name),
+			})
+			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Remediation Template not found. Kind: %s, Namespace: %s, Name %s", rt.GroupVersionKind().Kind, rt.Namespace, rt.Name)
+		}
+		// requeue for checking back if template exists later
+		result.RequeueAfter = 15 * time.Second
+		return result, nil
+	}
+
+	// all checks passed, update status if needed
 	if !meta.IsStatusConditionFalse(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
 		log.Info("enabling NHC, valid config, no conflicting MHC configured in the cluster")
 		meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
@@ -160,7 +178,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nhc.Status.ObservedNodes = len(nodes)
 
 	// check nodes health
-	unhealthyNodes, err := r.checkNodesHealth(nodes, nhc)
+	unhealthyNodes, err := r.checkNodesHealth(nodes, nhc, template)
 	if err != nil {
 		return result, err
 	}
@@ -177,7 +195,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if r.shouldTryRemediation(nhc, nodes, unhealthyNodes, minHealthy, &result) {
 		for i := range unhealthyNodes {
 			var nextReconcile *time.Duration
-			nextReconcile, reconcileErr = r.remediate(ctx, &unhealthyNodes[i], nhc)
+			nextReconcile, reconcileErr = r.remediate(ctx, &unhealthyNodes[i], nhc, template)
 			if reconcileErr != nil {
 				// don't try to remediate other nodes
 				break
@@ -189,7 +207,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// update inFlightRemediations before checking reconcile error
-	inFlightRemediations, err := r.getInflightRemediations(nhc)
+	inFlightRemediations, err := r.getInflightRemediations(nhc, template)
 	if err != nil {
 		return result, errors.Wrapf(err, "failed fetching remediation objects of the NHC")
 	}
@@ -262,28 +280,28 @@ func (r *NodeHealthCheckReconciler) fetchNodes(ctx context.Context, labelSelecto
 	return nodes.Items, err
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) ([]v1.Node, error) {
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) ([]v1.Node, error) {
 	var unhealthy []v1.Node
 	for i := range nodes {
-		n := &nodes[i]
-		if isHealthy(nhc.Spec.UnhealthyConditions, n.Status.Conditions) {
-			err := r.markHealthy(n, nhc)
+		node := &nodes[i]
+		if isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions) {
+			err := r.markHealthy(node, nhc, template)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			// ignore nodes handled by MHC
-			if r.MHCChecker.NeedIgnoreNode(n) {
+			if r.MHCChecker.NeedIgnoreNode(node) {
 				continue
 			}
-			unhealthy = append(unhealthy, *n)
+			unhealthy = append(unhealthy, *node)
 		}
 	}
 	return unhealthy, nil
 }
 
-func (r *NodeHealthCheckReconciler) markHealthy(n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) error {
-	cr, err := r.generateRemediationCR(n, nhc)
+func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) error {
+	cr, err := r.generateRemediationCR(node, nhc, template)
 	if err != nil {
 		return err
 	}
@@ -296,7 +314,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(n *v1.Node, nhc *remediationv1al
 		return nil
 	}
 
-	r.Log.V(5).Info("node seems healthy", "Node name", n.Name)
+	r.Log.V(5).Info("node seems healthy", "Node name", node.Name)
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
 	// if the node is already healthy then there is no remediation object for it
@@ -306,8 +324,8 @@ func (r *NodeHealthCheckReconciler) markHealthy(n *v1.Node, nhc *remediationv1al
 
 	if err == nil {
 		// deleted an actual object
-		r.Log.Info("deleted node external remediation object", "Node name", n.Name)
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", n.Name)
+		r.Log.Info("deleted node external remediation object", "Node name", node.Name)
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", node.Name)
 	}
 	return nil
 }
@@ -339,8 +357,8 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
-	cr, err := r.generateRemediationCR(n, nhc)
+func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*time.Duration, error) {
+	cr, err := r.generateRemediationCR(node, nhc, template)
 	if err != nil {
 		return nil, err
 	}
@@ -354,41 +372,36 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, n *v1.Node, n
 
 		// create CR
 		r.Log.Info("node seems unhealthy. Creating an external remediation object",
-			"nodeName", n.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
+			"nodeName", node.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
 		if err = r.Client.Create(ctx, cr); err != nil {
 			r.Log.Error(err, "failed to create an external remediation object")
 			return nil, err
 		}
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", n.Name))
+		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
 		return nil, nil
 	}
 
 	// CR exists
 	isAlert, nextReconcile := r.alertOldRemediationCR(cr)
 	if isAlert {
-		metrics.ObserveNodeHealthCheckOldRemediationCR(n.Name, n.Namespace)
+		metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
 	}
 	return nextReconcile, nil
 }
 
-func (r *NodeHealthCheckReconciler) generateRemediationCR(n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
-	t, err := r.fetchTemplate(nhc)
-	if err != nil {
-		return nil, err
-	}
-
-	templateSpec, found, err := unstructured.NestedMap(t.Object, "spec", "template")
+func (r *NodeHealthCheckReconciler) generateRemediationCR(n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	templateSpec, found, err := unstructured.NestedMap(template.Object, "spec", "template")
 	if !found || err != nil {
-		return nil, errors.Errorf("Failed to retrieve Spec.Template on %v %q %v", t.GroupVersionKind(), t.GetName(), err)
+		return nil, errors.Errorf("Failed to retrieve Spec.Template on %v %q %v", template.GroupVersionKind(), template.GetName(), err)
 	}
 
 	u := unstructured.Unstructured{Object: templateSpec}
 	u.SetName(n.Name)
-	u.SetNamespace(t.GetNamespace())
+	u.SetNamespace(template.GetNamespace())
 	u.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   t.GroupVersionKind().Group,
-		Version: t.GroupVersionKind().Version,
-		Kind:    strings.TrimSuffix(t.GetKind(), templateSuffix),
+		Group:   template.GroupVersionKind().Group,
+		Version: template.GroupVersionKind().Version,
+		Kind:    strings.TrimSuffix(template.GetKind(), templateSuffix),
 	})
 	u.SetOwnerReferences([]metav1.OwnerReference{
 		{
@@ -419,29 +432,7 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc *remediationv1alpha1.NodeH
 	obj.SetName(t.Name)
 	key := client.ObjectKey{Name: obj.GetName(), Namespace: t.Namespace}
 	if err := r.Client.Get(context.Background(), key, obj); err != nil {
-		if apierrors.IsNotFound(err) {
-			// set condition and send event
-			if !meta.IsStatusConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
-				meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
-					Type:    remediationv1alpha1.ConditionTypeDisabled,
-					Status:  metav1.ConditionTrue,
-					Reason:  remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
-					Message: fmt.Sprintf("Remediation Template not found. Kind %s, Namespace: %s, Name %s", t.GroupVersionKind().Kind, key.Namespace, key.Name),
-				})
-				r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Remediation Template not found. Kind: %s, Namespace: %s, Name %s", t.GroupVersionKind().Kind, key.Namespace, key.Name)
-			}
-		}
 		return nil, errors.Wrapf(err, "failed to retrieve %s external remdiation template %q/%q", obj.GetKind(), key.Namespace, key.Name)
-	}
-	// set condition and send event
-	if !meta.IsStatusConditionFalse(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled) {
-		meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
-			Type:    remediationv1alpha1.ConditionTypeDisabled,
-			Status:  metav1.ConditionFalse,
-			Reason:  remediationv1alpha1.ConditionReasonEnabled,
-			Message: enabledMessage,
-		})
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, enabledMessage)
 	}
 	return obj, nil
 }
@@ -476,8 +467,8 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom, &client.PatchOptions{})
 }
 
-func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error) {
-	cr, err := r.generateRemediationCR(&v1.Node{}, nhc)
+func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (map[string]metav1.Time, error) {
+	cr, err := r.generateRemediationCR(&v1.Node{}, nhc, template)
 	if err != nil {
 		return nil, err
 	}

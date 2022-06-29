@@ -47,9 +47,6 @@ const (
 	// PhasePaused is used when not disabled, but PauseRequests is set
 	PhasePaused NHCPhase = "Paused"
 
-	// PhaseTemplateNotFound is used when not disabled and not paused, but the remediation template is not found
-	PhaseTemplateNotFound NHCPhase = "RemediationTemplateNotFound"
-
 	// PhaseRemediating is used when not disabled and not paused, and InFlightRemediations is set
 	PhaseRemediating NHCPhase = "Remediating"
 
