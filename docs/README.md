@@ -94,13 +94,28 @@ spec:
       duration: 300s
 ```
 
-| Field | Mandatory | Default Value | Description |
-| --- | --- | --- | --- |
-| _remediationTemplate_ | yes | n/a | A reference to a remediation template provided by an infrastructure provider. If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider.|
-| _selector_ | no | empty selector that selects all nodes | a nodes selector of type [metav1.LabelSelector](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#LabelSelector) | 
-| _minHealthy_ | no | 51% | Any further remediation is allowed if "MinHealthy" nodes selected by "selector" are healthy.|
-| _pauseRequests_ | no | n/a | prevents any new remdiation from starting, while in-flight remediations keep running. Each entry is free form, and ideally represents the requested party reason for this pausing e.g "imaginary-cluster-upgrade-manager-operator" |
-| _unhealthyConditions_ | no | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.|
+| Field                 | Mandatory | Default Value                                                                                   | Description                                                                                                                                                                                                                        |
+|-----------------------|-----------|-------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| _remediationTemplate_ | yes       | n/a                                                                                             | A reference to a remediation template provided by an infrastructure provider. If a node needs remediation the controller will create an object from this template and then it should be picked up by a remediation provider.       |
+| _selector_            | no        | empty selector that selects all nodes                                                           | a nodes selector of type [metav1.LabelSelector](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#LabelSelector)                                                                                                             | 
+| _minHealthy_          | no        | 51%                                                                                             | Any further remediation is allowed if "MinHealthy" nodes selected by "selector" are healthy.                                                                                                                                       |
+| _pauseRequests_       | no        | n/a                                                                                             | prevents any new remdiation from starting, while in-flight remediations keep running. Each entry is free form, and ideally represents the requested party reason for this pausing e.g "imaginary-cluster-upgrade-manager-operator" |
+| _unhealthyConditions_ | no        | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | list of the conditions that determine whether a node is considered unhealthy.  The conditions are combined in a logical OR, i.e. if any of the conditions is met, the node is unhealthy.                                           |
+
+## NodeHealthCheck Status
+
+The status section of the NodeHealthCheck custom resource provides detailed information about what the controller is
+doing. It has these fields:
+
+| Field                  | Description                                                                                                                                                                                                                                            |
+|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| _observedNodes_        | the number of nodes observed by using the NHC spec.selecor                                                                                                                                                                                             |
+| _healthyNodes_         | the number of healthy nodes observed                                                                                                                                                                                                                   |
+| _inFlightRemediations_ | the timestamp when remediation triggered per node                                                                                                                                                                                                      |
+| _conditions_           | represents the observations of a NodeHealthCheck's current state. The only used type is "Disabled" and it is true in case of an invalid config, or when conflicting MachineHealthChecks exist. See the condition's reason and message for more details |
+| _phase_                | represents the current phase of this Config. Known phases are Disabled, Paused, Remediating and Enabled                                                                                                                                                |
+| _reason_               | explains the current phase in more detail                                                                                                                                                                                                              |
+
 
 ## NodeHealthCheck life-cycle
 
