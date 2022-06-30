@@ -16,7 +16,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
-	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
@@ -144,19 +143,11 @@ func getBootTimePod(nodeName string) *corev1.Pod {
 		},
 		Spec: corev1.PodSpec{
 			NodeName: nodeName,
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsUser:  pointer.Int64Ptr(0),
-				RunAsGroup: pointer.Int64Ptr(0),
-			},
 			Containers: []corev1.Container{
 				{
 					Name:    "test",
 					Image:   "registry.access.redhat.com/ubi8/ubi-minimal",
 					Command: []string{"sleep", "2m"},
-					SecurityContext: &corev1.SecurityContext{
-						Privileged:               pointer.BoolPtr(true),
-						AllowPrivilegeEscalation: pointer.BoolPtr(true),
-					},
 				},
 			},
 		},
