@@ -156,6 +156,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// requeue for checking back if template exists later
 		result.RequeueAfter = 15 * time.Second
 		return result, nil
+	} else if err != nil {
+		log.Error(err, "failed to get remediation template")
+		return result, err
 	}
 
 	// all checks passed, update status if needed
