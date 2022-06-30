@@ -133,6 +133,11 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("fails creation on negative number", func() {
+				// This test does not work yet, because the "minimum" validation
+				// of kubebuilder does not work for IntOrString.
+				// Un-skip this as soon as this is supported.
+				// For now negative minHealthy is validated during reconcile and will disable NHC,
+				// see "minHealthy is negative" test further down.
 				Skip("Does not work yet")
 				invalidInt := intstr.FromInt(-10)
 				underTest.Spec.MinHealthy = &invalidInt
