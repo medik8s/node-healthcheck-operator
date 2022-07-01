@@ -28,16 +28,13 @@ const (
 	// ConditionReasonDisabledMHC is the condition reason for type Disabled in case NHC is disabled because
 	// of conflicts with MHC
 	ConditionReasonDisabledMHC = "ConflictingMachineHealthCheckDetected"
-	// ConditionReasonEnabledNoMHC is the condition reason for type Disabled in case NHC is disabled because
-	// of conflicts with MHC
-	ConditionReasonEnabledNoMHC = "NoConflictingMachineHealthCheckDetected"
-
-	// ConditionTypeTemplateNotFound is the condition type used when NHC will get disabled
-	ConditionTypeTemplateNotFound = "RemediationTemplateNotFound"
-	// ConditionReasonTemplateNotFound is the reason for type RemediationTemplateNotFound when the template wasn't found
-	ConditionReasonTemplateNotFound = "RemediationTemplateNotFound"
-	// ConditionReasonTemplateFound is the reason for type RemediationTemplateNotFound when the template was found
-	ConditionReasonTemplateFound = "RemediationTemplateFound"
+	// ConditionReasonDisabledInvalidConfig is the condition reason for type Disabled in case NHC is disabled because
+	// of invalid configuration
+	ConditionReasonDisabledInvalidConfig = "InvalidConfiguration"
+	// ConditionReasonDisabledTemplateNotFound is the reason for type Disabled when the template wasn't found
+	ConditionReasonDisabledTemplateNotFound = "RemediationTemplateNotFound"
+	// ConditionReasonEnabled is the condition reason for type Disabled and status False
+	ConditionReasonEnabled = "NodeHealthCheckEnabled"
 )
 
 // NHCPhase is the string used for NHC.Status.Phase
@@ -49,9 +46,6 @@ const (
 
 	// PhasePaused is used when not disabled, but PauseRequests is set
 	PhasePaused NHCPhase = "Paused"
-
-	// PhaseTemplateNotFound is used when not disabled and not paused, but the remediation template is not found
-	PhaseTemplateNotFound NHCPhase = "RemediationTemplateNotFound"
 
 	// PhaseRemediating is used when not disabled and not paused, and InFlightRemediations is set
 	PhaseRemediating NHCPhase = "Remediating"
@@ -82,9 +76,9 @@ type NodeHealthCheckSpec struct {
 	// Percentage values must be positive whole numbers and are capped at 100%.
 	// 100% is valid and will block all remediation.
 	// +kubebuilder:default="51%"
+	// +kubebuilder:validation:XIntOrString
 	// +kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
-	// +kubebuilder:validation:Type=string
-	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	// +operator-sdk:csv:customresourcedefinitions:type=spec
 	MinHealthy *intstr.IntOrString `json:"minHealthy,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template
