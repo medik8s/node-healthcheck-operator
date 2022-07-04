@@ -8,8 +8,7 @@ metadata:
           "apiVersion": "remediation.medik8s.io/v1alpha1",
           "kind": "NodeHealthCheck",
           "metadata": {
-            "name": "nodehealthcheck-sample",
-            "namespace": "openshift-operators"
+            "name": "nodehealthcheck-sample"
           },
           "spec": {
             "minHealthy": "51%",
