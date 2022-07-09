@@ -38,6 +38,7 @@ jobs:
         run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make container-build container-push
 
       - name: Build and push index image with versioned NHC + SNR images
+        if: ${{ github.ref_type != 'tag' }}
         run: |
           # get script from github
           NAME=build-nhc-snr.sh
