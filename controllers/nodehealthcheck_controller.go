@@ -240,6 +240,7 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 			return false
 		}
+		// TODO consider doing this check on top of reconcile and set Disabled condition?
 		if r.isClusterUpgrading() {
 			updateResultNextReconcile(result, 1*time.Minute)
 			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
