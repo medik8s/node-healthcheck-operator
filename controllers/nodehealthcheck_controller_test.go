@@ -268,7 +268,7 @@ var _ = Describe("Node Health Check CR", func() {
 				err := reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
 
-				cr = newRemediationCR("unhealthy-node-2")
+				cr = newRemediationCR("healthy-node-2")
 				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 			})
@@ -335,12 +335,8 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("Nodes are candidates for remediation and cluster is upgrading", func() {
 			BeforeEach(func() {
-				objects = newNodes(1, 2)
-				underTest = newNodeHealthCheck()
+				setupObjects(1, 2)
 				upgradeChecker = fakeClusterUpgradeChecker{upgrading: true}
-				remediationTemplate := newRemediationTemplate()
-				remediationCR := newRemediationCR("unhealthy-node-1")
-				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
 			})
 
 			It("requeues reconciliation to 1 minute from now and updates status", func() {
