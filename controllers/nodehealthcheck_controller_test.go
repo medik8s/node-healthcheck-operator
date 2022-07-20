@@ -483,13 +483,20 @@ func newRemediationCR(nodeName string) unstructured.Unstructured {
 		Version: TestRemediationCRD.Spec.Versions[0].Name,
 		Kind:    TestRemediationCRD.Spec.Names.Kind,
 	})
+	cr.SetOwnerReferences([]metav1.OwnerReference{
+		{
+			APIVersion: "remediation.medik8s.io/v1alpha1",
+			Kind:       "NodeHealthCheck",
+			Name:       "test",
+		},
+	})
 	return cr
 }
 
 func newRemediationTemplate() runtime.Object {
 	r := map[string]interface{}{
 		"kind":       "InfrastructureRemediation",
-		"apiVersion": "medik8s.io/v1alpha1",
+		"apiVersion": "test.medik8s.io/v1alpha1",
 		"metadata":   map[string]interface{}{},
 		"spec": map[string]interface{}{
 			"size": "foo",
@@ -503,7 +510,7 @@ func newRemediationTemplate() runtime.Object {
 		},
 	}
 	template.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "medik8s.io",
+		Group:   "test.medik8s.io",
 		Version: "v1alpha1",
 		Kind:    "InfrastructureRemediationTemplate",
 	})
@@ -518,7 +525,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	return &v1alpha1.NodeHealthCheck{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "NodeHealthCheck",
-			APIVersion: "medik8s.io/v1alpha1",
+			APIVersion: "remediation.medik8s.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test",
@@ -535,7 +542,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			},
 			RemediationTemplate: &v1.ObjectReference{
 				Kind:       "InfrastructureRemediationTemplate",
-				APIVersion: "medik8s.io/v1alpha1",
+				APIVersion: "test.medik8s.io/v1alpha1",
 				Namespace:  "default",
 				Name:       "template",
 			},
@@ -570,7 +577,6 @@ func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.D
 				},
 			},
 		})
-
 }
 
 var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
@@ -582,7 +588,7 @@ var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
 		Name: "infrastructureremediations.medik8s.io",
 	},
 	Spec: apiextensions.CustomResourceDefinitionSpec{
-		Group: "medik8s.io",
+		Group: "test.medik8s.io",
 		Scope: apiextensions.NamespaceScoped,
 		Names: apiextensions.CustomResourceDefinitionNames{
 			Kind:   "InfrastructureRemediation",
