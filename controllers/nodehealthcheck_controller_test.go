@@ -257,7 +257,11 @@ var _ = Describe("Node Health Check CR", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
 				remediationCR := newRemediationCR("healthy-node-2")
-				objects = append(objects, remediationCR.DeepCopyObject())
+				remediationCROther := newRemediationCR("healthy-node-1")
+				refs := remediationCROther.GetOwnerReferences()
+				refs[0].Name = "other"
+				remediationCROther.SetOwnerReferences(refs)
+				objects = append(objects, remediationCR.DeepCopy(), remediationCROther.DeepCopy())
 			})
 
 			It("deletes an existing remediation CR", func() {
@@ -271,6 +275,11 @@ var _ = Describe("Node Health Check CR", func() {
 				cr = newRemediationCR("healthy-node-2")
 				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
+
+				// owned by other NHC, should not be deleted
+				cr = newRemediationCR("healthy-node-1")
+				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
+				Expect(err).NotTo(HaveOccurred())
 			})
 
 			It("updates the NHC status correctly", func() {
