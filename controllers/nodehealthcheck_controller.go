@@ -312,11 +312,17 @@ func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv
 		return err
 	}
 
-	// check if CR is deleted already
 	err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+
+	// check if CR is deleted already
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	} else if apierrors.IsNotFound(err) || cr.GetDeletionTimestamp() != nil {
+		return nil
+	}
+
+	// also check if this is our CR
+	if !isOwner(cr, nhc) {
 		return nil
 	}
 
@@ -391,6 +397,16 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	}
 
 	// CR exists
+	// Check if it is ours; if not, ignore it
+	if !isOwner(cr, nhc) {
+		owner := "unknown"
+		if len(cr.GetOwnerReferences()) == 1 {
+			owner = cr.GetOwnerReferences()[0].Name
+		}
+		log.Info("external remediation CR already exists, but it's owned by another NHC config", "owner NHC", owner)
+		return nil, nil
+	}
+
 	isAlert, nextReconcile := r.alertOldRemediationCR(cr)
 	if isAlert {
 		metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
@@ -499,13 +515,9 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1al
 
 	remediations := make(map[string]metav1.Time)
 	for _, remediationCR := range crList.Items {
-		for _, ownerRefs := range remediationCR.GetOwnerReferences() {
-			if ownerRefs.Name == nhc.Name &&
-				ownerRefs.Kind == nhc.Kind &&
-				ownerRefs.APIVersion == nhc.APIVersion {
-				remediations[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
-				continue
-			}
+		if isOwner(&remediationCR, nhc) {
+			remediations[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
+			continue
 		}
 	}
 	return remediations, nil
@@ -545,4 +557,15 @@ func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Dur
 	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = updatedRequeueAfter
 	}
+}
+
+func isOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
+	if len(remediationCR.GetOwnerReferences()) != 1 {
+		return false
+	}
+	owner := remediationCR.GetOwnerReferences()[0]
+	if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
+		return true
+	}
+	return false
 }
