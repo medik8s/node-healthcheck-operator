@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -467,15 +466,19 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 		nhc.Status.Reason = "NHC is enabled, no ongoing remediation"
 	}
 
-	// skip when no changes
-	if reflect.DeepEqual(nhc.Status, nhcOrig.Status) {
+	mergeFrom := client.MergeFrom(nhcOrig)
+
+	// check if there are any changes.
+	// reflect.DeepEqual does not work, it has many false positives!
+	if patchBytes, err := mergeFrom.Data(nhc); err != nil {
+		log.Error(err, "failed to create patch")
+		return err
+	} else if string(patchBytes) == "{}" {
+		// no change
 		return nil
 	}
 
-	mergeFrom := client.MergeFrom(nhcOrig)
-
-	// all values to be patched expected to be updated on the current nhc.status
-	log.Info("Patching NHC status", "patch", nhc.Status)
+	log.Info("Patching NHC status", "new status", nhc.Status)
 	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom, &client.PatchOptions{})
 }
 
