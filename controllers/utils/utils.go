@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-logr/logr"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
+
+	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
 
 // GetDeploymentNamespace returns the Namespace this operator is deployed on.
@@ -39,4 +43,9 @@ func IsOnOpenshift(config *rest.Config) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// GetLogWithNHC return a logger with NHC namespace and name
+func GetLogWithNHC(log logr.Logger, nhc *v1alpha1.NodeHealthCheck) logr.Logger {
+	return log.WithValues("NodeHealthCheck name", nhc.Name)
 }
