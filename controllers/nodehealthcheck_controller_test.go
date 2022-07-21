@@ -257,7 +257,11 @@ var _ = Describe("Node Health Check CR", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
 				remediationCR := newRemediationCR("healthy-node-2")
-				objects = append(objects, remediationCR.DeepCopyObject())
+				remediationCROther := newRemediationCR("healthy-node-1")
+				refs := remediationCROther.GetOwnerReferences()
+				refs[0].Name = "other"
+				remediationCROther.SetOwnerReferences(refs)
+				objects = append(objects, remediationCR.DeepCopy(), remediationCROther.DeepCopy())
 			})
 
 			It("deletes an existing remediation CR", func() {
@@ -268,9 +272,14 @@ var _ = Describe("Node Health Check CR", func() {
 				err := reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
 
-				cr = newRemediationCR("unhealthy-node-2")
+				cr = newRemediationCR("healthy-node-2")
 				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
+
+				// owned by other NHC, should not be deleted
+				cr = newRemediationCR("healthy-node-1")
+				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
+				Expect(err).NotTo(HaveOccurred())
 			})
 
 			It("updates the NHC status correctly", func() {
@@ -335,12 +344,8 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("Nodes are candidates for remediation and cluster is upgrading", func() {
 			BeforeEach(func() {
-				objects = newNodes(1, 2)
-				underTest = newNodeHealthCheck()
+				setupObjects(1, 2)
 				upgradeChecker = fakeClusterUpgradeChecker{upgrading: true}
-				remediationTemplate := newRemediationTemplate()
-				remediationCR := newRemediationCR("unhealthy-node-1")
-				objects = append(objects, underTest, remediationTemplate, remediationCR.DeepCopyObject())
 			})
 
 			It("requeues reconciliation to 1 minute from now and updates status", func() {
@@ -483,13 +488,20 @@ func newRemediationCR(nodeName string) unstructured.Unstructured {
 		Version: TestRemediationCRD.Spec.Versions[0].Name,
 		Kind:    TestRemediationCRD.Spec.Names.Kind,
 	})
+	cr.SetOwnerReferences([]metav1.OwnerReference{
+		{
+			APIVersion: "remediation.medik8s.io/v1alpha1",
+			Kind:       "NodeHealthCheck",
+			Name:       "test",
+		},
+	})
 	return cr
 }
 
 func newRemediationTemplate() runtime.Object {
 	r := map[string]interface{}{
 		"kind":       "InfrastructureRemediation",
-		"apiVersion": "medik8s.io/v1alpha1",
+		"apiVersion": "test.medik8s.io/v1alpha1",
 		"metadata":   map[string]interface{}{},
 		"spec": map[string]interface{}{
 			"size": "foo",
@@ -503,7 +515,7 @@ func newRemediationTemplate() runtime.Object {
 		},
 	}
 	template.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "medik8s.io",
+		Group:   "test.medik8s.io",
 		Version: "v1alpha1",
 		Kind:    "InfrastructureRemediationTemplate",
 	})
@@ -518,7 +530,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	return &v1alpha1.NodeHealthCheck{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "NodeHealthCheck",
-			APIVersion: "medik8s.io/v1alpha1",
+			APIVersion: "remediation.medik8s.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test",
@@ -535,7 +547,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			},
 			RemediationTemplate: &v1.ObjectReference{
 				Kind:       "InfrastructureRemediationTemplate",
-				APIVersion: "medik8s.io/v1alpha1",
+				APIVersion: "test.medik8s.io/v1alpha1",
 				Namespace:  "default",
 				Name:       "template",
 			},
@@ -570,7 +582,6 @@ func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.D
 				},
 			},
 		})
-
 }
 
 var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
@@ -582,7 +593,7 @@ var TestRemediationCRD = &apiextensions.CustomResourceDefinition{
 		Name: "infrastructureremediations.medik8s.io",
 	},
 	Spec: apiextensions.CustomResourceDefinitionSpec{
-		Group: "medik8s.io",
+		Group: "test.medik8s.io",
 		Scope: apiextensions.NamespaceScoped,
 		Names: apiextensions.CustomResourceDefinitionNames{
 			Kind:   "InfrastructureRemediation",

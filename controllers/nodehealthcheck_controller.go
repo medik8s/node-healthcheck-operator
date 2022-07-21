@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -82,7 +81,7 @@ type NodeHealthCheckReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	log := r.Log.WithValues("NodeHealthCheck", req.NamespacedName)
+	log := r.Log.WithValues("NodeHealthCheck name", req.Name)
 
 	// fetch nhc
 	nhc := &remediationv1alpha1.NodeHealthCheck{}
@@ -230,15 +229,18 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 		return false
 	}
 
+	log := utils.GetLogWithNHC(r.Log, nhc)
+
 	healthyNodes := len(nodes) - len(unhealthyNodes)
 	if healthyNodes >= minHealthy {
 		if len(nhc.Spec.PauseRequests) > 0 {
 			// some actors want to pause remediation.
 			msg := "Skipping remediation because there are pause requests"
-			r.Log.Info(msg)
+			log.Info(msg)
 			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 			return false
 		}
+		// TODO consider doing this check on top of reconcile and set Disabled condition?
 		if r.isClusterUpgrading() {
 			updateResultNextReconcile(result, 1*time.Minute)
 			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
@@ -247,8 +249,7 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 		return true
 	}
 	msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", healthyNodes, minHealthy)
-	r.Log.Info(msg,
-		"healthyNodes", healthyNodes, "minHealthy", minHealthy)
+	log.Info(msg, "healthyNodes", healthyNodes, "minHealthy", minHealthy)
 	r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 	return false
 }
@@ -304,20 +305,29 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 }
 
 func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) error {
+
+	log := utils.GetLogWithNHC(r.Log, nhc)
+
 	cr, err := r.generateRemediationCR(node, nhc, template)
 	if err != nil {
 		return err
 	}
 
-	// check if CR is deleted already
 	err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+
+	// check if CR is deleted already
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	} else if apierrors.IsNotFound(err) || cr.GetDeletionTimestamp() != nil {
 		return nil
 	}
 
-	r.Log.V(5).Info("node seems healthy", "Node name", node.Name)
+	// also check if this is our CR
+	if !isOwner(cr, nhc) {
+		return nil
+	}
+
+	log.V(5).Info("node seems healthy", "Node name", node.Name)
 
 	err = r.Client.Delete(context.Background(), cr, &client.DeleteOptions{})
 	// if the node is already healthy then there is no remediation object for it
@@ -327,7 +337,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv
 
 	if err == nil {
 		// deleted an actual object
-		r.Log.Info("deleted node external remediation object", "Node name", node.Name)
+		log.Info("deleted node external remediation object", "Node name", node.Name)
 		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation object for node %s", node.Name)
 	}
 	return nil
@@ -361,6 +371,9 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*time.Duration, error) {
+
+	log := utils.GetLogWithNHC(r.Log, nhc)
+
 	cr, err := r.generateRemediationCR(node, nhc, template)
 	if err != nil {
 		return nil, err
@@ -369,15 +382,15 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	// check if CR already exists
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
 		if !apierrors.IsNotFound(err) {
-			r.Log.Error(err, "failed to check for existing external remediation object")
+			log.Error(err, "failed to check for existing external remediation object")
 			return nil, err
 		}
 
 		// create CR
-		r.Log.Info("node seems unhealthy. Creating an external remediation object",
+		log.Info("node seems unhealthy. Creating an external remediation object",
 			"nodeName", node.Name, "CR name", cr.GetName(), "CR gvk", cr.GroupVersionKind(), "ns", cr.GetNamespace())
 		if err = r.Client.Create(ctx, cr); err != nil {
-			r.Log.Error(err, "failed to create an external remediation object")
+			log.Error(err, "failed to create an external remediation object")
 			return nil, err
 		}
 		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
@@ -385,6 +398,16 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	}
 
 	// CR exists
+	// Check if it is ours; if not, ignore it
+	if !isOwner(cr, nhc) {
+		owner := "unknown"
+		if len(cr.GetOwnerReferences()) == 1 {
+			owner = cr.GetOwnerReferences()[0].Name
+		}
+		log.Info("external remediation CR already exists, but it's owned by another NHC config", "owner NHC", owner)
+		return nil, nil
+	}
+
 	isAlert, nextReconcile := r.alertOldRemediationCR(cr)
 	if isAlert {
 		metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
@@ -442,6 +465,8 @@ func (r *NodeHealthCheckReconciler) fetchTemplate(nhc *remediationv1alpha1.NodeH
 
 func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
 
+	log := utils.GetLogWithNHC(r.Log, nhc)
+
 	// calculate phase and reason
 	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
 	if disabledCondition != nil && disabledCondition.Status == metav1.ConditionTrue {
@@ -458,15 +483,19 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 		nhc.Status.Reason = "NHC is enabled, no ongoing remediation"
 	}
 
-	// skip when no changes
-	if reflect.DeepEqual(nhc.Status, nhcOrig.Status) {
+	mergeFrom := client.MergeFrom(nhcOrig)
+
+	// check if there are any changes.
+	// reflect.DeepEqual does not work, it has many false positives!
+	if patchBytes, err := mergeFrom.Data(nhc); err != nil {
+		log.Error(err, "failed to create patch")
+		return err
+	} else if string(patchBytes) == "{}" {
+		// no change
 		return nil
 	}
 
-	mergeFrom := client.MergeFrom(nhcOrig)
-
-	// all values to be patched expected to be updated on the current nhc.status
-	r.Log.Info("Patching NHC object", "patch", nhc.Status)
+	log.Info("Patching NHC status", "new status", nhc.Status)
 	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom, &client.PatchOptions{})
 }
 
@@ -487,19 +516,16 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1al
 
 	remediations := make(map[string]metav1.Time)
 	for _, remediationCR := range crList.Items {
-		for _, ownerRefs := range remediationCR.GetOwnerReferences() {
-			if ownerRefs.Name == nhc.Name &&
-				ownerRefs.Kind == nhc.Kind &&
-				ownerRefs.APIVersion == nhc.APIVersion {
-				remediations[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
-				continue
-			}
+		if isOwner(&remediationCR, nhc) {
+			remediations[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
+			continue
 		}
 	}
 	return remediations, nil
 }
 
 func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstructured.Unstructured) (bool, *time.Duration) {
+
 	isSendAlert := false
 	var nextReconcile *time.Duration = nil
 	//verify remediationCR is old
@@ -532,4 +558,15 @@ func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Dur
 	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = updatedRequeueAfter
 	}
+}
+
+func isOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
+	if len(remediationCR.GetOwnerReferences()) != 1 {
+		return false
+	}
+	owner := remediationCR.GetOwnerReferences()[0]
+	if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
+		return true
+	}
+	return false
 }
