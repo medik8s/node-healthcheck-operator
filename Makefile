@@ -230,10 +230,14 @@ bundle: manifests kustomize operator-sdk
 	$(MAKE) bundle-fixes bundle-date
 
 # Some fixes in the bundle
+DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
+export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-fixes
 bundle-fixes:
     # update container image
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+	# set icon
+	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
 
 # Set createdAt date in the bundle's CSV. Do not commit changes!
 .PHONY: bundle-date
