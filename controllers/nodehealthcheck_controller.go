@@ -141,23 +141,20 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// check if we need to disable NHC because of missing template CR
 	var template *unstructured.Unstructured
-	if template, err = r.fetchTemplate(nhc); err != nil && apierrors.IsNotFound(errors.Cause(err)) {
+	if template, err = r.fetchTemplate(nhc); err != nil {
 		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledTemplateNotFound) {
 			rt := nhc.Spec.RemediationTemplate
 			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
 				Type:    remediationv1alpha1.ConditionTypeDisabled,
 				Status:  metav1.ConditionTrue,
 				Reason:  remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
-				Message: fmt.Sprintf("Remediation Template not found. Kind %s, Namespace: %s, Name %s", rt.GroupVersionKind().Kind, rt.Namespace, rt.Name),
+				Message: fmt.Sprintf("Failed to get remediation template %v: %v", rt, errors.Cause(err)),
 			})
 			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Remediation Template not found. Kind: %s, Namespace: %s, Name %s", rt.GroupVersionKind().Kind, rt.Namespace, rt.Name)
 		}
 		// requeue for checking back if template exists later
 		result.RequeueAfter = 15 * time.Second
 		return result, nil
-	} else if err != nil {
-		log.Error(err, "failed to get remediation template")
-		return result, err
 	}
 
 	// all checks passed, update status if needed
