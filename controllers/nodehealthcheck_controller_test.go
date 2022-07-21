@@ -363,7 +363,7 @@ var _ = Describe("Node Health Check CR", func() {
 		When("Nodes are candidates for remediation but remediation template is broken", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
-				underTest.Spec.RemediationTemplate.Name = "dummy"
+				underTest.Spec.RemediationTemplate.Kind = "dummy"
 			})
 
 			It("should set corresponding condition", func() {
@@ -371,8 +371,8 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
 				Expect(underTest.Status.Reason).To(
 					And(
+						ContainSubstring("Failed to get"),
 						ContainSubstring("dummy"),
-						ContainSubstring("not found"),
 					))
 				Expect(underTest.Status.Conditions).To(ContainElement(
 					And(
