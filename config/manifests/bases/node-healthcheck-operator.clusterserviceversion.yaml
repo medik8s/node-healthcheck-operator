@@ -105,8 +105,8 @@ spec:
     In order to automate the recovery of exclusive workloads, we provide operators for failure detection
     and remediation.
 
-    ### Failure detection: Node Healthcheck operator
-    The “Node Healthcheck” (NHC) operator checks each Node’s set of
+    ### Failure detection: Node Health Check operator
+    The “Node Health Check” (NHC) operator checks each Node’s set of
     NodeConditions (eg. NotReady) against the criteria and thresholds defined in
     NodeHealthCheck configuration. If the Node is deemed to be in a failed
     state, NHC will initiate recovery by using the SIG Cluster API's “External
