@@ -1,4 +1,8 @@
 ## Node Healthcheck Controller
+<p align="center">
+<img width="200" src="config/assets/nhc_blue.png">
+</p>
+
 
 A Node entering an unready state after 5 minutes is an obvious sign that a
 failure occurred, but depending on your physical environment, workloads, and
