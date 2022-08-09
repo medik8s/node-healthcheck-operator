@@ -195,3 +195,7 @@ will aggreate its rules and will have the proper permission to create/delete ext
 
 [operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
 [self-node-remediation]: https://github.com/medik8s/self-node-remediation
+
+## Help
+
+Feel free to join our google group to get more info - https://groups.google.com/g/medik8s
