@@ -260,6 +260,16 @@ spec:
               labels:
                 control-plane: controller-manager
             spec:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: node-role.kubernetes.io/master
+                        operator: Exists
+                    - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
               containers:
               - args:
                 - --secure-listen-address=0.0.0.0:8443
@@ -303,14 +313,14 @@ spec:
                     memory: 20Mi
                 securityContext:
                   allowPrivilegeEscalation: false
-              nodeSelector:
-                node-role.kubernetes.io/master: ""
               priorityClassName: system-cluster-critical
               serviceAccountName: node-healthcheck-operator-controller-manager
               terminationGracePeriodSeconds: 10
               tolerations:
               - effect: NoSchedule
                 key: node-role.kubernetes.io/master
+              - effect: NoSchedule
+                key: node-role.kubernetes.io/control-plane
                 operator: Exists
       permissions:
       - rules:
