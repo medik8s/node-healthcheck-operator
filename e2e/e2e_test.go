@@ -26,9 +26,6 @@ import (
 )
 
 const (
-	// keep this aligned with CI config!
-	testNamespace = "default"
-
 	blockingPodName           = "api-blocker-pod"
 	remediationStartedTimeout = 10 * time.Minute
 	nodeRebootedTimeout       = 10 * time.Minute
@@ -183,7 +180,7 @@ var _ = Describe("e2e", func() {
 				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 10*time.Second).
 				Should(Succeed())
 			Eventually(func() (time.Time, error) {
-				bootTime, err := utils.GetBootTime(clientSet, nodeUnderTest.Name, log)
+				bootTime, err := utils.GetBootTime(clientSet, nodeUnderTest.Name, testNsName, log)
 				if bootTime != nil && err == nil {
 					log.Info("got boot time", "time", *bootTime)
 					return *bootTime, nil
@@ -293,13 +290,13 @@ sleep infinity
 	}
 
 	_, err := clientSet.CoreV1().
-		Pods(testNamespace).
+		Pods(testNsName).
 		Create(context.Background(), &p, metav1.CreateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "Failed to run the api-blocker pod")
 	}
 	err = wait.Poll(5*time.Second, 60*time.Second, func() (done bool, err error) {
-		get, err := clientSet.CoreV1().Pods(testNamespace).Get(context.Background(), blockingPodName, metav1.GetOptions{})
+		get, err := clientSet.CoreV1().Pods(testNsName).Get(context.Background(), blockingPodName, metav1.GetOptions{})
 		log.Info("attempting to run a pod to block the api port")
 		if err != nil {
 			return false, err
@@ -314,5 +311,5 @@ sleep infinity
 }
 
 func removeAPIBlockingPod() {
-	clientSet.CoreV1().Pods(testNamespace).Delete(context.Background(), blockingPodName, metav1.DeleteOptions{})
+	clientSet.CoreV1().Pods(testNsName).Delete(context.Background(), blockingPodName, metav1.DeleteOptions{})
 }

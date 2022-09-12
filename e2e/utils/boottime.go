@@ -22,11 +22,11 @@ import (
 // This code is for big parts from https://github.com/openshift-kni/performance-addon-operators/tree/master/functests/utils
 
 // GetBootTime gets the boot time of the given node by running a pod on it executing uptime command
-func GetBootTime(c *kubernetes.Clientset, nodeName string, log logr.Logger) (*time.Time, error) {
+func GetBootTime(c *kubernetes.Clientset, nodeName string, ns string, log logr.Logger) (*time.Time, error) {
 
 	// create a pod and wait that it's running
 	pod := getBootTimePod(nodeName)
-	pod, err := c.CoreV1().Pods("default").Create(context.Background(), pod, metav1.CreateOptions{})
+	pod, err := c.CoreV1().Pods(ns).Create(context.Background(), pod, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}

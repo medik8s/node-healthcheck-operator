@@ -1,8 +1,14 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
@@ -54,6 +60,12 @@ var (
 	}
 
 	log logr.Logger
+
+	// The ns the operator is running in
+	operatorNsName string
+
+	// The ns test pods are started in
+	testNsName = "nhc-test"
 )
 
 var _ = BeforeSuite(func() {
@@ -63,6 +75,10 @@ var _ = BeforeSuite(func() {
 	}
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseFlagOptions(&opts)))
 	log = logf.Log
+
+	operatorNsName = os.Getenv("OPERATOR_NS")
+	// operatorNsName isn't used yet but might be useful in future
+	//Expect(operatorNsName).ToNot(BeEmpty(), "OPERATOR_NS env var not set, can't start e2e test")
 
 	// +kubebuilder:scaffold:scheme
 
@@ -87,6 +103,18 @@ var _ = BeforeSuite(func() {
 
 	client, err = ctrl.New(config, ctrl.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
+
+	// create test ns
+	testNs := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNsName,
+		},
+	}
+	err = client.Get(context.Background(), ctrl.ObjectKeyFromObject(testNs), testNs)
+	if errors.IsNotFound(err) {
+		err = client.Create(context.Background(), testNs)
+	}
+	Expect(err).ToNot(HaveOccurred(), "could not get or create test ns")
 
 	debug()
 }, 10)
