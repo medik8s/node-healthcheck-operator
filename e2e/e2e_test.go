@@ -45,7 +45,7 @@ var _ = Describe("e2e", func() {
 			selector := labels.NewSelector()
 			req, _ := labels.NewRequirement("node-role.kubernetes.io/worker", selection.Exists, []string{})
 			selector = selector.Add(*req)
-			Expect(client.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
+			Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
 			Expect(len(workers.Items)).To(BeNumerically(">=", 2))
 			nodeUnderTest = &workers.Items[0]
 			err := makeNodeUnready(nodeUnderTest.Name)
@@ -55,14 +55,14 @@ var _ = Describe("e2e", func() {
 			testStart = time.Now()
 
 			// set terminating node condition now, to prevent remediation start before "with terminating node" test runs
-			Expect(client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
+			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
 			conditions := nodeUnderTest.Status.Conditions
 			conditions = append(conditions, v1.NodeCondition{
 				Type:   mhc.NodeConditionTerminating,
 				Status: "True",
 			})
 			nodeUnderTest.Status.Conditions = conditions
-			Expect(client.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
+			Expect(k8sClient.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
 		}
 
 	})
@@ -92,17 +92,17 @@ var _ = Describe("e2e", func() {
 					},
 				},
 			}
-			Expect(client.Create(context.Background(), mhc)).To(Succeed())
+			Expect(k8sClient.Create(context.Background(), mhc)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			Expect(client.Delete(context.Background(), mhc)).To(Succeed())
+			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed())
 		})
 
 		It("should report disabled NHC", func() {
 			Eventually(func(g Gomega) {
 				nhcList := &v1alpha1.NodeHealthCheckList{}
-				g.Expect(client.List(context.Background(), nhcList)).To(Succeed())
+				g.Expect(k8sClient.List(context.Background(), nhcList)).To(Succeed())
 				g.Expect(nhcList.Items).To(HaveLen(1), "less or more than 1 NHC found")
 				nhc := nhcList.Items[0]
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
@@ -115,7 +115,7 @@ var _ = Describe("e2e", func() {
 		BeforeEach(func() {
 			// ensure node is terminating
 			Eventually(func() (bool, error) {
-				if err := client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
+				if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
 					return false, err
 				}
 				for _, cond := range nodeUnderTest.Status.Conditions {
@@ -129,7 +129,7 @@ var _ = Describe("e2e", func() {
 			// ensure NHC is not disabled from previous test
 			Eventually(func(g Gomega) {
 				nhcList := &v1alpha1.NodeHealthCheckList{}
-				g.Expect(client.List(context.Background(), nhcList)).To(Succeed())
+				g.Expect(k8sClient.List(context.Background(), nhcList)).To(Succeed())
 				g.Expect(nhcList.Items).To(HaveLen(1), "less or more than 1 NHC found")
 				nhc := nhcList.Items[0]
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
@@ -139,7 +139,7 @@ var _ = Describe("e2e", func() {
 		})
 
 		AfterEach(func() {
-			Expect(client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
+			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
 			conditions := nodeUnderTest.Status.Conditions
 			for i, cond := range conditions {
 				if cond.Type == mhc.NodeConditionTerminating {
@@ -148,7 +148,7 @@ var _ = Describe("e2e", func() {
 				}
 			}
 			nodeUnderTest.Status.Conditions = conditions
-			Expect(client.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
+			Expect(k8sClient.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
 		})
 
 		It("should not remediate", func() {
@@ -163,7 +163,7 @@ var _ = Describe("e2e", func() {
 		BeforeEach(func() {
 			// ensure node is not terminating
 			Eventually(func() (bool, error) {
-				if err := client.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
+				if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
 					return false, err
 				}
 				for _, cond := range nodeUnderTest.Status.Conditions {
