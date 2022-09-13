@@ -1,7 +1,9 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -11,6 +13,9 @@ import (
 
 	"github.com/openshift/api/machine/v1beta1"
 
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -31,7 +36,7 @@ func TestE2e(t *testing.T) {
 var (
 	dynamicClient          dynamic.Interface
 	clientSet              *kubernetes.Clientset
-	client                 ctrl.Client
+	k8sClient              ctrl.Client
 	remediationTemplateGVR = schema.GroupVersionResource{
 		Group:    "self-node-remediation.medik8s.io",
 		Version:  "v1alpha1",
@@ -54,6 +59,12 @@ var (
 	}
 
 	log logr.Logger
+
+	// The ns the operator is running in
+	operatorNsName string
+
+	// The ns test pods are started in
+	testNsName = "nhc-test"
 )
 
 var _ = BeforeSuite(func() {
@@ -64,9 +75,13 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseFlagOptions(&opts)))
 	log = logf.Log
 
+	operatorNsName = os.Getenv("OPERATOR_NS")
+	// operatorNsName isn't used yet but might be useful in future
+	//Expect(operatorNsName).ToNot(BeEmpty(), "OPERATOR_NS env var not set, can't start e2e test")
+
 	// +kubebuilder:scaffold:scheme
 
-	// get the client or die
+	// get the k8sClient or die
 	config, err := config.GetConfig()
 	if err != nil {
 		Fail(fmt.Sprintf("Couldn't get kubeconfig %v", err))
@@ -85,8 +100,25 @@ var _ = BeforeSuite(func() {
 	err = v1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	client, err = ctrl.New(config, ctrl.Options{Scheme: scheme.Scheme})
+	k8sClient, err = ctrl.New(config, ctrl.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
+
+	// create test ns
+	testNs := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNsName,
+			Labels: map[string]string{
+				// allow privileged pods in test namespace, needed for API blocker pod
+				"pod-security.kubernetes.io/enforce":             "privileged",
+				"security.openshift.io/scc.podSecurityLabelSync": "false",
+			},
+		},
+	}
+	err = k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(testNs), testNs)
+	if errors.IsNotFound(err) {
+		err = k8sClient.Create(context.Background(), testNs)
+	}
+	Expect(err).ToNot(HaveOccurred(), "could not get or create test ns")
 
 	debug()
 }, 10)
