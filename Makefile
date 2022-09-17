@@ -70,6 +70,9 @@ IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator:$(IMAGE_TAG)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.23
 
+# SORT_IMPORTS_VERSION refers to the version of github.com/slintes/sort-imports, used to sort and group imports
+SORT_IMPORTS_VERSION = v0.1.0
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -95,7 +98,7 @@ test: test-no-verify
 	VERSION=0.0.1 $(MAKE) manifests bundle verify
 
 # Generate and format code, and run tests
-test-no-verify: vendor generate fmt vet envtest
+test-no-verify: vendor generate test-imports fmt vet envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... -coverprofile cover.out -v -ginkgo.v
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
@@ -143,6 +146,14 @@ fmt: goimports
 # Run go vet against code
 vet:
 	go vet ./...
+
+# Check for sorted imports
+test-imports:
+	go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports .
+
+# Sort imports
+sort-imports:
+	go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports . -w
 
 # Run go mod tidy
 tidy:
