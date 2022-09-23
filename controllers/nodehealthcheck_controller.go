@@ -558,12 +558,10 @@ func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Dur
 }
 
 func isOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
-	if len(remediationCR.GetOwnerReferences()) != 1 {
-		return false
-	}
-	owner := remediationCR.GetOwnerReferences()[0]
-	if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
-		return true
+	for _, owner := range remediationCR.GetOwnerReferences() {
+		if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
+			return true
+		}
 	}
 	return false
 }
