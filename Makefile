@@ -87,7 +87,7 @@ test: test-no-verify
 	VERSION=0.0.1 $(MAKE) manifests bundle verify
 
 # Generate and format code, and run tests
-test-no-verify: vendor fmt vet generate envtest
+test-no-verify: vendor generate fmt vet envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... -coverprofile cover.out -v -ginkgo.v
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
