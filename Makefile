@@ -87,7 +87,7 @@ test: test-no-verify
 	VERSION=0.0.1 $(MAKE) manifests bundle verify
 
 # Generate and format code, and run tests
-test-no-verify: vendor fmt vet generate envtest
+test-no-verify: vendor generate fmt vet envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... -coverprofile cover.out -v -ginkgo.v
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
@@ -164,17 +164,17 @@ docker-push:
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
-	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.8.0)
+	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.2)
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize:
-	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.4)
+	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.7)
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
-	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20220407132358-188b48630db2) # no tagged versions :/
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20220907012636-c83076e9f792) # no tagged versions :/
 
 .PHONY: operator-sdk
 OPERATOR_SDK = ./bin/operator-sdk
@@ -184,7 +184,7 @@ ifeq (,$(wildcard $(OPERATOR_SDK)))
 	set -e ;\
 	mkdir -p $(dir $(OPERATOR_SDK)) ;\
 	OS=linux && ARCH=amd64 && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.19.0/operator-sdk_$${OS}_$${ARCH} ;\
+	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.23.0/operator-sdk_$${OS}_$${ARCH} ;\
 	chmod +x $(OPERATOR_SDK) ;\
 	}
 endif
@@ -197,14 +197,14 @@ ifeq (,$(wildcard $(OPM)))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=linux && ARCH=amd64 && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.15.1/$${OS}-$${ARCH}-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.26.1/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 endif
 
 GOIMPORTS = $(shell pwd)/bin/goimports
 goimports: ## Download goimports locally if necessary.
-	$(call go-install-tool,$(GOIMPORTS),golang.org/x/tools/cmd/goimports@v0.1.10)
+	$(call go-install-tool,$(GOIMPORTS),golang.org/x/tools/cmd/goimports@v0.1.12)
 
 # go-install-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
