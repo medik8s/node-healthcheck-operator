@@ -41,7 +41,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/openshift/api/console/v1alpha1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
@@ -61,6 +63,8 @@ func init() {
 	utilruntime.Must(remediationv1alpha1.AddToScheme(scheme))
 
 	utilruntime.Must(machinev1beta1.Install(scheme))
+	utilruntime.Must(operatorv1.Install(scheme))
+	utilruntime.Must(v1alpha1.Install(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -142,8 +146,10 @@ func main() {
 
 	// +kubebuilder:scaffold:builder
 
+	ctx := ctrl.SetupSignalHandler()
+
 	// Do some initialization, it potentially exits!
-	if err = bootstrap.Initialize(mgr, setupLog); err != nil {
+	if err = bootstrap.Initialize(ctx, mgr, setupLog); err != nil {
 		setupLog.Error(err, "unable to init")
 		os.Exit(1)
 	}
@@ -161,7 +167,7 @@ func main() {
 	metrics.InitializeNodeHealthCheckMetrics()
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

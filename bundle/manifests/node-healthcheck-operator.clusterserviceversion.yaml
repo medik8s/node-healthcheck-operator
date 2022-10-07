@@ -43,6 +43,7 @@ metadata:
       ]
     capabilities: Basic Install
     categories: OpenShift Optional
+    console.openshift.io/plugins: '["node-remediation-console-plugin"]'
     containerImage: quay.io/medik8s/node-healthcheck-operator:latest
     createdAt: ""
     description: Detect failed Nodes and trigger remediation with e.g. Self Node Remediation.
@@ -179,9 +180,29 @@ spec:
           - list
           - watch
         - apiGroups:
+          - console.openshift.io
+          resources:
+          - consoleplugins
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - ""
           resources:
           - nodes
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - services
           verbs:
           - get
           - list
@@ -322,6 +343,47 @@ spec:
               - effect: NoSchedule
                 key: node-role.kubernetes.io/control-plane
                 operator: Exists
+      - label:
+          app: node-remediation-console-plugin
+        name: node-healthcheck-operator-node-remediation-console-plugin
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: node-remediation-console-plugin
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                app: node-remediation-console-plugin
+            spec:
+              containers:
+              - image: quay.io/medik8s/node-remediation-console:latest
+                name: node-remediation-console-plugin
+                ports:
+                - containerPort: 9443
+                  name: nrc-server
+                  protocol: TCP
+                resources:
+                  requests:
+                    cpu: 10m
+                    memory: 50Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+                volumeMounts:
+                - mountPath: /var/serving-cert
+                  name: nrc-plugin-cert
+                  readOnly: true
+              securityContext:
+                runAsNonRoot: true
+              volumes:
+              - name: nrc-plugin-cert
+                secret:
+                  defaultMode: 420
+                  secretName: nrc-plugin-cert
       permissions:
       - rules:
         - apiGroups:
