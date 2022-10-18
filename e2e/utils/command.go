@@ -19,38 +19,43 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
-// This code is for big parts from https://github.com/openshift-kni/performance-addon-operators/tree/master/functests/utils
-
 // GetBootTime gets the boot time of the given node by running a pod on it executing uptime command
 func GetBootTime(c *kubernetes.Clientset, nodeName string, ns string, log logr.Logger) (*time.Time, error) {
-
-	// create a pod and wait that it's running
-	pod := getBootTimePod(nodeName)
-	pod, err := c.CoreV1().Pods(ns).Create(context.Background(), pod, metav1.CreateOptions{})
+	output, err := RunCommandInCluster(c, nodeName, ns, "microdnf install procps -y >/dev/null 2>&1 && uptime -s", log)
 	if err != nil {
 		return nil, err
 	}
 
-	err = waitForCondition(c, pod, corev1.PodReady, corev1.ConditionTrue, time.Minute)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Info("boot time pod is running, going to execute uptime command")
-
-	// get boot time
-	// ubi does noy have uptime command, so we need to install it...
-	bootTimeCommand := []string{"sh", "-c", "microdnf install procps -y >/dev/null 2>&1 && uptime -s"}
-	bytes, err := waitForPodOutput(c, pod, bootTimeCommand)
-	if err != nil {
-		return nil, err
-	}
-	bootTime, err := time.Parse("2006-01-02 15:04:05", strings.TrimSpace(string(bytes)))
+	bootTime, err := time.Parse("2006-01-02 15:04:05", output)
 	if err != nil {
 		return nil, err
 	}
 
 	return &bootTime, nil
+}
+
+// RunCommandInCluster runs a command in a pod in the cluster and returns the output
+func RunCommandInCluster(c *kubernetes.Clientset, nodeName string, ns string, command string, log logr.Logger) (string, error) {
+
+	// create a pod and wait that it's running
+	pod := getPod(nodeName)
+	pod, err := c.CoreV1().Pods(ns).Create(context.Background(), pod, metav1.CreateOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	err = waitForCondition(c, pod, corev1.PodReady, corev1.ConditionTrue, time.Minute)
+	if err != nil {
+		return "", err
+	}
+
+	log.Info("helper pod is running, going to execute command")
+	cmd := []string{"sh", "-c", command}
+	bytes, err := waitForPodOutput(c, pod, cmd)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 func waitForPodOutput(c *kubernetes.Clientset, pod *corev1.Pod, command []string) ([]byte, error) {
@@ -133,10 +138,10 @@ func waitForCondition(c *kubernetes.Clientset, pod *corev1.Pod, conditionType co
 	})
 }
 
-func getBootTimePod(nodeName string) *corev1.Pod {
+func getPod(nodeName string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "boot-time-",
+			GenerateName: "nhc-test-",
 			Labels: map[string]string{
 				"test": "",
 			},
