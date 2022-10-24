@@ -282,6 +282,11 @@ spec:
                 - containerPort: 8443
                   name: https
                 resources: {}
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
               - args:
                 - --health-probe-bind-address=:8081
                 - --metrics-bind-address=127.0.0.1:8080
@@ -313,7 +318,12 @@ spec:
                     memory: 20Mi
                 securityContext:
                   allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
               priorityClassName: system-cluster-critical
+              securityContext:
+                runAsNonRoot: true
               serviceAccountName: node-healthcheck-operator-controller-manager
               terminationGracePeriodSeconds: 10
               tolerations:

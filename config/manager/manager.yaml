@@ -53,6 +53,9 @@ spec:
                 fieldPath: metadata.namespace
         securityContext:
           allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         livenessProbe:
           httpGet:
             path: /healthz
@@ -69,5 +72,7 @@ spec:
           requests:
             cpu: 100m
             memory: 20Mi
+      securityContext:
+        runAsNonRoot: true
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
