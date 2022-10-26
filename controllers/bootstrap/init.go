@@ -35,7 +35,7 @@ func Initialize(ctx context.Context, mgr ctrl.Manager, log logr.Logger) error {
 		return errors.Wrap(err, "failed to create or update a default NHC resource")
 	}
 
-	if err = console.CreateOrUpdateConsolePlugin(ctx, mgr, ns, ctrl.Log.WithName("console-plugin")); err != nil {
+	if err = console.CreateOrUpdatePlugin(ctx, mgr, ns, ctrl.Log.WithName("console-plugin")); err != nil {
 		return errors.Wrap(err, "failed to create or update the console plugin")
 	}
 

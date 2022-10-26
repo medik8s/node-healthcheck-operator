@@ -43,15 +43,15 @@ const (
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
 
-// CreateOrUpdateConsolePlugin creates or updates the resources needed for the remediation console plugin.
+// CreateOrUpdatePlugin creates or updates the resources needed for the remediation console plugin.
 // HEADS UP: consider cleanup of old resources in case of name changes or removals!
 //
 // TODO image reference to console plugin in CSV?
-func CreateOrUpdateConsolePlugin(ctx context.Context, mgr ctrl.Manager, namespace string, log logr.Logger) error {
+func CreateOrUpdatePlugin(ctx context.Context, mgr ctrl.Manager, namespace string, log logr.Logger) error {
 
 	// check if we are on OCP
 	if isOpenshift, err := utils.IsOnOpenshift(mgr.GetConfig()); err != nil {
-		errors.Wrap(err, "failed to check if we are on Openshift")
+		return errors.Wrap(err, "failed to check if we are on Openshift")
 	} else if !isOpenshift {
 		log.Info("we are not on Openshift, skipping console plugin activation")
 		return nil
