@@ -229,6 +229,13 @@ bundle: manifests kustomize operator-sdk
 	$(OPERATOR_SDK) bundle validate ./bundle
 	$(MAKE) bundle-fixes bundle-date
 
+# Generate bundle manifests and metadata, then validate generated files.
+.PHONY: bundle-k8s
+bundle-k8s: bundle
+	$(KUSTOMIZE) build config/manifests-k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(OPERATOR_SDK) bundle validate ./bundle
+	$(MAKE) bundle-fixes bundle-date
+
 # Some fixes in the bundle
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}

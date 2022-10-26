@@ -19,6 +19,11 @@ spec:
         ports:
         - containerPort: 8443
           name: https
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
       - name: manager
         args:
         - "--health-probe-bind-address=:8081"
