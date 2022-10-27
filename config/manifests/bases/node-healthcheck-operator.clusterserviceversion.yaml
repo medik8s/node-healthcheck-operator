@@ -5,6 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     categories: OpenShift Optional
+    console.openshift.io/plugins: '["node-remediation-console-plugin"]'
     containerImage: ""
     createdAt: ""
     description: Detect failed Nodes and trigger remediation with e.g. Self Node Remediation.

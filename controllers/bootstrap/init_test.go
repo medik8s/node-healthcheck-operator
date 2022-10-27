@@ -16,7 +16,7 @@ import (
 var _ = Describe("Init", func() {
 
 	BeforeEach(func() {
-		Expect(Initialize(k8sManager, ctrl.Log.WithName("test init"))).To(Succeed())
+		Expect(Initialize(context.TODO(), k8sManager, ctrl.Log.WithName("test init"))).To(Succeed())
 	})
 
 	When("initialization is called", func() {

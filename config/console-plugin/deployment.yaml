@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: node-remediation-console-plugin
+  name: node-remediation-console-plugin
+  namespace: openshift-operators
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-remediation-console-plugin
+  template:
+    metadata:
+      labels:
+        app: node-remediation-console-plugin
+    spec:
+      containers:
+      - image: console-plugin:latest
+        name: node-remediation-console-plugin
+        ports:
+        - containerPort: 9443
+          name: nrc-server
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /var/serving-cert
+          name: nrc-plugin-cert
+          readOnly: true
+      securityContext:
+        runAsNonRoot: true
+      volumes:
+      - name: nrc-plugin-cert
+        secret:
+          defaultMode: 420
+          secretName: nrc-plugin-cert

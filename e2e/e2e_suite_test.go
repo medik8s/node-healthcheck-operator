@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
 
+	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
 	"github.com/openshift/api/machine/v1beta1"
 
 	v1 "k8s.io/api/core/v1"
@@ -99,6 +100,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	err = v1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+
+	Expect(consolev1alpha1.Install(scheme.Scheme)).To(Succeed())
 
 	k8sClient, err = ctrl.New(config, ctrl.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())

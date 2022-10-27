@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 
+	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
 	"github.com/openshift/api/machine/v1beta1"
 
 	v1 "k8s.io/api/core/v1"
@@ -21,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
 )
@@ -70,6 +72,27 @@ var _ = Describe("e2e", func() {
 	AfterEach(func() {
 		// keep it running for all tests
 		//removeAPIBlockingPod()
+	})
+
+	When("when the operator and the console plugin is deployed", func() {
+		It("the plugin manifest should be served", func() {
+
+			By("getting the ConsolePlugin")
+			plugin := &consolev1alpha1.ConsolePlugin{}
+			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: console.PluginName}, plugin)).To(Succeed(), "failed to get ConsolePlugin")
+
+			By("getting the plugin Service")
+			svc := &v1.Service{}
+			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKey{Namespace: plugin.Spec.Service.Namespace, Name: plugin.Spec.Service.Name}, svc)).To(Succeed(), "failed to get plugin Service")
+
+			By("getting the console manifest")
+			manifestUrl := fmt.Sprintf("https://%s:%d/%s/plugin-manifest.json", svc.Spec.ClusterIP, svc.Spec.Ports[0].Port, plugin.Spec.Service.BasePath)
+			cmd := fmt.Sprintf("curl -k %s", manifestUrl)
+			output, err := utils.RunCommandInCluster(clientSet, nodeUnderTest.Name, testNsName, cmd, log)
+			Expect(err).ToNot(HaveOccurred())
+			log.Info("got manifest (stripped)", "manifest", output[:100])
+			Expect(output).To(ContainSubstring(console.PluginName), "failed to get correct plugin manifest")
+		})
 	})
 
 	Context("with custom MHC", func() {

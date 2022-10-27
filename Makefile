@@ -39,16 +39,27 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # Override this when building images for dev only!
 IMAGE_REGISTRY ?= quay.io/medik8s
 
+# Image base URL of the console plugin
+CONSOLE_PLUGIN_IMAGE_BASE ?= quay.io/medik8s/node-remediation-console
+# Image tag of the console plugin for releases
+# Needs to be updated manually after console plugin releases!
+CONSOLE_PLUGIN_RELEASE_TAG ?= v0.0.2
+
 # For the default version, use 'latest' image tags.
 # Otherwise version prefixed with 'v'
 ifeq ($(VERSION), $(DEFAULT_VERSION))
 IMAGE_TAG = latest
+CONSOLE_PLUGIN_TAG ?= latest
 else
 IMAGE_TAG = v$(VERSION)
+CONSOLE_PLUGIN_TAG ?= $(CONSOLE_PLUGIN_RELEASE_TAG)
 endif
 export IMAGE_TAG
 
-# BUNDLE_IMG defines the image:tag used for the bundle. 
+# Image URL of the console plugin
+CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
+
+# BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-bundle:$(IMAGE_TAG)
 
@@ -117,6 +128,7 @@ uninstall: manifests kustomize
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build $${KUSTOMIZE_OVERLAY-config/default} | $(KUBECTL) apply -f -
 
 # UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
@@ -225,6 +237,7 @@ endef
 bundle: manifests kustomize operator-sdk
 	$(OPERATOR_SDK) generate --verbose kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OPERATOR_SDK) bundle validate ./bundle
 	$(MAKE) bundle-fixes bundle-date
