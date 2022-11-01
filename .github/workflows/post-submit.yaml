@@ -46,9 +46,9 @@ jobs:
           chmod +x $NAME
           
           # set version vars
-          export NHC_VERSION=0.3.0-ci
-          export SNR_VERSION=0.4.0-ci
-          export INDEX_VERSION=4.11-ci
+          export NHC_VERSION=0.4.0-ci
+          export SNR_VERSION=0.5.0-ci
+          export INDEX_VERSION=4.12-ci
           
           # build and push images
           ./$NAME --skip-deploy
