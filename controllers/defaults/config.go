@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 const (
@@ -25,16 +26,29 @@ const (
 	deprecatedTemplateName = "poison-pill-default-template"
 )
 
-var defaultTemplateRef = &corev1.ObjectReference{
+var DefaultTemplateRef = &corev1.ObjectReference{
 	Kind:       "SelfNodeRemediationTemplate",
 	APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
 	Name:       "self-node-remediation-resource-deletion-template",
 }
 
+var DefaultSelector = metav1.LabelSelector{
+	MatchExpressions: []metav1.LabelSelectorRequirement{
+		{
+			Key:      utils.ControlPlaneRoleLabel,
+			Operator: metav1.LabelSelectorOpDoesNotExist,
+		},
+		{
+			Key:      utils.MasterRoleLabel,
+			Operator: metav1.LabelSelectorOpDoesNotExist,
+		},
+	},
+}
+
 // CreateOrUpdateDefaultNHC creates the default config
 func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logger) error {
 
-	defaultTemplateRef.Namespace = namespace
+	DefaultTemplateRef.Namespace = namespace
 
 	list := remediationv1alpha1.NodeHealthCheckList{}
 
@@ -56,21 +70,37 @@ func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logge
 
 	if len(list.Items) > 0 {
 		// If we have already some NHC then this is a restart, an upgrade, or a redeploy
-		// For upgrades we need to check if we still have the old default config
-		// with the deprecated Poison Pill remediator deployed, and update it to the new Self Node Remediation.
+		// For upgrades we need to check if we have outdated default configs
 		log.Info("there are existing NHC resources, checking if we need to update the default config", "numOfNHC", len(list.Items))
 
-		for i := range list.Items {
-			if list.Items[i].Spec.RemediationTemplate.Name == deprecatedTemplateName {
-				log.Info("updating config from old Poison Pill to new Self Node Remediation", "NHC name", list.Items[i].Name)
-				list.Items[i].Spec.RemediationTemplate = defaultTemplateRef
-				if err := mgr.GetClient().Update(context.Background(), &list.Items[i]); err != nil {
+		for _, nhc := range list.Items {
+			nhc := nhc
+			updated := false
+
+			// We need to check if we still have a default config with the deprecated Poison Pill remediator,
+			// and update it to the new Self Node Remediation.
+			if nhc.Spec.RemediationTemplate.Name == deprecatedTemplateName {
+				log.Info("updating config from old Poison Pill to new Self Node Remediation", "NHC name", nhc.Name)
+				nhc.Spec.RemediationTemplate = DefaultTemplateRef
+				updated = true
+			}
+
+			// Update node selector from worker to !control-plane AND !master, in order to prevent unwanted remediation of control
+			// plane nodes in case they also are workers
+			if nhc.Name == DefaultCRName && nhc.Spec.Selector.MatchExpressions[0].Key == utils.WorkerRoleLabel {
+				log.Info("updating default config from selecting worker role to selecting !control-plane && !master role", "NHC name", nhc.Name)
+				nhc.Spec.Selector = DefaultSelector
+				updated = true
+			}
+
+			if updated {
+				if err := mgr.GetClient().Update(context.Background(), &nhc); err != nil {
 					return errors.Wrap(err, "failed to update default NHC")
 				}
-				break
 			}
 		}
 
+		// no need to go on with creating the default config
 		return nil
 	}
 
@@ -79,13 +109,8 @@ func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logge
 			Name: DefaultCRName,
 		},
 		Spec: remediationv1alpha1.NodeHealthCheckSpec{
-			Selector: metav1.LabelSelector{
-				MatchExpressions: []metav1.LabelSelectorRequirement{{
-					Key:      "node-role.kubernetes.io/worker",
-					Operator: metav1.LabelSelectorOpExists,
-				}},
-			},
-			RemediationTemplate: defaultTemplateRef,
+			Selector:            DefaultSelector,
+			RemediationTemplate: DefaultTemplateRef,
 		},
 	}
 
