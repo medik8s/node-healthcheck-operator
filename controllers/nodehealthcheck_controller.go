@@ -396,7 +396,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	// set control plane marker label
 	if isControlPlaneNode {
 		labels := cr.GetLabels()
-		labels[controlPlaneLabelKey] = ""
+		labels[RemediationControlPlaneLabelKey] = ""
 		cr.SetLabels(labels)
 	}
 
@@ -447,7 +447,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 	}
 	for _, remediation := range remediations {
 		labels := remediation.GetLabels()
-		if _, isControlPlane := labels[controlPlaneLabelKey]; isControlPlane {
+		if _, isControlPlane := labels[RemediationControlPlaneLabelKey]; isControlPlane {
 			if remediation.GetName() != node.GetName() {
 				return false, nil
 			}
