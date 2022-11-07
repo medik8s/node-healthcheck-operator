@@ -438,7 +438,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, template *unstructured.Unstructured) (bool, error) {
 	if !utils.IsControlPlane(node) {
-		return true, nil
+		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
 	}
 	// check all remediation CRs. If there already is one for another control plane node, skip remediation
 	remediations, err := r.getAllInflightRemediations(template)
