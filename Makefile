@@ -86,7 +86,7 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
-all: docker-build docker-push bundle bundle-build bundle-push index-build index-push
+all: container-build container-push
 
 # CI uses a non-writable home dir, make sure .cache is writable
 ifeq ("${HOME}", "/")
@@ -155,7 +155,7 @@ tidy:
 vendor: tidy
 	go mod vendor
 
-verify: bundle-date-reset ## verify there are no un-committed changes
+verify: bundle-reset ## verify there are no un-committed changes
 	./hack/verify-diff.sh
 
 fetch-mutation: ## fetch mutation package.
@@ -240,38 +240,36 @@ bundle: manifests kustomize operator-sdk
 	cd config/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OPERATOR_SDK) bundle validate ./bundle
-	$(MAKE) bundle-fixes bundle-date
 
 # Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle-k8s
 bundle-k8s: bundle
 	$(KUSTOMIZE) build config/manifests-k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OPERATOR_SDK) bundle validate ./bundle
-	$(MAKE) bundle-fixes bundle-date
 
-# Some fixes in the bundle
+# Apply version or build date related changes in the bundle
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
-.PHONY: bundle-fixes
-bundle-fixes:
-    # update container image
+.PHONY: bundle-update
+bundle-update:
+    # update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
-	# set icon
-	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
-
-# Set createdAt date in the bundle's CSV. Do not commit changes!
-.PHONY: bundle-date
-bundle-date:
+	# set creation date
 	sed -r -i "s|createdAt: .*|createdAt: `date '+%Y-%m-%d %T'`|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+	# set skipRange
+	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
+	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+	$(OPERATOR_SDK) bundle validate ./bundle
 
-# Reset createdAt date to empty value
-.PHONY: bundle-date-reset
-bundle-date-reset:
-	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+# Revert all version or build date related changes
+.PHONY: bundle-reset
+bundle-reset:
+	VERSION=0.0.1 $(MAKE) bundle
 
 # Build the bundle image.
 .PHONY: bundle-build
-bundle-build: bundle-date
+bundle-build: bundle bundle-update
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 # Push the bundle image
@@ -311,7 +309,7 @@ deploy-snr:
 
 .PHONY: container-build
 container-build: ## Build containers
-	make docker-build bundle bundle-build
+	make docker-build bundle-build
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
