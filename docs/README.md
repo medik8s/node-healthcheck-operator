@@ -86,8 +86,10 @@ spec:
   # see k8s doc on selectors https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#resources-that-support-set-based-requirements
   selector:
     matchExpressions:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
+      - key: node-role.kubernetes.io/master
+        operator: DoesNotExist
   minHealthy: "51%"
   unhealthyConditions:
     - type: Ready
