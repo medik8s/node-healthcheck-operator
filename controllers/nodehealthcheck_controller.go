@@ -551,7 +551,6 @@ func (r *NodeHealthCheckReconciler) getOwnedInflightRemediations(nhc *remediatio
 	for _, remediationCR := range all {
 		if isOwner(&remediationCR, nhc) {
 			owned[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
-			continue
 		}
 	}
 	return owned, nil
