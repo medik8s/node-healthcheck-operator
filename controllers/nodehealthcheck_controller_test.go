@@ -167,7 +167,7 @@ var _ = Describe("Node Health Check CR", func() {
 		)
 
 		var setupObjects = func(unhealthy int, healthy int) {
-			objects = newNodes(unhealthy, healthy)
+			objects = newNodes(unhealthy, healthy, false)
 			underTest = newNodeHealthCheck()
 			remediationTemplate := newRemediationTemplate()
 			objects = append(objects, underTest, remediationTemplate)
@@ -199,7 +199,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			It("create a remediation CR for each unhealthy node", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
-				cr := newRemediationCR("unhealthy-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1")
 				err := reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cr.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
@@ -240,7 +240,7 @@ var _ = Describe("Node Health Check CR", func() {
 			It("skips remediation - CR is not created, status updated correctly", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
-				o := newRemediationCR("unhealthy-node-1")
+				o := newRemediationCR("unhealthy-worker-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -256,8 +256,8 @@ var _ = Describe("Node Health Check CR", func() {
 		When("few nodes become healthy", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
-				remediationCR := newRemediationCR("healthy-node-2")
-				remediationCROther := newRemediationCR("healthy-node-1")
+				remediationCR := newRemediationCR("healthy-worker-node-2")
+				remediationCROther := newRemediationCR("healthy-worker-node-1")
 				refs := remediationCROther.GetOwnerReferences()
 				refs[0].Name = "other"
 				remediationCROther.SetOwnerReferences(refs)
@@ -268,16 +268,16 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(reconcileError).NotTo(HaveOccurred())
 				Expect(getNHCError).NotTo(HaveOccurred())
 
-				cr := newRemediationCR("unhealthy-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1")
 				err := reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
 
-				cr = newRemediationCR("healthy-node-2")
+				cr = newRemediationCR("healthy-worker-node-2")
 				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
 				// owned by other NHC, should not be deleted
-				cr = newRemediationCR("healthy-node-1")
+				cr = newRemediationCR("healthy-worker-node-1")
 				err = reconciler.Client.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: cr.GetNamespace(), Name: cr.GetName()}, &cr)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -296,7 +296,7 @@ var _ = Describe("Node Health Check CR", func() {
 		When("an old remediation cr exist", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
-				remediationCR := newRemediationCR("unhealthy-node-1")
+				remediationCR := newRemediationCR("unhealthy-worker-node-1")
 				remediationCR.SetCreationTimestamp(metav1.Time{Time: time.Now().Add(-remediationCRAlertTimeout - 2*time.Minute)})
 				objects = append(objects, remediationCR.DeepCopyObject())
 			})
@@ -308,10 +308,38 @@ var _ = Describe("Node Health Check CR", func() {
 				actualRemediationCR := new(unstructured.Unstructured)
 				actualRemediationCR.SetKind(strings.TrimSuffix(underTest.Spec.RemediationTemplate.Kind, templateSuffix))
 				actualRemediationCR.SetAPIVersion(underTest.Spec.RemediationTemplate.APIVersion)
-				key := client.ObjectKey{Name: "unhealthy-node-1", Namespace: "default"}
+				key := client.ObjectKey{Name: "unhealthy-worker-node-1", Namespace: "default"}
 				err := reconciler.Client.Get(context.Background(), key, actualRemediationCR)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(actualRemediationCR.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
+			})
+		})
+
+		Context("control plane nodes", func() {
+			When("two control plane nodes are unhealthy, just one should be remediated", func() {
+				BeforeEach(func() {
+					objects = newNodes(2, 1, true)
+					objects = append(objects, newNodes(1, 5, false)...)
+					underTest = newNodeHealthCheck()
+					remediationTemplate := newRemediationTemplate()
+					objects = append(objects, underTest, remediationTemplate)
+				})
+
+				It("creates a one remediation CR for control plane node", func() {
+					Expect(reconcileError).NotTo(HaveOccurred())
+
+					cr := newRemediationCR("")
+					crList := &unstructured.UnstructuredList{Object: cr.Object}
+					Expect(reconciler.Client.List(context.Background(), crList)).To(Succeed())
+
+					Expect(len(crList.Items)).To(BeNumerically("==", 2), "expected 2 remediations, one for control plane, one for worker")
+					Expect(crList.Items).To(ContainElements(
+						// the unhealthy worker
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", "unhealthy-worker-node-1"))),
+						// one of the unhealthy control plane nodes
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", ContainSubstring("unhealthy-control-plane-node")))),
+					))
+				})
 			})
 		})
 
@@ -326,7 +354,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation - CR is not created", func() {
-				o := newRemediationCR("unhealthy-node-1")
+				o := newRemediationCR("unhealthy-worker-node-1")
 				err := reconciler.Get(context.Background(), ctrlruntimeclient.ObjectKey{Namespace: o.GetNamespace(),
 					Name: o.GetName()}, &o)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -405,6 +433,7 @@ var _ = Describe("Node Health Check CR", func() {
 					)))
 			})
 		})
+
 	})
 
 	// TODO move to new suite in utils package
@@ -422,7 +451,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("a node changes status and is selectable by one NHC selector", func() {
 			BeforeEach(func() {
-				objects = newNodes(3, 10)
+				objects = newNodes(3, 10, false)
 				underTest1 = newNodeHealthCheck()
 				underTest2 = newNodeHealthCheck()
 				underTest2.Name = "test-2"
@@ -434,7 +463,7 @@ var _ = Describe("Node Health Check CR", func() {
 			It("creates a reconcile request", func() {
 				handler := utils.NHCByNodeMapperFunc(client, controllerruntime.Log)
 				updatedNode := v1.Node{
-					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
+					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-worker-node-1"},
 				}
 				requests := handler(&updatedNode)
 				Expect(len(requests)).To(Equal(1))
@@ -444,7 +473,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("a node changes status and is selectable by the more 2 NHC selector", func() {
 			BeforeEach(func() {
-				objects = newNodes(3, 10)
+				objects = newNodes(3, 10, false)
 				underTest1 = newNodeHealthCheck()
 				underTest2 = newNodeHealthCheck()
 				underTest2.Name = "test-2"
@@ -454,7 +483,7 @@ var _ = Describe("Node Health Check CR", func() {
 			It("creates 2 reconcile requests", func() {
 				handler := utils.NHCByNodeMapperFunc(client, controllerruntime.Log)
 				updatedNode := v1.Node{
-					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
+					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-worker-node-1"},
 				}
 				requests := handler(&updatedNode)
 				Expect(len(requests)).To(Equal(2))
@@ -464,13 +493,13 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 		When("a node changes status and there are no NHC objects", func() {
 			BeforeEach(func() {
-				objects = newNodes(3, 10)
+				objects = newNodes(3, 10, false)
 			})
 
 			It("doesn't create reconcile requests", func() {
 				handler := utils.NHCByNodeMapperFunc(client, controllerruntime.Log)
 				updatedNode := v1.Node{
-					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-node-1"},
+					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-worker-node-1"},
 				}
 				requests := handler(&updatedNode)
 				Expect(requests).To(BeEmpty())
@@ -480,6 +509,10 @@ var _ = Describe("Node Health Check CR", func() {
 })
 
 func newRemediationCR(nodeName string) unstructured.Unstructured {
+	return newRemediationCRWithRole(nodeName, false)
+}
+
+func newRemediationCRWithRole(nodeName string, isControlPlaneNode bool) unstructured.Unstructured {
 	cr := unstructured.Unstructured{}
 	cr.SetName(nodeName)
 	cr.SetNamespace("default")
@@ -495,6 +528,11 @@ func newRemediationCR(nodeName string) unstructured.Unstructured {
 			Name:       "test",
 		},
 	})
+	if isControlPlaneNode {
+		cr.SetLabels(map[string]string{
+			RemediationControlPlaneLabelKey: "",
+		})
+	}
 	return cr
 }
 
@@ -555,33 +593,45 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	}
 }
 
-func newNodes(unhealthy int, healthy int) []runtime.Object {
+func newNodes(unhealthy int, healthy int, isControlPlane bool) []runtime.Object {
 	o := make([]runtime.Object, 0, healthy+unhealthy)
+	roleName := "-worker"
+	if isControlPlane {
+		roleName = "-control-plane"
+	}
 	for i := unhealthy; i > 0; i-- {
-		node := newNode(fmt.Sprintf("unhealthy-node-%d", i), v1.NodeReady, v1.ConditionFalse, time.Minute*10)
+		node := newNode(fmt.Sprintf("unhealthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionFalse, time.Minute*10, isControlPlane)
 		o = append(o, node)
 	}
 	for i := healthy; i > 0; i-- {
-		o = append(o, newNode(fmt.Sprintf("healthy-node-%d", i), v1.NodeReady, v1.ConditionTrue, time.Minute*10))
+		o = append(o, newNode(fmt.Sprintf("healthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionTrue, time.Minute*10, isControlPlane))
 	}
 	return o
 }
 
-func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.Duration) runtime.Object {
-	return runtime.Object(
-		&v1.Node{
-			TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{
-					{
-						Type:               t,
-						Status:             s,
-						LastTransitionTime: metav1.Time{Time: time.Now().Add(-d)},
-					},
+func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.Duration, isControlPlane bool) runtime.Object {
+	labels := make(map[string]string, 1)
+	if isControlPlane {
+		labels[utils.ControlPlaneRoleLabel] = ""
+	} else {
+		labels[utils.WorkerRoleLabel] = ""
+	}
+	return &v1.Node{
+		TypeMeta: metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: labels,
+		},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{
+					Type:               t,
+					Status:             s,
+					LastTransitionTime: metav1.Time{Time: time.Now().Add(-d)},
 				},
 			},
-		})
+		},
+	}
 }
 
 var TestRemediationCRD = &apiextensions.CustomResourceDefinition{

@@ -59,6 +59,9 @@ const (
 	eventTypeNormal               = "Normal"
 	eventTypeWarning              = "Warning"
 	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
+
+	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
+	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
@@ -206,7 +209,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// update inFlightRemediations before checking reconcile error
-	inFlightRemediations, err := r.getInflightRemediations(nhc, template)
+	inFlightRemediations, err := r.getOwnedInflightRemediations(nhc, template)
 	if err != nil {
 		return result, errors.Wrapf(err, "failed fetching remediation objects of the NHC")
 	}
@@ -371,9 +374,30 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
+	// prevent remediation of more than 1 control plane node at a time!
+	isControlPlaneNode := utils.IsControlPlane(node)
+	if isControlPlaneNode {
+		if isAllowed, err := r.isControlPlaneRemediationAllowed(node, template); err != nil {
+			log.Error(err, "failed to check if control plane remediation is allowed", "node", node.GetName())
+			return nil, err
+		} else if !isAllowed {
+			log.Info("skipping remediation for preventing control plane quorum loss", "node", node.GetName())
+			r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane quorum loss", node.GetName()))
+			return nil, nil
+		}
+	}
+
 	cr, err := r.generateRemediationCR(node, nhc, template)
 	if err != nil {
+		log.Error(err, "failed to generate external remediation object")
 		return nil, err
+	}
+
+	// set control plane marker label
+	if isControlPlaneNode {
+		labels := cr.GetLabels()
+		labels[RemediationControlPlaneLabelKey] = ""
+		cr.SetLabels(labels)
 	}
 
 	// check if CR already exists
@@ -412,6 +436,26 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	return nextReconcile, nil
 }
 
+func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, template *unstructured.Unstructured) (bool, error) {
+	if !utils.IsControlPlane(node) {
+		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
+	}
+	// check all remediation CRs. If there already is one for another control plane node, skip remediation
+	remediations, err := r.getAllInflightRemediations(template)
+	if err != nil {
+		return false, err
+	}
+	for _, remediation := range remediations {
+		labels := remediation.GetLabels()
+		if _, isControlPlane := labels[RemediationControlPlaneLabelKey]; isControlPlane {
+			if remediation.GetName() != node.GetName() {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
 func (r *NodeHealthCheckReconciler) generateRemediationCR(n *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 	templateSpec, found, err := unstructured.NestedMap(template.Object, "spec", "template")
 	if !found || err != nil {
@@ -426,16 +470,18 @@ func (r *NodeHealthCheckReconciler) generateRemediationCR(n *v1.Node, nhc *remed
 		Version: template.GroupVersionKind().Version,
 		Kind:    strings.TrimSuffix(template.GetKind(), templateSuffix),
 	})
-	u.SetOwnerReferences([]metav1.OwnerReference{
-		{
-			APIVersion:         nhc.APIVersion,
-			Kind:               nhc.Kind,
-			Name:               nhc.Name,
-			UID:                nhc.UID,
-			Controller:         pointer.BoolPtr(false),
-			BlockOwnerDeletion: nil,
-		},
-	})
+	if nhc != nil {
+		u.SetOwnerReferences([]metav1.OwnerReference{
+			{
+				APIVersion:         nhc.APIVersion,
+				Kind:               nhc.Kind,
+				Name:               nhc.Name,
+				UID:                nhc.UID,
+				Controller:         pointer.BoolPtr(false),
+				BlockOwnerDeletion: nil,
+			},
+		})
+	}
 	u.SetLabels(map[string]string{
 		"app.kubernetes.io/part-of": "node-healthcheck-controller",
 	})
@@ -496,8 +542,22 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom, &client.PatchOptions{})
 }
 
-func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (map[string]metav1.Time, error) {
-	cr, err := r.generateRemediationCR(&v1.Node{}, nhc, template)
+func (r *NodeHealthCheckReconciler) getOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (map[string]metav1.Time, error) {
+	all, err := r.getAllInflightRemediations(template)
+	if err != nil {
+		return nil, err
+	}
+	owned := make(map[string]metav1.Time)
+	for _, remediationCR := range all {
+		if isOwner(&remediationCR, nhc) {
+			owned[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
+		}
+	}
+	return owned, nil
+}
+
+func (r *NodeHealthCheckReconciler) getAllInflightRemediations(template *unstructured.Unstructured) ([]unstructured.Unstructured, error) {
+	cr, err := r.generateRemediationCR(&v1.Node{}, nil, template)
 	if err != nil {
 		return nil, err
 	}
@@ -511,14 +571,7 @@ func (r *NodeHealthCheckReconciler) getInflightRemediations(nhc *remediationv1al
 				cr.GetAPIVersion())
 	}
 
-	remediations := make(map[string]metav1.Time)
-	for _, remediationCR := range crList.Items {
-		if isOwner(&remediationCR, nhc) {
-			remediations[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
-			continue
-		}
-	}
-	return remediations, nil
+	return crList.Items, nil
 }
 
 func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstructured.Unstructured) (bool, *time.Duration) {
