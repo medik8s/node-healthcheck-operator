@@ -31,6 +31,8 @@ const (
 	WebhookCertDir  = "/apiserver.local.config/certificates"
 	WebhookCertName = "apiserver.crt"
 	WebhookKeyName  = "apiserver.key"
+
+	OngoingRemediationError = "prohibited due to running remediation"
 )
 
 // log is for logging in this package.
@@ -75,7 +77,7 @@ func (r *NodeHealthCheck) ValidateCreate() error {
 func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 	nodehealthchecklog.Info("validate update", "name", r.Name)
 	if r.isRemediating() {
-		return fmt.Errorf("update prohibited due to running remediations")
+		return fmt.Errorf("update %s", OngoingRemediationError)
 	}
 	return nil
 }
@@ -84,7 +86,7 @@ func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 func (r *NodeHealthCheck) ValidateDelete() error {
 	nodehealthchecklog.Info("validate delete", "name", r.Name)
 	if r.isRemediating() {
-		return fmt.Errorf("deletion prohibited due to running remediations")
+		return fmt.Errorf("deletion %s", OngoingRemediationError)
 	}
 	return nil
 }
