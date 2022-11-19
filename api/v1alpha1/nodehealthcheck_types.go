@@ -28,9 +28,6 @@ const (
 	// ConditionReasonDisabledMHC is the condition reason for type Disabled in case NHC is disabled because
 	// of conflicts with MHC
 	ConditionReasonDisabledMHC = "ConflictingMachineHealthCheckDetected"
-	// ConditionReasonDisabledInvalidConfig is the condition reason for type Disabled in case NHC is disabled because
-	// of invalid configuration
-	ConditionReasonDisabledInvalidConfig = "InvalidConfiguration"
 	// ConditionReasonDisabledTemplateNotFound is the reason for type Disabled when the template wasn't found
 	ConditionReasonDisabledTemplateNotFound = "RemediationTemplateNotFound"
 	// ConditionReasonEnabled is the condition reason for type Disabled and status False
