@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -76,8 +77,8 @@ func (r *NodeHealthCheck) ValidateCreate() error {
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 	nodehealthchecklog.Info("validate update", "name", r.Name)
-	if r.isRemediating() {
-		return fmt.Errorf("update %s", OngoingRemediationError)
+	if r.isRemediating() && r.isRestrictedFieldUpdated(old.(*NodeHealthCheck)) {
+		return fmt.Errorf("selector update %s", OngoingRemediationError)
 	}
 	return nil
 }
@@ -89,6 +90,15 @@ func (r *NodeHealthCheck) ValidateDelete() error {
 		return fmt.Errorf("deletion %s", OngoingRemediationError)
 	}
 	return nil
+}
+
+func (r *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) bool {
+	// the only critical field is the node selector
+	// when it changes, we can end up with dangling remediations
+	if !reflect.DeepEqual(r.Spec.Selector, old.Spec.Selector) {
+		return true
+	}
+	return false
 }
 
 func (r *NodeHealthCheck) isRemediating() bool {

@@ -199,19 +199,29 @@ var _ = Describe("e2e", func() {
 				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 10*time.Second).
 				Should(Succeed())
 
-			By("ensuring config update fails")
+			By("ensuring selector update fails")
 			nhc := getConfig()
-			newValue := intstr.FromString("42%")
-			nhc.Spec.MinHealthy = &newValue
+			nhc.Spec.Selector = metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"foo": "bar",
+				},
+			}
 			err := k8sClient.Update(context.Background(), nhc)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError))
+			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError), "selector update should be prevented")
 
 			By("ensuring config deletion fails")
 			nhc = getConfig()
 			err = k8sClient.Delete(context.Background(), nhc)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError))
+			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError), "deletion should be prevented")
+
+			By("ensuring minHealthy update succeeds")
+			nhc = getConfig()
+			newValue := intstr.FromString("52%")
+			nhc.Spec.MinHealthy = &newValue
+			err = k8sClient.Update(context.Background(), nhc)
+			Expect(err).ToNot(HaveOccurred(), "minHealthy update should be allowed")
 
 			By("waiting for reboot")
 			Eventually(func() (time.Time, error) {
