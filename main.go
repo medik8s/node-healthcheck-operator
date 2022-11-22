@@ -23,11 +23,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/bootstrap"
-
-	"github.com/medik8s/node-healthcheck-operator/controllers"
-	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
-	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"go.uber.org/zap/zapcore"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -46,6 +41,10 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers"
+	"github.com/medik8s/node-healthcheck-operator/controllers/bootstrap"
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 	// +kubebuilder:scaffold:imports
@@ -144,6 +143,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&remediationv1alpha1.NodeHealthCheck{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NodeHealthCheck")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	ctx := ctrl.SetupSignalHandler()

@@ -1,0 +1,27 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  creationTimestamp: null
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-remediation-medik8s-io-v1alpha1-nodehealthcheck
+  failurePolicy: Fail
+  name: vnodehealthcheck.kb.io
+  rules:
+  - apiGroups:
+    - remediation.medik8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - UPDATE
+    - DELETE
+    resources:
+    - nodehealthchecks
+  sideEffects: None
