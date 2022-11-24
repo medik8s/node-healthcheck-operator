@@ -23,6 +23,7 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -71,12 +72,17 @@ var _ webhook.Validator = &NodeHealthCheck{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeHealthCheck) ValidateCreate() error {
 	nodehealthchecklog.Info("validate create", "name", r.Name)
-	return nil
+	return r.validateMinHealthy()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 	nodehealthchecklog.Info("validate update", "name", r.Name)
+
+	if err := r.validateMinHealthy(); err != nil {
+		return err
+	}
+
 	if r.isRemediating() && r.isRestrictedFieldUpdated(old.(*NodeHealthCheck)) {
 		return fmt.Errorf("selector update %s", OngoingRemediationError)
 	}
@@ -89,6 +95,21 @@ func (r *NodeHealthCheck) ValidateDelete() error {
 	if r.isRemediating() {
 		return fmt.Errorf("deletion %s", OngoingRemediationError)
 	}
+	return nil
+}
+
+func (r *NodeHealthCheck) validateMinHealthy() error {
+	if r.Spec.MinHealthy == nil {
+		return fmt.Errorf("MinHealthy must not be empty")
+	}
+	if r.Spec.MinHealthy.Type == intstr.Int && r.Spec.MinHealthy.IntVal < 0 {
+		return fmt.Errorf("MinHealthy must not be negative: %v", r.Spec.MinHealthy)
+	}
+
+	// everything else should have been covered by API server validation
+	// as defined by kubebuilder validation markers on the NHC struct.
+	// Using Minimum for IntOrStr does not work (yet)
+
 	return nil
 }
 

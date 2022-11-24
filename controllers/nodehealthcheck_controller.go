@@ -107,24 +107,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}()
 
-	// check if we need to disable NHC because of invalid configuration
-	// Remove this and corresponding test when kubebuilder supports minimum on IntOrStr types
-	if err = utils.ValidateMinHealthy(nhc); err != nil {
-		// update status if needed
-		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledInvalidConfig) {
-			log.Info("disabling NHC because of invalid config")
-			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
-				Type:    remediationv1alpha1.ConditionTypeDisabled,
-				Status:  metav1.ConditionTrue,
-				Reason:  remediationv1alpha1.ConditionReasonDisabledInvalidConfig,
-				Message: err.Error(),
-			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Invalid configuration: %s", err.Error())
-		}
-		// stop reconciling
-		return result, nil
-	}
-
 	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
 		// update status if needed

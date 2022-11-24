@@ -199,21 +199,30 @@ var _ = Describe("e2e", func() {
 				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 10*time.Second).
 				Should(Succeed())
 
+			// let's do some NHC validation tests here
 			// wrap 1st webhook test in eventually in order to wait until webhook is up and running
-			By("ensuring selector update fails")
+			By("ensuring negative minHealthy update fails")
 			Eventually(func() error {
 				nhc := getConfig()
-				nhc.Spec.Selector = metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"foo": "bar",
-					},
-				}
+				negValue := intstr.FromInt(-1)
+				nhc.Spec.MinHealthy = &negValue
 				return k8sClient.Update(context.Background(), nhc)
-			}, 20*time.Second, 5*time.Second).Should(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "selector update should be prevented")
+			}, 20*time.Second, 5*time.Second).Should(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
+
+			By("ensuring selector update fails")
+			nhc := getConfig()
+			nhc.Spec.Selector = metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"foo": "bar",
+				},
+			}
+			err := k8sClient.Update(context.Background(), nhc)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError), "selector update should be prevented")
 
 			By("ensuring config deletion fails")
-			nhc := getConfig()
-			err := k8sClient.Delete(context.Background(), nhc)
+			nhc = getConfig()
+			err = k8sClient.Delete(context.Background(), nhc)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError), "deletion should be prevented")
 
