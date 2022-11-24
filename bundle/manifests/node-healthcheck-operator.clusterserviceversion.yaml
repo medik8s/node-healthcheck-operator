@@ -112,7 +112,7 @@ spec:
         x-descriptors:
         - urn:alm:descriptor:com.tectonic.ui:inFlightRemediations
       - description: ObservedNodes specified the number of nodes observed by using
-          the NHC spec.selecor
+          the NHC spec.selector
         displayName: observedNodes
         path: observedNodes
         x-descriptors:
