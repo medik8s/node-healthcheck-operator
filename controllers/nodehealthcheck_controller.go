@@ -72,6 +72,7 @@ type NodeHealthCheckReconciler struct {
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
+	CurrentTime                 func() time.Time
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -270,7 +271,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	var unhealthy []v1.Node
 	for i := range nodes {
 		node := &nodes[i]
-		if isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions) {
+		if isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions, r.CurrentTime()) {
 			err := r.markHealthy(node, nhc, template)
 			if err != nil {
 				return nil, err
@@ -325,8 +326,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv
 	return nil
 }
 
-func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
-	now := time.Now()
+func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition, now time.Time) bool {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
@@ -561,7 +561,7 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 	isSendAlert := false
 	var nextReconcile *time.Duration = nil
 	//verify remediationCR is old
-	now := time.Now()
+	now := r.CurrentTime()
 	if now.After(remediationCR.GetCreationTimestamp().Add(remediationCRAlertTimeout)) {
 		var remediationCrAnnotations map[string]string
 		if remediationCrAnnotations = remediationCR.GetAnnotations(); remediationCrAnnotations == nil {
@@ -573,10 +573,10 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 			remediationCR.SetAnnotations(remediationCrAnnotations)
 			if err := r.Client.Update(context.TODO(), remediationCR); err == nil {
 				isSendAlert = true
+				r.Log.Info("old remediation, going to alert!")
 			} else {
 				r.Log.Error(err, "Setting `old remediationCR` annotation on remediation CR %s: failed to update: %v", remediationCR.GetName(), err)
 			}
-
 		}
 	} else {
 		calcNextReconcile := remediationCRAlertTimeout - now.Sub(remediationCR.GetCreationTimestamp().Time) + time.Minute

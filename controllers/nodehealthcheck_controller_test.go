@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -284,20 +283,29 @@ var _ = Describe("Node Health Check CR", func() {
 		When("an old remediation cr exist", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
-				remediationCR := newRemediationCR("unhealthy-worker-node-1")
-				//remediationCR.SetCreationTimestamp(metav1.Time{Time: time.Now().Add(-remediationCRAlertTimeout - 2*time.Minute)})
-				objects = append(objects, remediationCR)
+			})
+
+			AfterEach(func() {
+				fakeTime = nil
 			})
 
 			It("an alert flag is set on remediation cr", func() {
-				Skip("DOESN't WORK ATM")
-				actualRemediationCR := new(unstructured.Unstructured)
-				actualRemediationCR.SetKind(strings.TrimSuffix(underTest.Spec.RemediationTemplate.Kind, templateSuffix))
-				actualRemediationCR.SetAPIVersion(underTest.Spec.RemediationTemplate.APIVersion)
-				key := client.ObjectKey{Name: "unhealthy-worker-node-1", Namespace: "default"}
-				err := k8sClient.Get(context.Background(), key, actualRemediationCR)
+				By("faking time and triggering another reconcile")
+				afterTimeout := time.Now().Add(remediationCRAlertTimeout).Add(2 * time.Minute)
+				fakeTime = &afterTimeout
+				labels := underTest.Labels
+				if labels == nil {
+					labels = make(map[string]string)
+				}
+				labels["trigger"] = "now"
+				underTest.Labels = labels
+				Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
+				time.Sleep(2 * time.Second)
+
+				cr := newRemediationCR("unhealthy-worker-node-1")
+				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(actualRemediationCR.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
+				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
 			})
 		})
 
@@ -363,12 +371,23 @@ var _ = Describe("Node Health Check CR", func() {
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
-				// TODO Expect(reconcileResult.RequeueAfter).To(Equal(1 * time.Minute))
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
 				Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 				Expect(underTest.Status.Reason).ToNot(BeEmpty())
+
+				By("stopping upgrade and waiting for requeue")
+				upgradeChecker.Upgrading = false
+				// the fake time won't work here, because the reconciler internals do noy use it
+				time.Sleep(65 * time.Second)
+				err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.HealthyNodes).To(Equal(2))
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
 			})
 
 		})

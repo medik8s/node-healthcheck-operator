@@ -66,6 +66,7 @@ var ctx context.Context
 var cancel context.CancelFunc
 
 var upgradeChecker *fakeClusterUpgradeChecker
+var fakeTime *time.Time
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -118,6 +119,13 @@ var _ = BeforeSuite(func() {
 
 	os.Setenv("DEPLOYMENT_NAMESPACE", DeploymentNamespace)
 
+	currentTime := func() time.Time {
+		if fakeTime != nil {
+			return *fakeTime
+		}
+		return time.Now()
+	}
+
 	err = (&NodeHealthCheckReconciler{
 		Client:                      k8sManager.GetClient(),
 		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
@@ -125,6 +133,7 @@ var _ = BeforeSuite(func() {
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
+		CurrentTime:                 currentTime,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

@@ -119,6 +119,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	currentTime := func() time.Time {
+		return time.Now()
+	}
+
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
@@ -126,6 +130,7 @@ func main() {
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
+		CurrentTime:                 currentTime,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)
