@@ -36,9 +36,9 @@ type openshiftClusterUpgradeStatusChecker struct {
 }
 
 // force implementation of interface
-var _ UpgradeChecker = openshiftClusterUpgradeStatusChecker{}
+var _ UpgradeChecker = &openshiftClusterUpgradeStatusChecker{}
 
-func (o openshiftClusterUpgradeStatusChecker) Check() (bool, error) {
+func (o *openshiftClusterUpgradeStatusChecker) Check() (bool, error) {
 	cvs, err := o.clusterVersionsClient.List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return false, gerrors.Wrap(err, "failed to check for Openshift cluster upgrade status")
@@ -58,9 +58,9 @@ type noopClusterUpgradeStatusChecker struct {
 }
 
 // force implementation of interface
-var _ UpgradeChecker = noopClusterUpgradeStatusChecker{}
+var _ UpgradeChecker = &noopClusterUpgradeStatusChecker{}
 
-func (n noopClusterUpgradeStatusChecker) Check() (bool, error) {
+func (n *noopClusterUpgradeStatusChecker) Check() (bool, error) {
 	return false, nil
 }
 
@@ -72,7 +72,7 @@ func NewClusterUpgradeStatusChecker(mgr manager.Manager) (UpgradeChecker, error)
 		return nil, err
 	}
 	if !openshift {
-		return noopClusterUpgradeStatusChecker{}, nil
+		return &noopClusterUpgradeStatusChecker{}, nil
 	}
 	checker, err := newOpenshiftClusterUpgradeChecker(mgr)
 	if err != nil {
