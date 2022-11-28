@@ -4,7 +4,7 @@ metadata:
   annotations:
     service.beta.openshift.io/serving-cert-secret-name: nrc-plugin-cert
   labels:
-    app: node-remediation-console-plugin
+    app.kubernetes.io/component: node-remediation-console-plugin
   name: node-remediation-console-plugin
   namespace: openshift-operators
 spec:
@@ -14,6 +14,6 @@ spec:
     protocol: TCP
     targetPort: nrc-server
   selector:
-    app: node-remediation-console-plugin
+    app.kubernetes.io/component: node-remediation-console-plugin
   sessionAffinity: None
   type: ClusterIP

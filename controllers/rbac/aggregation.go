@@ -15,8 +15,8 @@ import (
 const (
 	roleName            = "node-healthcheck-operator-aggregation"
 	aggregationLabelKey = "rbac.ext-remediation/aggregate-to-ext-remediation"
-	saName              = "node-healthcheck-operator-controller-manager"
-	deploymentName      = "node-healthcheck-operator-controller-manager"
+	saName              = "node-healthcheck-controller-manager"
+	deploymentName      = "node-healthcheck-controller-manager"
 )
 
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=*

@@ -6,16 +6,16 @@ namespace: node-healthcheck-operator-system
 # "wordpress" becomes "alices-wordpress".
 # Note that it should also match with the prefix (text before '-') of the namespace
 # field above.
-namePrefix: node-healthcheck-operator-
+namePrefix: node-healthcheck-
 
 # Labels to add to all resources and selectors.
 #
 # *** STOP! ***
 # Adding labels breaks updates, because the label selector in the deployment is immutable,
 # and OLM does not deal with it by creating a new deployment instead.
-#
-# commonLabels:
-#   app: node-healthcheck-operator
+# Workaround: rename the deployment (by modifying namePrefix above)
+commonLabels:
+  app.kubernetes.io/name: node-healthcheck-operator
 
 bases:
 - ../crd

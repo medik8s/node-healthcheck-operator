@@ -2,18 +2,18 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: node-remediation-console-plugin
+    app.kubernetes.io/component: node-remediation-console-plugin
   name: node-remediation-console-plugin
-  namespace: openshift-operators
+  namespace: system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: node-remediation-console-plugin
+      app.kubernetes.io/component: node-remediation-console-plugin
   template:
     metadata:
       labels:
-        app: node-remediation-console-plugin
+        app.kubernetes.io/component: node-remediation-console-plugin
     spec:
       containers:
       - image: console-plugin:latest

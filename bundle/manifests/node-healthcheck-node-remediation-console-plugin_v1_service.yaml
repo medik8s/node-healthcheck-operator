@@ -5,8 +5,9 @@ metadata:
     service.beta.openshift.io/serving-cert-secret-name: nrc-plugin-cert
   creationTimestamp: null
   labels:
-    app: node-remediation-console-plugin
-  name: node-healthcheck-operator-node-remediation-console-plugin
+    app.kubernetes.io/component: node-remediation-console-plugin
+    app.kubernetes.io/name: node-healthcheck-operator
+  name: node-healthcheck-node-remediation-console-plugin
 spec:
   ports:
   - name: 9443-tcp
@@ -14,7 +15,8 @@ spec:
     protocol: TCP
     targetPort: nrc-server
   selector:
-    app: node-remediation-console-plugin
+    app.kubernetes.io/component: node-remediation-console-plugin
+    app.kubernetes.io/name: node-healthcheck-operator
   sessionAffinity: None
   type: ClusterIP
 status:
