@@ -265,21 +265,25 @@ spec:
           - subjectaccessreviews
           verbs:
           - create
-        serviceAccountName: node-healthcheck-operator-controller-manager
+        serviceAccountName: node-healthcheck-controller-manager
       deployments:
       - label:
-          control-plane: controller-manager
-        name: node-healthcheck-operator-controller-manager
+          app.kubernetes.io/component: controller-manager
+          app.kubernetes.io/name: node-healthcheck-operator
+        name: node-healthcheck-controller-manager
         spec:
           replicas: 1
           selector:
             matchLabels:
-              control-plane: controller-manager
+              app.kubernetes.io/component: controller-manager
+              app.kubernetes.io/name: node-healthcheck-operator
           strategy: {}
           template:
             metadata:
               labels:
-                control-plane: controller-manager
+                app.kubernetes.io/component: controller-manager
+                app.kubernetes.io/name: node-healthcheck-operator
+                kubectl.kubernetes.io/default-container: manager
             spec:
               affinity:
                 nodeAffinity:
@@ -345,7 +349,7 @@ spec:
               priorityClassName: system-cluster-critical
               securityContext:
                 runAsNonRoot: true
-              serviceAccountName: node-healthcheck-operator-controller-manager
+              serviceAccountName: node-healthcheck-controller-manager
               terminationGracePeriodSeconds: 10
               tolerations:
               - effect: NoSchedule
@@ -354,18 +358,21 @@ spec:
                 key: node-role.kubernetes.io/control-plane
                 operator: Exists
       - label:
-          app: node-remediation-console-plugin
-        name: node-healthcheck-operator-node-remediation-console-plugin
+          app.kubernetes.io/component: node-remediation-console-plugin
+          app.kubernetes.io/name: node-healthcheck-operator
+        name: node-healthcheck-node-remediation-console-plugin
         spec:
           replicas: 1
           selector:
             matchLabels:
-              app: node-remediation-console-plugin
+              app.kubernetes.io/component: node-remediation-console-plugin
+              app.kubernetes.io/name: node-healthcheck-operator
           strategy: {}
           template:
             metadata:
               labels:
-                app: node-remediation-console-plugin
+                app.kubernetes.io/component: node-remediation-console-plugin
+                app.kubernetes.io/name: node-healthcheck-operator
             spec:
               containers:
               - image: quay.io/medik8s/node-remediation-console:latest
@@ -427,7 +434,7 @@ spec:
           verbs:
           - create
           - patch
-        serviceAccountName: node-healthcheck-operator-controller-manager
+        serviceAccountName: node-healthcheck-controller-manager
     strategy: deployment
   installModes:
   - supported: false
@@ -464,7 +471,7 @@ spec:
   - admissionReviewVersions:
     - v1
     containerPort: 443
-    deploymentName: node-healthcheck-operator-controller-manager
+    deploymentName: node-healthcheck-controller-manager
     failurePolicy: Fail
     generateName: vnodehealthcheck.kb.io
     rules:

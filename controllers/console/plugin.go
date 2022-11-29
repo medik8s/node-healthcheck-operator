@@ -35,7 +35,7 @@ const (
 	// PluginName is the name of the plugin and uses at several places
 	PluginName = "node-remediation-console-plugin"
 	// ServiceName is the name of the console plugin Service and must match the name of the Service in /bundle/manifests!
-	ServiceName = "node-healthcheck-operator-node-remediation-console-plugin"
+	ServiceName = "node-healthcheck-node-remediation-console-plugin"
 	// ServicePort is the port of the console plugin Service and must match the port of the Service in /bundle/manifests!
 	ServicePort = 9443
 )
