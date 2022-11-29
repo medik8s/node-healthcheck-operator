@@ -271,7 +271,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	var unhealthy []v1.Node
 	for i := range nodes {
 		node := &nodes[i]
-		if isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions, r.CurrentTime()) {
+		if r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions) {
 			err := r.markHealthy(node, nhc, template)
 			if err != nil {
 				return nil, err
@@ -326,7 +326,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv
 	return nil
 }
 
-func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition, now time.Time) bool {
+func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
@@ -337,7 +337,7 @@ func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCond
 		if !exists {
 			continue
 		}
-		if n.Status == c.Status && now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
+		if n.Status == c.Status && r.CurrentTime().After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 			return false
 		}
 	}
