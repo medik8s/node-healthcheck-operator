@@ -358,6 +358,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("Nodes are candidates for remediation and cluster is upgrading", func() {
 			BeforeEach(func() {
+				clusterUpgradeRequeueAfter = 5 * time.Second
 				upgradeChecker.Upgrading = true
 				setupObjects(1, 2)
 			})
@@ -366,7 +367,7 @@ var _ = Describe("Node Health Check CR", func() {
 				upgradeChecker.Upgrading = false
 			})
 
-			It("doesn't not remediate but requeues reconciliation to 1 minute from now and updates status", func() {
+			It("doesn't not remediate but requeues reconciliation and updates status", func() {
 				cr := newRemediationCR("unhealthy-worker-node-1")
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -379,8 +380,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 				By("stopping upgrade and waiting for requeue")
 				upgradeChecker.Upgrading = false
-				// the fake time won't work here, because the reconciler internals do noy use it
-				time.Sleep(65 * time.Second)
+				time.Sleep(10 * time.Second)
 				err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(err).ToNot(HaveOccurred())
 

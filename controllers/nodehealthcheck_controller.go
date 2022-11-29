@@ -64,6 +64,10 @@ const (
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
 )
 
+var (
+	clusterUpgradeRequeueAfter = 1 * time.Minute
+)
+
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
 type NodeHealthCheckReconciler struct {
 	client.Client
@@ -225,7 +229,7 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 		}
 		// TODO consider doing this check on top of reconcile and set Disabled condition?
 		if r.isClusterUpgrading() {
-			updateResultNextReconcile(result, 1*time.Minute)
+			updateResultNextReconcile(result, clusterUpgradeRequeueAfter)
 			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
 			return false
 		}
