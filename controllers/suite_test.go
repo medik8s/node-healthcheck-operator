@@ -119,7 +119,8 @@ var _ = BeforeSuite(func() {
 
 	os.Setenv("DEPLOYMENT_NAMESPACE", DeploymentNamespace)
 
-	currentTime := func() time.Time {
+	// to be able faking the current time for tests
+	currentTime = func() time.Time {
 		if fakeTime != nil {
 			return *fakeTime
 		}
@@ -133,7 +134,6 @@ var _ = BeforeSuite(func() {
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
-		CurrentTime:                 currentTime,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

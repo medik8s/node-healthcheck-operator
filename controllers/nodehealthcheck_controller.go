@@ -66,6 +66,7 @@ const (
 
 var (
 	clusterUpgradeRequeueAfter = 1 * time.Minute
+	currentTime                = func() time.Time { return time.Now() }
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
@@ -76,7 +77,6 @@ type NodeHealthCheckReconciler struct {
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
-	CurrentTime                 func() time.Time
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -341,7 +341,7 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 		if !exists {
 			continue
 		}
-		if n.Status == c.Status && r.CurrentTime().After(n.LastTransitionTime.Add(c.Duration.Duration)) {
+		if n.Status == c.Status && currentTime().After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 			return false
 		}
 	}
@@ -565,8 +565,8 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 	isSendAlert := false
 	var nextReconcile *time.Duration = nil
 	//verify remediationCR is old
-	now := r.CurrentTime()
-	if now.After(remediationCR.GetCreationTimestamp().Add(remediationCRAlertTimeout)) {
+	now := currentTime()
+	if currentTime().After(remediationCR.GetCreationTimestamp().Add(remediationCRAlertTimeout)) {
 		var remediationCrAnnotations map[string]string
 		if remediationCrAnnotations = remediationCR.GetAnnotations(); remediationCrAnnotations == nil {
 			remediationCrAnnotations = map[string]string{}
