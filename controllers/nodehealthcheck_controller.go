@@ -64,6 +64,11 @@ const (
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
 )
 
+var (
+	clusterUpgradeRequeueAfter = 1 * time.Minute
+	currentTime                = func() time.Time { return time.Now() }
+)
+
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
 type NodeHealthCheckReconciler struct {
 	client.Client
@@ -224,7 +229,7 @@ func (r *NodeHealthCheckReconciler) shouldTryRemediation(
 		}
 		// TODO consider doing this check on top of reconcile and set Disabled condition?
 		if r.isClusterUpgrading() {
-			updateResultNextReconcile(result, 1*time.Minute)
+			updateResultNextReconcile(result, clusterUpgradeRequeueAfter)
 			r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, "Skipped remediation because the cluster is upgrading")
 			return false
 		}
@@ -270,7 +275,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	var unhealthy []v1.Node
 	for i := range nodes {
 		node := &nodes[i]
-		if isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions) {
+		if r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions) {
 			err := r.markHealthy(node, nhc, template)
 			if err != nil {
 				return nil, err
@@ -325,8 +330,7 @@ func (r *NodeHealthCheckReconciler) markHealthy(node *v1.Node, nhc *remediationv
 	return nil
 }
 
-func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
-	now := time.Now()
+func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
@@ -337,7 +341,7 @@ func isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeCond
 		if !exists {
 			continue
 		}
-		if n.Status == c.Status && now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
+		if n.Status == c.Status && currentTime().After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 			return false
 		}
 	}
@@ -561,8 +565,8 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 	isSendAlert := false
 	var nextReconcile *time.Duration = nil
 	//verify remediationCR is old
-	now := time.Now()
-	if now.After(remediationCR.GetCreationTimestamp().Add(remediationCRAlertTimeout)) {
+	now := currentTime()
+	if currentTime().After(remediationCR.GetCreationTimestamp().Add(remediationCRAlertTimeout)) {
 		var remediationCrAnnotations map[string]string
 		if remediationCrAnnotations = remediationCR.GetAnnotations(); remediationCrAnnotations == nil {
 			remediationCrAnnotations = map[string]string{}
@@ -573,10 +577,10 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 			remediationCR.SetAnnotations(remediationCrAnnotations)
 			if err := r.Client.Update(context.TODO(), remediationCR); err == nil {
 				isSendAlert = true
+				r.Log.Info("old remediation, going to alert!")
 			} else {
 				r.Log.Error(err, "Setting `old remediationCR` annotation on remediation CR %s: failed to update: %v", remediationCR.GetName(), err)
 			}
-
 		}
 	} else {
 		calcNextReconcile := remediationCRAlertTimeout - now.Sub(remediationCR.GetCreationTimestamp().Time) + time.Minute
