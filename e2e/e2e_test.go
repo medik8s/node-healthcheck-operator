@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -77,6 +78,9 @@ var _ = Describe("e2e", func() {
 
 	When("when the operator and the console plugin is deployed", func() {
 		It("the plugin manifest should be served", func() {
+			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
+				Skip("skipping console plugin test as requested by $SKIP_FOR_K8S env var")
+			}
 
 			By("getting the ConsolePlugin")
 			plugin := &consolev1alpha1.ConsolePlugin{}
@@ -99,6 +103,9 @@ var _ = Describe("e2e", func() {
 	Context("with custom MHC", func() {
 		var mhc *v1beta1.MachineHealthCheck
 		BeforeEach(func() {
+			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
+				Skip("skipping MHC test as requested by $SKIP_FOR_K8S env var")
+			}
 			mhc = &v1beta1.MachineHealthCheck{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
