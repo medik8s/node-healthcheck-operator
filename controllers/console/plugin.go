@@ -22,17 +22,21 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
+	v1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/openshift/api/console/v1alpha1"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 const (
-	// PluginName is the name of the plugin and uses at several places
+	// PluginName is the name of the plugin and used at several places
 	PluginName = "node-remediation-console-plugin"
 	// ServiceName is the name of the console plugin Service and must match the name of the Service in /bundle/manifests!
 	ServiceName = "node-healthcheck-node-remediation-console-plugin"
@@ -42,6 +46,7 @@ const (
 
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
 
 // CreateOrUpdatePlugin creates or updates the resources needed for the remediation console plugin.
 // HEADS UP: consider cleanup of old resources in case of name changes or removals!
@@ -49,17 +54,32 @@ const (
 // TODO image reference to console plugin in CSV?
 func CreateOrUpdatePlugin(ctx context.Context, mgr ctrl.Manager, namespace string, log logr.Logger) error {
 
+	// reader is needed because mgr isn't started yet, so caches are not filled yet and client.get fails
+	reader := mgr.GetAPIReader()
+	cl := mgr.GetClient()
+
 	// check if we are on OCP
 	if isOpenshift, err := utils.IsOnOpenshift(mgr.GetConfig()); err != nil {
 		return errors.Wrap(err, "failed to check if we are on Openshift")
 	} else if !isOpenshift {
-		log.Info("we are not on Openshift, skipping console plugin activation")
+		log.Info("we are not on Openshift, skipping console plugin activation, but scale down console deployment")
+		list := &v1.DeploymentList{}
+		selector := labels.NewSelector()
+		req, _ := labels.NewRequirement("app.kubernetes.io/component", selection.Equals, []string{"node-remediation-console-plugin"})
+		selector = selector.Add(*req)
+		if err := reader.List(ctx, list, &client.ListOptions{LabelSelector: selector, Namespace: namespace}); err != nil || len(list.Items) != 1 {
+			return errors.Wrap(err, "failed to find console deployment for scaling down")
+		}
+		console := list.Items[0]
+		consoleOrig := console.DeepCopy()
+		replicas := int32(0)
+		console.Spec.Replicas = &replicas
+		mergeFrom := client.MergeFrom(consoleOrig)
+		if err = cl.Patch(ctx, &console, mergeFrom, &client.PatchOptions{}); err != nil {
+			return errors.Wrap(err, "failed to patch console deployment for scaling down")
+		}
 		return nil
 	}
-
-	// reader is needed because mgr isn't started yet, so caches are not filled yet and client.get fails
-	reader := mgr.GetAPIReader()
-	cl := mgr.GetClient()
 
 	// Create ConsolePlugin resource
 	// Deployment and Service are deployed by OLM
