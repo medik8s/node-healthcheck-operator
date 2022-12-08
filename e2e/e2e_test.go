@@ -47,7 +47,7 @@ var _ = Describe("e2e", func() {
 			// find a worker node
 			workers := &v1.NodeList{}
 			selector := labels.NewSelector()
-			req, _ := labels.NewRequirement("node-role.kubernetes.io/worker", selection.Exists, []string{})
+			req, _ := labels.NewRequirement("node-role.kubernetes.io/control-plane", selection.DoesNotExist, []string{})
 			selector = selector.Add(*req)
 			Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
 			Expect(len(workers.Items)).To(BeNumerically(">=", 2))
