@@ -155,10 +155,10 @@ spec:
     url: https://github.com/medik8s/node-healthcheck-operator
   maintainers:
   - email: medik8s@googlegroups.com
-    name: medik8s team
+    name: Medik8s Team
   maturity: alpha
   minKubeVersion: 1.20.0
   provider:
-    name: medik8s
+    name: Medik8s
     url: https://github.com/medik8s
   version: 0.0.0
