@@ -114,7 +114,7 @@ var _ = BeforeSuite(func() {
 		Upgrading: false,
 	}
 
-	mhcChecker, err := mhc.NewMHCChecker(k8sManager)
+	mhcChecker, err := mhc.NewMHCChecker(k8sManager, false)
 	Expect(err).NotTo(HaveOccurred())
 
 	os.Setenv("DEPLOYMENT_NAMESPACE", DeploymentNamespace)
