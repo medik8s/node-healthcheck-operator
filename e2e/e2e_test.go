@@ -58,15 +58,6 @@ var _ = Describe("e2e", func() {
 			// save boot time
 			testStart = time.Now()
 
-			// set terminating node condition now, to prevent remediation start before "with terminating node" test runs
-			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
-			conditions := nodeUnderTest.Status.Conditions
-			conditions = append(conditions, v1.NodeCondition{
-				Type:   mhc.NodeConditionTerminating,
-				Status: "True",
-			})
-			nodeUnderTest.Status.Conditions = conditions
-			Expect(k8sClient.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
 		}
 
 	})
@@ -78,6 +69,7 @@ var _ = Describe("e2e", func() {
 
 	When("when the operator and the console plugin is deployed", func() {
 		It("the plugin manifest should be served", func() {
+			// console deployment is disabled on k8s
 			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
 				Skip("skipping console plugin test as requested by $SKIP_FOR_K8S env var")
 			}
@@ -103,9 +95,11 @@ var _ = Describe("e2e", func() {
 	Context("with custom MHC", func() {
 		var mhc *v1beta1.MachineHealthCheck
 		BeforeEach(func() {
+			// we have no MHC on k8s
 			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
 				Skip("skipping MHC test as requested by $SKIP_FOR_K8S env var")
 			}
+
 			mhc = &v1beta1.MachineHealthCheck{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -128,6 +122,12 @@ var _ = Describe("e2e", func() {
 
 		AfterEach(func() {
 			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed())
+			// ensure NHC reverts to enabled
+			Eventually(func(g Gomega) {
+				nhc := getConfig()
+				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
+				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
+			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled")
 		})
 
 		It("should report disabled NHC", func() {
@@ -141,26 +141,19 @@ var _ = Describe("e2e", func() {
 
 	Context("with terminating node", func() {
 		BeforeEach(func() {
-			// ensure node is terminating
-			Eventually(func() (bool, error) {
-				if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest); err != nil {
-					return false, err
-				}
-				for _, cond := range nodeUnderTest.Status.Conditions {
-					if cond.Type == mhc.NodeConditionTerminating {
-						return true, nil
-					}
-				}
-				return false, nil
-			}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "node should not be terminating")
+			// on k8s, the node will be remediated
+			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
+				Skip("skipping console plugin test as requested by $SKIP_FOR_K8S env var")
+			}
 
-			// ensure NHC is not disabled from previous test
-			Eventually(func(g Gomega) {
-				nhc := getConfig()
-				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
-				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled")
-
+			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
+			conditions := nodeUnderTest.Status.Conditions
+			conditions = append(conditions, v1.NodeCondition{
+				Type:   mhc.NodeConditionTerminating,
+				Status: "True",
+			})
+			nodeUnderTest.Status.Conditions = conditions
+			Expect(k8sClient.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -299,7 +292,6 @@ func getTemplateNS() (string, error) {
 // for the duration passed
 func makeNodeUnready(nodeName string) error {
 	// run a privileged pod that blocks the api port
-
 	directory := v1.HostPathDirectory
 	var p = v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: blockingPodName},
@@ -308,8 +300,8 @@ func makeNodeUnready(nodeName string) error {
 			// for running iptables in the host namespace
 			HostNetwork: true,
 			SecurityContext: &v1.PodSecurityContext{
-				RunAsUser:  pointer.Int64Ptr(0),
-				RunAsGroup: pointer.Int64Ptr(0),
+				RunAsUser:  pointer.Int64(0),
+				RunAsGroup: pointer.Int64(0),
 			},
 			Containers: []v1.Container{{
 				Env: []v1.EnvVar{
@@ -335,15 +327,14 @@ iptables -A OUTPUT -p tcp --dport ${port} -j REJECT
 sleep ${SLEEPDURATION}
 iptables -D OUTPUT -p tcp --dport ${port} -j REJECT
 sleep infinity
-`,
-				},
+`},
 				VolumeMounts: []v1.VolumeMount{{
 					Name:      "etckube",
 					MountPath: "/etc/kubernetes",
 				}},
 				SecurityContext: &v1.SecurityContext{
-					Privileged:               pointer.BoolPtr(true),
-					AllowPrivilegeEscalation: pointer.BoolPtr(true),
+					Privileged:               pointer.Bool(true),
+					AllowPrivilegeEscalation: pointer.Bool(true),
 				},
 			}},
 			Volumes: []v1.Volume{{
