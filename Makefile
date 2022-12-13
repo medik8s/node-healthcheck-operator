@@ -293,7 +293,7 @@ index-push: ## Push a catalog image.
 .PHONY: test-e2e
 test-e2e:
 	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
-	go test ./e2e -coverprofile cover.out -v -timeout 30m
+	go test ./e2e -coverprofile cover.out -v -timeout 30m -ginkgo.vv
 
 # Deploy self node remediation to a running cluster
 .PHONY: deploy-snr
