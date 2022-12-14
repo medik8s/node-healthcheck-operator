@@ -22,9 +22,9 @@ type Checker interface {
 }
 
 // NewMHCChecker creates a new Checker
-func NewMHCChecker(mgr manager.Manager, onOpencshift bool) (Checker, error) {
+func NewMHCChecker(mgr manager.Manager, onOpenshift bool) (Checker, error) {
 
-	if !onOpencshift {
+	if !onOpenshift {
 		return DummyChecker{}, nil
 	}
 

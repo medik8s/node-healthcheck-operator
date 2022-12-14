@@ -241,6 +241,8 @@ var _ = Describe("e2e", func() {
 				}, nodeRebootedTimeout, 30*time.Second).Should(
 					BeTemporally(">", testStart),
 				)
+			} else {
+				log.Info("skipping reboot check on k8s, doesn't work atm")
 			}
 		})
 	})
