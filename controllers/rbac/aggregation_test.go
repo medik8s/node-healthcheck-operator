@@ -32,7 +32,7 @@ var _ = Describe("Aggregation Tests", func() {
 
 	JustBeforeEach(func() {
 		By("init new Aggregation")
-		a = NewAggregation(k8sManager, "default")
+		a = NewAggregation(k8sManager.GetClient(), "default")
 		Expect(a.CreateOrUpdateAggregation()).To(Succeed())
 	})
 
@@ -76,14 +76,14 @@ var _ = Describe("Aggregation Tests", func() {
 	})
 
 	validateRole := func(r *rbacv1.ClusterRole) {
-		expected := getRole(k8sManager.GetAPIReader(), namespace)
+		expected := a.getRole()
 		ExpectWithOffset(1, reflect.DeepEqual(r.AggregationRule, expected.AggregationRule))
 		ExpectWithOffset(1, reflect.DeepEqual(r.Rules, expected.Rules))
 		ExpectWithOffset(1, reflect.DeepEqual(r.OwnerReferences, expected.OwnerReferences))
 	}
 
 	validateRoleBinding := func(rb *rbacv1.ClusterRoleBinding) {
-		expected := getRoleBinding(k8sManager.GetAPIReader(), namespace)
+		expected := a.getRoleBinding()
 		Expect(reflect.DeepEqual(rb.RoleRef, expected.RoleRef))
 		Expect(reflect.DeepEqual(rb.Subjects, expected.Subjects))
 		Expect(reflect.DeepEqual(rb.OwnerReferences, expected.OwnerReferences))
@@ -113,8 +113,8 @@ var _ = Describe("Aggregation Tests", func() {
 		Context("Aggregation is up to date", func() {
 			BeforeEach(func() {
 				By("faking old roles and bindings")
-				Expect(k8sClient.Create(context.Background(), getRole(k8sManager.GetAPIReader(), namespace))).To(Succeed())
-				Expect(k8sClient.Create(context.Background(), getRoleBinding(k8sManager.GetAPIReader(), namespace))).To(Succeed())
+				Expect(k8sClient.Create(context.Background(), a.getRole())).To(Succeed())
+				Expect(k8sClient.Create(context.Background(), a.getRoleBinding())).To(Succeed())
 			})
 
 			It("Should update rule and binding", func() {
@@ -124,7 +124,7 @@ var _ = Describe("Aggregation Tests", func() {
 
 		Context("Aggregation is outdated", func() {
 			BeforeEach(func() {
-				oldRole := getRole(k8sManager.GetAPIReader(), namespace)
+				oldRole := a.getRole()
 				oldRole.AggregationRule.ClusterRoleSelectors = []metav1.LabelSelector{
 					{
 						MatchLabels: map[string]string{
@@ -141,7 +141,7 @@ var _ = Describe("Aggregation Tests", func() {
 				}
 				oldRole.OwnerReferences[0].UID = "1234"
 
-				oldRoleBinding := getRoleBinding(k8sManager.GetAPIReader(), namespace)
+				oldRoleBinding := a.getRoleBinding()
 				oldRoleBinding.RoleRef = rbacv1.RoleRef{
 					APIGroup: "rbac.authorization.k8s.io",
 					Kind:     "ClusterRole",

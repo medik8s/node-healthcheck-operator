@@ -11,7 +11,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
@@ -46,7 +45,7 @@ var DefaultSelector = metav1.LabelSelector{
 }
 
 // CreateOrUpdateDefaultNHC creates the default config
-func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logger) error {
+func CreateOrUpdateDefaultNHC(cl client.Client, namespace string, log logr.Logger) error {
 
 	DefaultTemplateRef.Namespace = namespace
 
@@ -55,7 +54,7 @@ func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logge
 	var err error
 	stop := make(chan struct{})
 	wait.Until(func() {
-		err = mgr.GetAPIReader().List(
+		err = cl.List(
 			context.Background(),
 			&list,
 			&client.ListOptions{},
@@ -94,7 +93,7 @@ func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logge
 			}
 
 			if updated {
-				if err := mgr.GetClient().Update(context.Background(), &nhc); err != nil {
+				if err := cl.Update(context.Background(), &nhc); err != nil {
 					return errors.Wrap(err, "failed to update default NHC")
 				}
 			}
@@ -114,7 +113,7 @@ func CreateOrUpdateDefaultNHC(mgr ctrl.Manager, namespace string, log logr.Logge
 		},
 	}
 
-	err = mgr.GetClient().Create(context.Background(), &nhc, &client.CreateOptions{})
+	err = cl.Create(context.Background(), &nhc, &client.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return errors.Wrap(err, "failed to create a default node-healthcheck resource")
 	}

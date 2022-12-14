@@ -17,6 +17,7 @@ limitations under the License.
 package bootstrap
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,6 +46,8 @@ var cfg *rest.Config
 var k8sClient client.Client
 var k8sManager manager.Manager
 var testEnv *envtest.Environment
+var ctx context.Context
+var cancel context.CancelFunc
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -82,7 +85,9 @@ var _ = BeforeSuite(func() {
 
 	go func() {
 		GinkgoRecover()
-		err := k8sManager.Start(ctrl.SetupSignalHandler())
+		// https://github.com/kubernetes-sigs/controller-runtime/issues/1571
+		ctx, cancel = context.WithCancel(ctrl.SetupSignalHandler())
+		err := k8sManager.Start(ctx)
 		Expect(err).NotTo(HaveOccurred())
 	}()
 
@@ -93,6 +98,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	cancel()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

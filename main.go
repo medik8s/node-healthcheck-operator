@@ -160,9 +160,10 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 
-	// Do some initialization, it potentially exits!
-	if err = bootstrap.Initialize(ctx, mgr, setupLog); err != nil {
-		setupLog.Error(err, "unable to init")
+	// Do some initialization
+	initializer := bootstrap.New(mgr, ctrl.Log.WithName("Initializer"))
+	if err = mgr.Add(initializer); err != nil {
+		setupLog.Error(err, "failed to add initializer to the manager")
 		os.Exit(1)
 	}
 

@@ -6,7 +6,9 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/defaults"
@@ -14,11 +16,27 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
-// Initialize runs some bootstrapping code:
+// Initializer runs some bootstrapping code:
 // - setup role aggregation
 // - create default NHC
 // - create console plugin
-func Initialize(ctx context.Context, mgr ctrl.Manager, log logr.Logger) error {
+type initializer struct {
+	cl     client.Client
+	config *rest.Config
+	logger logr.Logger
+}
+
+// New returns a new Initializer
+func New(mgr ctrl.Manager, logger logr.Logger) *initializer {
+	return &initializer{
+		cl:     mgr.GetClient(),
+		config: mgr.GetConfig(),
+		logger: logger,
+	}
+}
+
+// Start will start the Initializer
+func (i *initializer) Start(ctx context.Context) error {
 
 	ns, err := utils.GetDeploymentNamespace()
 	if err != nil {
@@ -26,16 +44,16 @@ func Initialize(ctx context.Context, mgr ctrl.Manager, log logr.Logger) error {
 	}
 
 	// TODO use give context
-	if err = rbac.NewAggregation(mgr, ns).CreateOrUpdateAggregation(); err != nil {
+	if err = rbac.NewAggregation(i.cl, ns).CreateOrUpdateAggregation(); err != nil {
 		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
 	}
 
 	// TODO use give context
-	if err = defaults.CreateOrUpdateDefaultNHC(mgr, ns, ctrl.Log.WithName("defaults")); err != nil {
+	if err = defaults.CreateOrUpdateDefaultNHC(i.cl, ns, ctrl.Log.WithName("defaults")); err != nil {
 		return errors.Wrap(err, "failed to create or update a default NHC resource")
 	}
 
-	if err = console.CreateOrUpdatePlugin(ctx, mgr, ns, ctrl.Log.WithName("console-plugin")); err != nil {
+	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.config, ns, ctrl.Log.WithName("console-plugin")); err != nil {
 		return errors.Wrap(err, "failed to create or update the console plugin")
 	}
 
