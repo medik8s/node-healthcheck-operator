@@ -42,8 +42,8 @@ import (
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers"
-	"github.com/medik8s/node-healthcheck-operator/controllers/bootstrap"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
@@ -161,7 +161,7 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	// Do some initialization
-	initializer := bootstrap.New(mgr, ctrl.Log.WithName("Initializer"))
+	initializer := initializer.New(mgr, ctrl.Log.WithName("Initializer"))
 	if err = mgr.Add(initializer); err != nil {
 		setupLog.Error(err, "failed to add initializer to the manager")
 		os.Exit(1)
