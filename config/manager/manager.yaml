@@ -19,9 +19,11 @@ spec:
   replicas: 1
   template:
     metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
       labels:
         app.kubernetes.io/component: controller-manager
-        kubectl.kubernetes.io/default-container: manager
+        app.kubernetes.io/name: node-healthcheck-operator
     spec:
       affinity:
         nodeAffinity:
