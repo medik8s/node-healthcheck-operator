@@ -45,6 +45,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/bootstrap"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 	// +kubebuilder:scaffold:imports
@@ -109,7 +110,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	mhcChecker, err := mhc.NewMHCChecker(mgr)
+	onOpenshift, err := utils.IsOnOpenshift(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "failed to check if we run on Openshift")
+		os.Exit(1)
+	}
+
+	mhcChecker, err := mhc.NewMHCChecker(mgr, onOpenshift)
 	if err != nil {
 		setupLog.Error(err, "unable initialize MHC checker")
 		os.Exit(1)
@@ -131,16 +138,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.MachineHealthCheckReconciler{
-		Client:                      mgr.GetClient(),
-		Log:                         ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
-		Scheme:                      mgr.GetScheme(),
-		Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
-		ClusterUpgradeStatusChecker: upgradeChecker,
-		MHCChecker:                  mhcChecker,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
-		os.Exit(1)
+	if onOpenshift {
+		if err := (&controllers.MachineHealthCheckReconciler{
+			Client:                      mgr.GetClient(),
+			Log:                         ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
+			Scheme:                      mgr.GetScheme(),
+			Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
+			ClusterUpgradeStatusChecker: upgradeChecker,
+			MHCChecker:                  mhcChecker,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
+			os.Exit(1)
+		}
 	}
 
 	if err = (&remediationv1alpha1.NodeHealthCheck{}).SetupWebhookWithManager(mgr); err != nil {

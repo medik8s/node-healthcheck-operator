@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/openshift/api/machine/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,13 +22,9 @@ type Checker interface {
 }
 
 // NewMHCChecker creates a new Checker
-func NewMHCChecker(mgr manager.Manager) (Checker, error) {
+func NewMHCChecker(mgr manager.Manager, onOpenshift bool) (Checker, error) {
 
-	openshift, err := utils.IsOnOpenshift(mgr.GetConfig())
-	if err != nil {
-		return nil, err
-	}
-	if !openshift {
+	if !onOpenshift {
 		return DummyChecker{}, nil
 	}
 

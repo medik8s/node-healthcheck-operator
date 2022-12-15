@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
@@ -111,7 +112,7 @@ func execCommandOnPod(c *kubernetes.Clientset, pod *corev1.Pod, command []string
 		Tty:    true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to run command %v: output %s; error %s", command, outputBuf.String(), errorBuf.String())
+		return nil, fmt.Errorf("failed to run command %v: error: %v, outputStream %s; errorStream %s", command, err, outputBuf.String(), errorBuf.String())
 	}
 
 	if errorBuf.Len() != 0 {
@@ -147,11 +148,21 @@ func getPod(nodeName string) *corev1.Pod {
 			},
 		},
 		Spec: corev1.PodSpec{
-			NodeName: nodeName,
+			NodeName:    nodeName,
+			HostNetwork: true,
+			HostPID:     true,
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsUser:  pointer.Int64(0),
+				RunAsGroup: pointer.Int64(0),
+			},
+			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
-					Name:    "test",
-					Image:   "registry.access.redhat.com/ubi8/ubi-minimal",
+					Name:  "test",
+					Image: "registry.access.redhat.com/ubi8/ubi-minimal",
+					SecurityContext: &corev1.SecurityContext{
+						Privileged: pointer.Bool(true),
+					},
 					Command: []string{"sleep", "2m"},
 				},
 			},

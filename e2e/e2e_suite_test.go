@@ -6,9 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/go-logr/logr"
 	"go.uber.org/zap/zapcore"
 
 	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
@@ -124,7 +125,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred(), "could not get or create test ns")
 
 	debug()
-}, 10)
+})
 
 func debug() {
 	version, _ := clientSet.ServerVersion()

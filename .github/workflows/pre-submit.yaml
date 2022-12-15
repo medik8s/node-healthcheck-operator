@@ -9,7 +9,7 @@ on:
       - main
       - release-*
 jobs:
-  build:
+  build-and-unit-test:
     runs-on: ubuntu-20.04
     steps:
     - name: Checkout code
@@ -33,3 +33,138 @@ jobs:
 
     - name: TestMutations
       run: make test-mutation-ci
+
+  e2e-k8s:
+    runs-on: ubuntu-20.04
+    env:
+      BUILD_SCRIPT: build-nhc-snr.sh
+      IMAGE_REGISTRY: kind-registry:5000
+      VERSION: 9.9.9-ci
+      DEPLOY_NAMESPACE: k8s-test
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.18
+
+    - name: Configure insecure registry
+      run: |
+        #sudo cat /etc/docker/daemon.json
+
+        # allow insecure registry but keep original config!
+        sudo bash -c "cat <<EOF >/etc/docker/daemon.json
+        {
+          \"exec-opts\": [\"native.cgroupdriver=cgroupfs\"],
+          \"cgroup-parent\": \"/actions_job\",
+          \"insecure-registries\" : [\"${IMAGE_REGISTRY}\"]
+        }
+        EOF"
+
+        #sudo cat /etc/docker/daemon.json
+        sudo systemctl restart docker
+
+        # same for podman
+        sudo bash -c "cat <<EOF >/etc/containers/registries.conf
+        [[registry]]
+        location=\"${IMAGE_REGISTRY}\"
+        insecure=true
+        EOF"
+        #sudo cat /etc/containers/registries.conf
+
+    - name: Start kind cluster
+      uses: container-tools/kind-action@v2
+      with:
+        version: v0.17.0
+        config: ./hack/kind-config.yaml
+        node_image: kindest/node:v1.24.7
+        kubectl_version: v1.24.7
+        registry: true
+
+    - name: Cluster info
+      run: |
+        kubectl version -o=yaml
+        kubectl cluster-info
+        kubectl get nodes -o=wide
+
+    - name: Install OLM
+      run: |
+        curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.22.0/install.sh | bash -s v0.22.0
+
+    - name: Install NHC / SNR build script
+      run: |
+        curl https://raw.githubusercontent.com/medik8s/tools/main/scripts/${BUILD_SCRIPT} -o ${BUILD_SCRIPT}
+        chmod +x ${BUILD_SCRIPT}
+
+    - name: Build NHC
+      run: |
+        make container-build container-push
+        # make opm findable...
+        cp ./bin/opm /usr/local/bin/
+
+    - name: Build and deploy NHC + SNR
+      run: |
+        # set version vars
+        export NHC_VERSION=${VERSION}
+        export SNR_VERSION=${VERSION}
+        export INDEX_VERSION=${VERSION}
+
+        # set deployment namespace
+        export CATALOG_SOURCE_NAMESPACE=olm
+
+        # build and push images, and deploy
+        ./${BUILD_SCRIPT} --skip-nhc --http
+
+        # wait a bit for OLM creating CSV etc
+        sleep 1m
+
+    - name: OLM status
+      if: ${{ always() }}
+      run: |
+        kubectl get -A OperatorGroup -o wide
+        kubectl get -A CatalogSource -o wide
+        kubectl get -A Subscription -o wide
+        kubectl get -A ClusterServiceVersion -o wide
+        kubectl get -A InstallPlan -o wide
+
+    - name: Wait for deployments
+      run: |
+        kubectl wait deployment -n ${DEPLOY_NAMESPACE} self-node-remediation-controller-manager --for condition=Available=True --timeout=180s
+        # give SNR some time to create the DS
+        sleep 30s
+        kubectl rollout status daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds --timeout 180s
+        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-controller-manager --for condition=Available=True --timeout=180s
+        # should be scaled down to zero by NHC on k8s
+        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-node-remediation-console-plugin --for condition=Available=True --timeout=30s
+
+    - name: Deployment status
+      if: ${{ always() }}
+      run: |
+        kubectl -n ${DEPLOY_NAMESPACE} get deployments,daemonsets,pods -o=wide
+
+    - name: Run NHC e2e
+      run: |
+        OPERATOR_NS=${DEPLOY_NAMESPACE} SKIP_FOR_K8S=true make test-e2e
+
+    - name: Debug
+      if: ${{ failure() }}
+      run: |
+        # debug NHC
+        echo "Debugging NHC"
+        kubectl describe deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-controller-manager
+        kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=app.kubernetes.io/name=node-healthcheck-operator,app.kubernetes.io/component=controller-manager
+        kubectl logs -n ${DEPLOY_NAMESPACE} -c manager --selector=app.kubernetes.io/name=node-healthcheck-operator,app.kubernetes.io/component=controller-manager --tail -1
+        
+        echo "Debugging SNR operator"
+        kubectl describe deployment -n ${DEPLOY_NAMESPACE} self-node-remediation-controller-manager
+        kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=self-node-remediation-operator=,control-plane=controller-manager
+        kubectl logs -n ${DEPLOY_NAMESPACE} -c manager --selector=self-node-remediation-operator=,control-plane=controller-manager --tail -1
+        
+        echo "Debugging SNR agents"
+        kubectl describe daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds
+        kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=app=self-node-remediation-agent,control-plane=controller-manager
+        kubectl logs -n ${DEPLOY_NAMESPACE} --selector=app=self-node-remediation-agent,control-plane=controller-manager --tail -1

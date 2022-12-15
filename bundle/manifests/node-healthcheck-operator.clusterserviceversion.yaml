@@ -172,6 +172,16 @@ spec:
       clusterPermissions:
       - rules:
         - apiGroups:
+          - apps
+          resources:
+          - deployments
+          verbs:
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - config.openshift.io
           resources:
           - clusterversions
