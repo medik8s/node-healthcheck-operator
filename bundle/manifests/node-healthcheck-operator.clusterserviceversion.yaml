@@ -280,10 +280,11 @@ spec:
           strategy: {}
           template:
             metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
               labels:
                 app.kubernetes.io/component: controller-manager
                 app.kubernetes.io/name: node-healthcheck-operator
-                kubectl.kubernetes.io/default-container: manager
             spec:
               affinity:
                 nodeAffinity:
