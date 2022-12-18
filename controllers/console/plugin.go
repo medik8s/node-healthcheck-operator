@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/api/console/v1alpha1"
@@ -52,14 +52,10 @@ const (
 // HEADS UP: consider cleanup of old resources in case of name changes or removals!
 //
 // TODO image reference to console plugin in CSV?
-func CreateOrUpdatePlugin(ctx context.Context, mgr ctrl.Manager, namespace string, log logr.Logger) error {
-
-	// reader is needed because mgr isn't started yet, so caches are not filled yet and client.get fails
-	reader := mgr.GetAPIReader()
-	cl := mgr.GetClient()
+func CreateOrUpdatePlugin(ctx context.Context, cl client.Client, config *rest.Config, namespace string, log logr.Logger) error {
 
 	// check if we are on OCP
-	if isOpenshift, err := utils.IsOnOpenshift(mgr.GetConfig()); err != nil {
+	if isOpenshift, err := utils.IsOnOpenshift(config); err != nil {
 		return errors.Wrap(err, "failed to check if we are on Openshift")
 	} else if !isOpenshift {
 		log.Info("we are not on Openshift, skipping console plugin activation, but scale down console deployment")
@@ -67,7 +63,7 @@ func CreateOrUpdatePlugin(ctx context.Context, mgr ctrl.Manager, namespace strin
 		selector := labels.NewSelector()
 		req, _ := labels.NewRequirement("app.kubernetes.io/component", selection.Equals, []string{"node-remediation-console-plugin"})
 		selector = selector.Add(*req)
-		if err := reader.List(ctx, list, &client.ListOptions{LabelSelector: selector, Namespace: namespace}); err != nil || len(list.Items) != 1 {
+		if err := cl.List(ctx, list, &client.ListOptions{LabelSelector: selector, Namespace: namespace}); err != nil || len(list.Items) != 1 {
 			return errors.Wrap(err, "failed to find console deployment for scaling down")
 		}
 		console := list.Items[0]
@@ -83,7 +79,7 @@ func CreateOrUpdatePlugin(ctx context.Context, mgr ctrl.Manager, namespace strin
 
 	// Create ConsolePlugin resource
 	// Deployment and Service are deployed by OLM
-	if err := createOrUpdateConsolePlugin(ctx, namespace, reader, cl); err != nil {
+	if err := createOrUpdateConsolePlugin(ctx, namespace, cl); err != nil {
 		return err
 	}
 
@@ -91,10 +87,10 @@ func CreateOrUpdatePlugin(ctx context.Context, mgr ctrl.Manager, namespace strin
 	return nil
 }
 
-func createOrUpdateConsolePlugin(ctx context.Context, namespace string, reader client.Reader, cl client.Client) error {
+func createOrUpdateConsolePlugin(ctx context.Context, namespace string, cl client.Client) error {
 	cp := getConsolePlugin(namespace)
 	oldCP := &v1alpha1.ConsolePlugin{}
-	if err := reader.Get(ctx, client.ObjectKeyFromObject(cp), oldCP); apierrors.IsNotFound(err) {
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(cp), oldCP); apierrors.IsNotFound(err) {
 		if err := cl.Create(ctx, cp); err != nil {
 			return errors.Wrap(err, "could not create console plugin")
 		}

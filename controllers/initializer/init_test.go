@@ -1,4 +1,4 @@
-package bootstrap
+package initializer
 
 import (
 	"context"
@@ -18,7 +18,8 @@ import (
 var _ = Describe("Init", func() {
 
 	JustBeforeEach(func() {
-		Expect(Initialize(context.TODO(), k8sManager, ctrl.Log.WithName("test init"))).To(Succeed())
+		initializer := New(k8sManager, ctrl.Log.WithName("test initializer"))
+		Expect(initializer.Start(context.Background())).To(Succeed())
 	})
 
 	AfterEach(func() {
