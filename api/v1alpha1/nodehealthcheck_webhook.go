@@ -22,6 +22,9 @@ import (
 	"path/filepath"
 	"reflect"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/errors"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -35,6 +38,8 @@ const (
 	WebhookKeyName  = "apiserver.key"
 
 	OngoingRemediationError = "prohibited due to running remediation"
+	minHealthyError         = "MinHealthy must not be negative"
+	invalidSelectorError    = "Invalid selector"
 )
 
 // log is for logging in this package.
@@ -72,14 +77,14 @@ var _ webhook.Validator = &NodeHealthCheck{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeHealthCheck) ValidateCreate() error {
 	nodehealthchecklog.Info("validate create", "name", r.Name)
-	return r.validateMinHealthy()
+	return r.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 	nodehealthchecklog.Info("validate update", "name", r.Name)
 
-	if err := r.validateMinHealthy(); err != nil {
+	if err := r.validate(); err != nil {
 		return err
 	}
 
@@ -98,18 +103,30 @@ func (r *NodeHealthCheck) ValidateDelete() error {
 	return nil
 }
 
+func (r *NodeHealthCheck) validate() error {
+	aggregated := errors.NewAggregate([]error{r.validateMinHealthy(), r.validateSelector()})
+
+	// everything else should have been covered by API server validation
+	// as defined by kubebuilder validation markers on the NHC struct.
+
+	return aggregated
+}
+
 func (r *NodeHealthCheck) validateMinHealthy() error {
+	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
 	if r.Spec.MinHealthy == nil {
 		return fmt.Errorf("MinHealthy must not be empty")
 	}
 	if r.Spec.MinHealthy.Type == intstr.Int && r.Spec.MinHealthy.IntVal < 0 {
-		return fmt.Errorf("MinHealthy must not be negative: %v", r.Spec.MinHealthy)
+		return fmt.Errorf("%s: %v", minHealthyError, r.Spec.MinHealthy)
 	}
+	return nil
+}
 
-	// everything else should have been covered by API server validation
-	// as defined by kubebuilder validation markers on the NHC struct.
-	// Using Minimum for IntOrStr does not work (yet)
-
+func (r *NodeHealthCheck) validateSelector() error {
+	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.Selector); err != nil {
+		return fmt.Errorf("%s: %v", invalidSelectorError, err.Error())
+	}
 	return nil
 }
 
