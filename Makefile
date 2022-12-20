@@ -43,7 +43,7 @@ IMAGE_REGISTRY ?= quay.io/medik8s
 CONSOLE_PLUGIN_IMAGE_BASE ?= quay.io/medik8s/node-remediation-console
 # Image tag of the console plugin for releases
 # Needs to be updated manually after console plugin releases!
-CONSOLE_PLUGIN_RELEASE_TAG ?= v0.0.2
+CONSOLE_PLUGIN_RELEASE_TAG ?= v0.4.0-rc1
 
 # For the default version, use 'latest' image tags.
 # Otherwise version prefixed with 'v'
