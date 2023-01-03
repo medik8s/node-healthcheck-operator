@@ -60,7 +60,7 @@ Install the Node Healthcheck operator using [operator hub]. The installation
 will also install the [self-node-remediation] operator as a default remediator.
 
 For development environments you can run `make deploy deploy-snr`.
-See the [Makefile](./Makefile) for more variables.
+See the [Makefile](./../Makefile) for more variables.
 
 On start the controller creates a default resource name `nhc-worker-default`,
 that remediates using Self Node Remediation, and will check for worker-only heath issues.
