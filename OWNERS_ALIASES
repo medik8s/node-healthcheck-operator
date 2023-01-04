@@ -6,11 +6,14 @@ aliases:
       - mshitrit
       - beekhof
       - razo7
+      - clobrano
+
   code-reviewers:
       - slintes
       - mshitrit
       - beekhof
       - razo7
+      - clobrano
 
   emeritus_approvers:
       - n1r1
