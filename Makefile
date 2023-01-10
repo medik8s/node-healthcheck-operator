@@ -271,6 +271,11 @@ bundle-reset:
 bundle-build: bundle bundle-update
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
+# Build the bundle image for k8s.
+.PHONY: bundle-build-k8s
+bundle-build-k8s: bundle-k8s bundle-update
+	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+
 # Push the bundle image
 .PHONY: bundle-push
 bundle-push:
@@ -309,6 +314,10 @@ deploy-snr:
 .PHONY: container-build
 container-build: ## Build containers
 	make docker-build bundle-build
+
+.PHONY: container-build-k8s
+container-build-k8s: ## Build containers
+	make docker-build bundle-build-k8s
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
