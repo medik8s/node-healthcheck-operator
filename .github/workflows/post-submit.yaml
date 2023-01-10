@@ -6,6 +6,10 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  pull-requests: read
+
 jobs:
   push_to_registry:
     name: Build and push images to quay.io/medik8s
