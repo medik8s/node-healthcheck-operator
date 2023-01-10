@@ -30,12 +30,42 @@ jobs:
 
       - name: Build and push CSV 0.0.1 + latest images, for pushes
         if: ${{ github.ref_type != 'tag' }}
-        run: make container-build container-push
+        run: make container-build-k8s container-push
 
       - name: Build and push versioned CSV and images, for tags
         if: ${{ github.ref_type == 'tag' }}
         # remove leading 'v' from tag!
-        run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make container-build container-push
+        run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make container-build-k8s container-push
+
+      - name: Create release with manifests
+        if: ${{ github.ref_type == 'tag' }}
+        # https://github.com/marketplace/actions/github-release-create-update-and-upload-assets
+        uses: meeDamian/github-release@2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          body: >
+            # Node HealthCheck Operator $GITHUB_REF_NAME
+            
+            ## Notable Changes
+            
+            - TODO
+
+            ## Release Artifacts
+            
+            ### Images
+
+            - Operator: quay.io/medik8s/node-healthcheck-operator:${GITHUB_REF_NAME}
+            - Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:${GITHUB_REF_NAME}
+            - Catalog aka Index: quay.io/medik8s/node-healthcheck-operator-index:${GITHUB_REF_NAME}
+            
+            ### Source code and OLM manifests
+
+            Please find the source code and the OLM manifests in the `Assets` section below.
+
+          gzip: folders
+          files: >
+            Manifests:bundle/
 
       - name: Build and push index image with versioned NHC + SNR images
         if: ${{ github.ref_type != 'tag' }}
