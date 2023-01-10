@@ -84,12 +84,16 @@ func (r *NodeHealthCheck) ValidateCreate() error {
 func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 	nodehealthchecklog.Info("validate update", "name", r.Name)
 
+	// do the normal validation
 	if err := r.validate(); err != nil {
 		return err
 	}
 
-	if r.isRemediating() && r.isRestrictedFieldUpdated(old.(*NodeHealthCheck)) {
-		return fmt.Errorf("selector update %s", OngoingRemediationError)
+	// during ongoing remediations, some updates are forbidden
+	if r.isRemediating() {
+		if updated, field := r.isRestrictedFieldUpdated(old.(*NodeHealthCheck)); updated {
+			return fmt.Errorf("%s update %s", field, OngoingRemediationError)
+		}
 	}
 	return nil
 }
@@ -130,13 +134,15 @@ func (r *NodeHealthCheck) validateSelector() error {
 	return nil
 }
 
-func (r *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) bool {
-	// the only critical field is the node selector
-	// when it changes, we can end up with dangling remediations
+func (r *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) (bool, string) {
+	// modifying these fields can cause dangling remediations
 	if !reflect.DeepEqual(r.Spec.Selector, old.Spec.Selector) {
-		return true
+		return true, "selector"
 	}
-	return false
+	if !reflect.DeepEqual(r.Spec.RemediationTemplate, old.Spec.RemediationTemplate) {
+		return true, "remediation template"
+	}
+	return false, ""
 }
 
 func (r *NodeHealthCheck) isRemediating() bool {
