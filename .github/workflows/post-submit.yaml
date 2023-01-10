@@ -48,20 +48,20 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true
-          body: >
+          body: |
             # Node HealthCheck Operator ${{ github.ref_name }}
             
             ## Notable Changes
             
-            - TODO
+            * TODO
 
             ## Release Artifacts
             
             ### Images
 
-            - Operator: quay.io/medik8s/node-healthcheck-operator:${{ github.ref_name }}  
-            - Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:${{ github.ref_name }}  
-            - Catalog aka Index: quay.io/medik8s/node-healthcheck-operator-index:${{ github.ref_name }}  
+            * Operator: quay.io/medik8s/node-healthcheck-operator:${{ github.ref_name }}
+            * Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:${{ github.ref_name }}
+            * Catalog aka Index: quay.io/medik8s/node-healthcheck-operator-index:${{ github.ref_name }}  
             
             ### Source code and OLM manifests
 
