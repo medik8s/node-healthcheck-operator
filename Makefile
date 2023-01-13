@@ -149,11 +149,11 @@ vet:
 
 # Check for sorted imports
 test-imports:
-	go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports .
+	GOFLAGS="" go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports .
 
 # Sort imports
 sort-imports:
-	go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports . -w
+	GOFLAGS="" go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports . -w
 
 # Run go mod tidy
 tidy:
