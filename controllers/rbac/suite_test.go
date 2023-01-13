@@ -23,7 +23,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"go.uber.org/zap/zapcore"
 
 	"k8s.io/client-go/kubernetes/scheme"
