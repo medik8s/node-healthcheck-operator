@@ -5,14 +5,14 @@ import (
 	"errors"
 
 	"github.com/go-logr/logr"
-
-	v1 "github.com/openshift/api/config/v1"
-
-	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	gerrors "github.com/pkg/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	v1 "github.com/openshift/api/config/v1"
+	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )

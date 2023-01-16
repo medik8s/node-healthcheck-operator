@@ -4,10 +4,12 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	"github.com/openshift/api/machine/v1beta1"
+
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/openshift/api/machine/v1beta1"
 )
 
 // NodeConditionTerminating is the node condition type used by the termination handler MHC
