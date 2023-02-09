@@ -99,6 +99,8 @@ jobs:
       run: |
         curl https://raw.githubusercontent.com/medik8s/tools/main/scripts/${BUILD_SCRIPT} -o ${BUILD_SCRIPT}
         chmod +x ${BUILD_SCRIPT}
+        echo "*** UNZIP? ***"
+        which unzip
 
     - name: Build NHC
       run: |
