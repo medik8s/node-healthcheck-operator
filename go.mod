@@ -6,17 +6,17 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo/v2 v2.6.0
 	github.com/onsi/gomega v1.24.1
-	github.com/openshift/api v0.0.0-20221013123531-622889ac07cf
-	github.com/openshift/client-go v0.0.0-20211209144617-7385dd6338e3
+	github.com/openshift/api release-4.11
+	github.com/openshift/client-go release-4.11
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.1
 	go.uber.org/zap v1.19.1
-	k8s.io/api v0.25.0
-	k8s.io/apiextensions-apiserver v0.25.0
-	k8s.io/apimachinery v0.25.0
-	k8s.io/client-go v0.25.0
-	k8s.io/utils v0.0.0-20220922133306-665eaaec4324
-	sigs.k8s.io/controller-runtime v0.12.2
+	k8s.io/api v0.26.1
+	k8s.io/apiextensions-apiserver v0.26.1
+	k8s.io/apimachinery v0.26.1
+	k8s.io/client-go v0.26.1
+	k8s.io/utils latest
+	sigs.k8s.io/controller-runtime v0.14.4
 )
 
 require (

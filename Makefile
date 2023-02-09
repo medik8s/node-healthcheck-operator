@@ -1,6 +1,16 @@
 # SHELL defines bash so all the inline scripts here will work as expected.
 SHELL := /bin/bash
 
+OPERATOR_SDK_VERSION = v1.26.1
+OPM_VERSION = v1.26.3
+CONTROLLER_GEN_VERSION = v0.11.3
+KUSTOMIZE_VERSION = v5.0.0
+# update for major version updates to KUSTOMIZE_VERSION!
+KUSTOMIZE_API_VERSION = v5
+ENVTEST_VERSION = v0.0.0-20230208013708-22718275bffe # no tagged versions :/
+GOIMPORTS_VERSION = v0.5.0
+SORT_IMPORTS_VERSION = v0.1.0
+
 # VERSION defines the project version for the bundle. 
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
@@ -70,9 +80,6 @@ IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator:$(IMAGE_TAG)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.23
 
-# SORT_IMPORTS_VERSION refers to the version of github.com/slintes/sort-imports, used to sort and group imports
-SORT_IMPORTS_VERSION = v0.1.0
-
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -95,7 +102,7 @@ endif
 
 # Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
 test: test-no-verify
-	VERSION=0.0.1 $(MAKE) manifests bundle verify
+	$(MAKE) bundle-reset verify
 
 # Generate and format code, and run tests
 test-no-verify: vendor generate test-imports fmt vet envtest
@@ -104,7 +111,6 @@ test-no-verify: vendor generate test-imports fmt vet envtest
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
 	./hack/test-mutation.sh
-
 
 # Build manager binary
 manager: generate fmt vet
@@ -148,12 +154,12 @@ vet:
 	go vet ./...
 
 # Check for sorted imports
-test-imports:
-	GOFLAGS="" go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports .
+test-imports: sort-imports
+	$(SORT_IMPORTS) .
 
 # Sort imports
-sort-imports:
-	GOFLAGS="" go install github.com/slintes/sort-imports@${SORT_IMPORTS_VERSION} && sort-imports . -w
+fix-imports: sort-imports
+	$(SORT_IMPORTS) . -w
 
 # Run go mod tidy
 tidy:
@@ -184,17 +190,22 @@ docker-push:
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
-	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.2)
+	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION))
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize:
-	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.7)
+	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/$(KUSTOMIZE_API_VERSION)@$(KUSTOMIZE_VERSION))
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
-	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20220907012636-c83076e9f792) # no tagged versions :/
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION))
+
+SORT_IMPORTS = $(shell pwd)/bin/sort-imports
+.PHONY: sort-imports
+sort-imports: ## Download sort-imports locally if necessary.
+	$(call go-install-tool,$(SORT_IMPORTS),github.com/slintes/sort-imports@$(SORT_IMPORTS_VERSION))
 
 .PHONY: operator-sdk
 OPERATOR_SDK = ./bin/operator-sdk
@@ -204,7 +215,7 @@ ifeq (,$(wildcard $(OPERATOR_SDK)))
 	set -e ;\
 	mkdir -p $(dir $(OPERATOR_SDK)) ;\
 	OS=linux && ARCH=amd64 && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.23.0/operator-sdk_$${OS}_$${ARCH} ;\
+	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
 	chmod +x $(OPERATOR_SDK) ;\
 	}
 endif
@@ -217,14 +228,14 @@ ifeq (,$(wildcard $(OPM)))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=linux && ARCH=amd64 && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.26.1/$${OS}-$${ARCH}-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/$(OPM_VERSION)/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 endif
 
 GOIMPORTS = $(shell pwd)/bin/goimports
 goimports: ## Download goimports locally if necessary.
-	$(call go-install-tool,$(GOIMPORTS),golang.org/x/tools/cmd/goimports@v0.1.12)
+	$(call go-install-tool,$(GOIMPORTS),golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION))
 
 # go-install-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -262,8 +273,6 @@ export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 bundle-update:
     # update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
-	# set creation date
-	sed -r -i "s|createdAt: .*|createdAt: `date '+%Y-%m-%d %T'`|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
 	# set skipRange
 	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
@@ -273,7 +282,9 @@ bundle-update:
 # Revert all version or build date related changes
 .PHONY: bundle-reset
 bundle-reset:
-	VERSION=0.0.1 $(MAKE) bundle
+	VERSION=0.0.1 $(MAKE) manifests bundle
+	# empty creation date
+	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
 
 # Build the bundle image.
 .PHONY: bundle-build
