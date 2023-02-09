@@ -525,7 +525,7 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 	}
 
 	log.Info("Patching NHC status", "new status", nhc.Status)
-	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom, &client.PatchOptions{})
+	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom)
 }
 
 func (r *NodeHealthCheckReconciler) getOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (map[string]metav1.Time, error) {
