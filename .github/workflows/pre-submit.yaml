@@ -41,6 +41,10 @@ jobs:
       IMAGE_REGISTRY: kind-registry:5000
       VERSION: 9.9.9-ci
       DEPLOY_NAMESPACE: k8s-test
+      # see https://github.com/kubernetes-sigs/kind/tags
+      KIND_VERSION: v0.17.0
+      # see https://hub.docker.com/r/kindest/node/tags for available versions!
+      K8S_VERSION: v1.26.0
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -79,10 +83,10 @@ jobs:
     - name: Start kind cluster
       uses: container-tools/kind-action@v2
       with:
-        version: v0.17.0
+        version: ${{env.KIND_VERSION}}
         config: ./hack/kind-config.yaml
-        node_image: kindest/node:v1.24.7
-        kubectl_version: v1.24.7
+        node_image: kindest/node:${{env.K8S_VERSION}}
+        kubectl_version: ${{env.K8S_VERSION}}
         registry: true
 
     - name: Cluster info
