@@ -35,15 +35,6 @@ var _ = Describe("Init", func() {
 		ExpectWithOffset(1, nhc.Spec.Selector).To(Equal(defaults.DefaultSelector))
 	}
 
-	When("initialization is called on 1st install", func() {
-		It("creates a default NHC resource", func() {
-			nhcs := v1alpha1.NodeHealthCheckList{}
-			Expect(k8sClient.List(context.Background(), &nhcs)).To(Succeed())
-			Expect(nhcs.Items).To(HaveLen(1))
-			expectUpToDateDefaultConfig(&nhcs.Items[0])
-		})
-	})
-
 	When("initialization is called on upgrade", func() {
 
 		BeforeEach(func() {

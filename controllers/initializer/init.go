@@ -49,8 +49,8 @@ func (i *initializer) Start(ctx context.Context) error {
 	}
 
 	// TODO use give context
-	if err = defaults.CreateOrUpdateDefaultNHC(i.cl, ns, ctrl.Log.WithName("defaults")); err != nil {
-		return errors.Wrap(err, "failed to create or update a default NHC resource")
+	if err = defaults.UpdateDefaultNHC(i.cl, ns, ctrl.Log.WithName("defaults")); err != nil {
+		return errors.Wrap(err, "failed to update default NHC resource")
 	}
 
 	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.config, ns, ctrl.Log.WithName("console-plugin")); err != nil {

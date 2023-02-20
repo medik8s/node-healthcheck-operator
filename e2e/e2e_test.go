@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -23,6 +24,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	nhcUtils "github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
 )
 
@@ -36,6 +38,39 @@ var _ = Describe("e2e", func() {
 	var testStart time.Time
 
 	BeforeEach(func() {
+
+		// ensure a NHC CR exists
+		testNHC := &v1alpha1.NodeHealthCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-nhc",
+			},
+			Spec: v1alpha1.NodeHealthCheckSpec{
+				Selector: metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{
+						{
+							Key:      nhcUtils.ControlPlaneRoleLabel,
+							Operator: metav1.LabelSelectorOpDoesNotExist,
+						},
+						{
+							Key:      nhcUtils.MasterRoleLabel,
+							Operator: metav1.LabelSelectorOpDoesNotExist,
+						},
+					},
+				},
+				RemediationTemplate: &v1.ObjectReference{
+					Kind:       "SelfNodeRemediationTemplate",
+					APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
+					Name:       "self-node-remediation-resource-deletion-template",
+					Namespace:  operatorNsName,
+				},
+			},
+		}
+		nhc := &v1alpha1.NodeHealthCheck{}
+		if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(testNHC), nhc); err != nil {
+			Expect(errors.IsNotFound(err)).To(BeTrue(), "unexpected error when checking for test NHC CR")
+			Expect(k8sClient.Create(context.Background(), testNHC)).To(Succeed(), "failed to create test NHC CR")
+		}
+
 		// randomly pick a host (or let the scheduler do it by running the blocking pod)
 		// block the api port to make it go Ready Unknown
 		if nodeUnderTest == nil {
@@ -138,7 +173,7 @@ var _ = Describe("e2e", func() {
 			// on k8s, the node will be remediated because of missing MHC logic, so skip this test
 			// heads up, that means the node is not unhealthy yet for following tests!
 			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping console plugin test as requested by $SKIP_FOR_K8S env var")
+				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
 			}
 
 			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
@@ -155,7 +190,7 @@ var _ = Describe("e2e", func() {
 
 		AfterEach(func() {
 			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping MHC test as requested by $SKIP_FOR_K8S env var")
+				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
 			}
 
 			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
