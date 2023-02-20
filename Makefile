@@ -270,10 +270,11 @@ bundle-k8s: bundle
 	sed -r -i "/displayName: Node Health Check Operator/ i\    " ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    ### Notes" ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    In case Pod Security Admission is used, please allow Pods to run" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    in the \"privileged\" Pod Security Standard policy by e.g. labeling the" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    the target namespace accordingly before installing NHC, because the dependent" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    Self Node Remediation operator needs it for rebooting unhealthy nodes." ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/" ${CSV}
+	sed -r -i "/displayName: Node Health Check Operator/ i\    in the \"privileged\" Pod Security Standard policy." ${CSV}
+	sed -r -i "/displayName: Node Health Check Operator/ i\    This is required by the dependent Self Node Remediation operator" ${CSV}
+	sed -r -i "/displayName: Node Health Check Operator/ i\    for rebooting unhealthy nodes, and can be done by labeling the" ${CSV}
+	sed -r -i "/displayName: Node Health Check Operator/ i\    the target namespace accordingly before installing NHC." ${CSV}
+	sed -r -i "/displayName: Node Health Check Operator/ i\    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ ." ${CSV}
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 # Apply version or build date related changes in the bundle
