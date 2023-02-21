@@ -105,12 +105,6 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		When("specifying an external remediation template", func() {
-			It("should fail creation if empty", func() {
-				underTest.Spec.RemediationTemplate = nil
-				err := k8sClient.Create(context.Background(), underTest)
-				Expect(err).To(HaveOccurred())
-			})
-
 			It("should succeed creation if a template CR doesn't exists", func() {
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(err).NotTo(HaveOccurred())

@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,15 +37,19 @@ const (
 	WebhookCertName = "apiserver.crt"
 	WebhookKeyName  = "apiserver.key"
 
-	OngoingRemediationError = "prohibited due to running remediation"
-	minHealthyError         = "MinHealthy must not be negative"
-	invalidSelectorError    = "Invalid selector"
+	OngoingRemediationError   = "prohibited due to running remediation"
+	minHealthyError           = "MinHealthy must not be negative"
+	invalidSelectorError      = "Invalid selector"
+	mandatoryRemediationError = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
+	mutualRemediationError    = "RemediationTemplate and EscalatingRemediations usage is mutual exclusive"
+	uniqueOrderError          = "EscalatingRemediation Order must be unique"
+	minimumTimeoutError       = "EscalatingRemediation Timeout must be at least one minute"
 )
 
 // log is for logging in this package.
 var nodehealthchecklog = logf.Log.WithName("nodehealthcheck-resource")
 
-func (r *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
+func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 	// check if OLM injected certs
 	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
@@ -65,7 +70,7 @@ func (r *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	}
 
 	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+		For(nhc).
 		Complete()
 }
 
@@ -74,23 +79,23 @@ func (r *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &NodeHealthCheck{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *NodeHealthCheck) ValidateCreate() error {
-	nodehealthchecklog.Info("validate create", "name", r.Name)
-	return r.validate()
+func (nhc *NodeHealthCheck) ValidateCreate() error {
+	nodehealthchecklog.Info("validate create", "name", nhc.Name)
+	return nhc.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
-	nodehealthchecklog.Info("validate update", "name", r.Name)
+func (nhc *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
+	nodehealthchecklog.Info("validate update", "name", nhc.Name)
 
 	// do the normal validation
-	if err := r.validate(); err != nil {
+	if err := nhc.validate(); err != nil {
 		return err
 	}
 
 	// during ongoing remediations, some updates are forbidden
-	if r.isRemediating() {
-		if updated, field := r.isRestrictedFieldUpdated(old.(*NodeHealthCheck)); updated {
+	if nhc.isRemediating() {
+		if updated, field := nhc.isRestrictedFieldUpdated(old.(*NodeHealthCheck)); updated {
 			return fmt.Errorf("%s update %s", field, OngoingRemediationError)
 		}
 	}
@@ -98,16 +103,21 @@ func (r *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *NodeHealthCheck) ValidateDelete() error {
-	nodehealthchecklog.Info("validate delete", "name", r.Name)
-	if r.isRemediating() {
+func (nhc *NodeHealthCheck) ValidateDelete() error {
+	nodehealthchecklog.Info("validate delete", "name", nhc.Name)
+	if nhc.isRemediating() {
 		return fmt.Errorf("deletion %s", OngoingRemediationError)
 	}
 	return nil
 }
 
-func (r *NodeHealthCheck) validate() error {
-	aggregated := errors.NewAggregate([]error{r.validateMinHealthy(), r.validateSelector()})
+func (nhc *NodeHealthCheck) validate() error {
+	aggregated := errors.NewAggregate([]error{
+		nhc.validateMinHealthy(),
+		nhc.validateSelector(),
+		nhc.validateMutualRemediations(),
+		nhc.validateEscalatingRemediations(),
+	})
 
 	// everything else should have been covered by API server validation
 	// as defined by kubebuilder validation markers on the NHC struct.
@@ -115,35 +125,80 @@ func (r *NodeHealthCheck) validate() error {
 	return aggregated
 }
 
-func (r *NodeHealthCheck) validateMinHealthy() error {
+func (nhc *NodeHealthCheck) validateMinHealthy() error {
 	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
-	if r.Spec.MinHealthy == nil {
+	if nhc.Spec.MinHealthy == nil {
 		return fmt.Errorf("MinHealthy must not be empty")
 	}
-	if r.Spec.MinHealthy.Type == intstr.Int && r.Spec.MinHealthy.IntVal < 0 {
-		return fmt.Errorf("%s: %v", minHealthyError, r.Spec.MinHealthy)
+	if nhc.Spec.MinHealthy.Type == intstr.Int && nhc.Spec.MinHealthy.IntVal < 0 {
+		return fmt.Errorf("%s: %v", minHealthyError, nhc.Spec.MinHealthy)
 	}
 	return nil
 }
 
-func (r *NodeHealthCheck) validateSelector() error {
-	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.Selector); err != nil {
+func (nhc *NodeHealthCheck) validateSelector() error {
+	if _, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector); err != nil {
 		return fmt.Errorf("%s: %v", invalidSelectorError, err.Error())
 	}
 	return nil
 }
 
-func (r *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) (bool, string) {
+func (nhc *NodeHealthCheck) validateMutualRemediations() error {
+	if nhc.Spec.RemediationTemplate == nil && (nhc.Spec.EscalatingRemediations == nil || len(nhc.Spec.EscalatingRemediations) == 0) {
+		return fmt.Errorf(mandatoryRemediationError)
+	}
+	if !(nhc.Spec.RemediationTemplate == nil || nhc.Spec.EscalatingRemediations == nil) {
+		return fmt.Errorf(mutualRemediationError)
+	}
+	return nil
+}
+
+func (nhc *NodeHealthCheck) validateEscalatingRemediations() error {
+	if nhc.Spec.EscalatingRemediations == nil {
+		return nil
+	}
+
+	aggregated := errors.NewAggregate([]error{
+		nhc.validateEscalatingRemediationsUniqueOrder(),
+		nhc.validateEscalatingRemediationsTimeout(),
+	})
+	return aggregated
+}
+
+func (nhc *NodeHealthCheck) validateEscalatingRemediationsUniqueOrder() error {
+	orders := make(map[int]struct{}, len(nhc.Spec.EscalatingRemediations))
+	for _, rem := range nhc.Spec.EscalatingRemediations {
+		if _, exists := orders[rem.Order]; exists {
+			return fmt.Errorf("%s: found duplicate order %v", uniqueOrderError, rem.Order)
+		}
+		orders[rem.Order] = struct{}{}
+	}
+	return nil
+}
+
+func (nhc *NodeHealthCheck) validateEscalatingRemediationsTimeout() error {
+	for _, rem := range nhc.Spec.EscalatingRemediations {
+		if rem.Timeout.Duration < 1*time.Minute {
+			return fmt.Errorf("%s: found timeout %v", minimumTimeoutError, rem.Timeout)
+		}
+	}
+	return nil
+}
+
+func (nhc *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) (bool, string) {
 	// modifying these fields can cause dangling remediations
-	if !reflect.DeepEqual(r.Spec.Selector, old.Spec.Selector) {
+	if !reflect.DeepEqual(nhc.Spec.Selector, old.Spec.Selector) {
 		return true, "selector"
 	}
-	if !reflect.DeepEqual(r.Spec.RemediationTemplate, old.Spec.RemediationTemplate) {
+	if !reflect.DeepEqual(nhc.Spec.RemediationTemplate, old.Spec.RemediationTemplate) {
 		return true, "remediation template"
+	}
+	if !reflect.DeepEqual(nhc.Spec.EscalatingRemediations, old.Spec.EscalatingRemediations) {
+		return true, "escalating remediations"
 	}
 	return false, ""
 }
 
-func (r *NodeHealthCheck) isRemediating() bool {
-	return len(r.Status.InFlightRemediations) > 0
+func (nhc *NodeHealthCheck) isRemediating() bool {
+	return len(nhc.Status.InFlightRemediations) > 0 || len(nhc.Status.UnhealthyNodes) > 0
 }
