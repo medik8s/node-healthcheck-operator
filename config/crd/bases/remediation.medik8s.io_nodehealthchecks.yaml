@@ -37,6 +37,81 @@ spec:
           spec:
             description: NodeHealthCheckSpec defines the desired state of NodeHealthCheck
             properties:
+              escalatingRemediations:
+                description: "EscalatingRemediations contain a list of ordered remediation
+                  templates with a timeout. The remediation templates will be used
+                  one after another, until the unhealthy node gets healthy within
+                  the timeout of the currently processed remediation. \n Mutually
+                  exclusive with RemediationTemplate"
+                items:
+                  description: EscalatingRemediation defines a remediation template
+                    with order and timeout
+                  properties:
+                    order:
+                      description: Order defines the order for this remediation. Remediations
+                        with lower order will be used before remediations with higher
+                        order. Remediations must not have the same order.
+                      type: integer
+                    remediationTemplate:
+                      description: "RemediationTemplate is a reference to a remediation
+                        template provided by a remediation provider. \n If a node
+                        needs remediation the controller will create an object from
+                        this template and then it should be picked up by a remediation
+                        provider."
+                      properties:
+                        apiVersion:
+                          description: API version of the referent.
+                          type: string
+                        fieldPath:
+                          description: 'If referring to a piece of an object instead
+                            of an entire object, this string should contain a valid
+                            JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                            For example, if the object reference is to a container
+                            within a pod, this would take on a value like: "spec.containers{name}"
+                            (where "name" refers to the name of the container that
+                            triggered the event) or if no container name is specified
+                            "spec.containers[2]" (container with index 2 in this pod).
+                            This syntax is chosen only to have some well-defined way
+                            of referencing a part of an object. TODO: this design
+                            is not final and this field is subject to change in the
+                            future.'
+                          type: string
+                        kind:
+                          description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                          type: string
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                          type: string
+                        namespace:
+                          description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                          type: string
+                        resourceVersion:
+                          description: 'Specific resourceVersion to which this reference
+                            is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                          type: string
+                        uid:
+                          description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    timeout:
+                      description: "Timeout defines how long NHC will wait for the
+                        node getting healthy before the next remediation (if any)
+                        will be used. When the last remediation times out, the overall
+                        remediation is considered as failed. As a safeguard for preventing
+                        parallel remediations, a minimum of 60s is enforced. \n Expects
+                        a string of decimal numbers each with optional fraction and
+                        a unit suffix, eg \"300ms\", \"1.5h\" or \"2h45m\". Valid
+                        time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\",
+                        \"m\", \"h\"."
+                      pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                      type: string
+                  required:
+                  - order
+                  - remediationTemplate
+                  - timeout
+                  type: object
+                type: array
               minHealthy:
                 anyOf:
                 - type: integer
@@ -61,7 +136,8 @@ spec:
                 description: "RemediationTemplate is a reference to a remediation
                   template provided by an infrastructure provider. \n If a node needs
                   remediation the controller will create an object from this template
-                  and then it should be picked up by a remediation provider."
+                  and then it should be picked up by a remediation provider. \n Mutually
+                  exclusive with EscalatingRemediations"
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -162,17 +238,21 @@ spec:
                     node is considered unhealthy.
                   properties:
                     duration:
-                      description: Duration of the condition specified where a node
-                        is considered unhealthy. Expects a string of decimal numbers
-                        each with optional fraction and a unit suffix, eg "300ms",
-                        "1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"),
-                        "ms", "s", "m", "h".
+                      description: "Duration of the condition specified when a node
+                        is considered unhealthy. \n Expects a string of decimal numbers
+                        each with optional fraction and a unit suffix, eg \"300ms\",
+                        \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\"
+                        (or \"µs\"), \"ms\", \"s\", \"m\", \"h\"."
                       pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                       type: string
                     status:
+                      description: The condition status in the node's status to watch
+                        for. Typically False, True or Unknown.
                       minLength: 1
                       type: string
                     type:
+                      description: The condition type in the node's status to watch
+                        for.
                       minLength: 1
                       type: string
                   required:
@@ -181,8 +261,6 @@ spec:
                   - type
                   type: object
                 type: array
-            required:
-            - remediationTemplate
             type: object
           status:
             description: NodeHealthCheckStatus defines the observed state of NodeHealthCheck
