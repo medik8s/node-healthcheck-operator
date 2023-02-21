@@ -85,8 +85,22 @@ type NodeHealthCheckSpec struct {
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
+	//
+	// Mutually exclusive with EscalatingRemediations
+	//
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
-	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
+	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate,omitempty"`
+
+	// EscalatingRemediations contain a list of ordered remediation templates with a timeout.
+	// The remediation templates will be used one after another, until the unhealthy node
+	// gets healthy within the timeout of the currently processed remediation.
+	//
+	// Mutually exclusive with RemediationTemplate
+	//
+	// +optional
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	EscalatingRemediations []EscalatingRemediation `json:"escalatingRemediations,omitempty"`
 
 	// PauseRequests will prevent any new remdiation to start, while in-flight remediations
 	// keep running. Each entry is free form, and ideally represents the requested party reason
@@ -116,6 +130,39 @@ type UnhealthyCondition struct {
 	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
 	// +kubebuilder:validation:Type=string
 	Duration metav1.Duration `json:"duration"`
+}
+
+// EscalatingRemediation defines a remediation template with order and timeout
+type EscalatingRemediation struct {
+	// RemediationTemplate is a reference to a remediation template
+	// provided by a remediation provider.
+	//
+	// If a node needs remediation the controller will create an object from this template
+	// and then it should be picked up by a remediation provider.
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	RemediationTemplate corev1.ObjectReference `json:"remediationTemplate"`
+
+	// Order defines the order for this remediation.
+	// Remediations with lower order will be used before remediations with higher order.
+	// Remediations must not have the same order.
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	Order int `json:"order"`
+
+	// Timeout defines how long NHC will wait for the node getting healthy
+	// before the next remediation (if any) will be used. When the last remediation times out,
+	// the overall remediation is considered as failed.
+	// As a safeguard for preventing parallel remediations, a minimum of 60s is enforced.
+	//
+	// Expects a string of decimal numbers each with optional
+	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+	//
+	//+kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	//+kubebuilder:validation:Type=string
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	Timeout metav1.Duration `json:"timeout"`
 }
 
 // NodeHealthCheckStatus defines the observed state of NodeHealthCheck
