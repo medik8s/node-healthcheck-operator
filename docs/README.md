@@ -31,12 +31,6 @@ For this reason, the [healthcheck CR](#nodehealthcheck-custom-resource) includes
 the ability to define a percentage or total number of nodes that can be
 considered candidates for concurrent remediation.
 
-When the controller starts it will create a default [healthcheck CR](#nodehealthcheck-custom-resource),
-if there is no healthcheck CR at all in the cluster already(supporting upgrades
-with existing configurations). The default CR works with the [self-node-remediation](https://github.com/medik8s/self-node-remediation), that
-should be installed automatically if you deployed using the [operator hub].
-The CR uses all defaults except a selector to select only worker nodes.
-
 ## Cluster Upgrade awareness
 
 Cluster upgrade usually draw workers reboot, mainly to apply OS updates, and this
@@ -62,20 +56,17 @@ will also install the [self-node-remediation] operator as a default remediator.
 For development environments you can run `make deploy deploy-snr`.
 See the [Makefile](./../Makefile) for more variables.
 
-On start the controller creates a default resource name `nhc-worker-default`,
-that remediates using Self Node Remediation, and will check for worker-only heath issues.
-See [NodeHealthCheck Custom Resource](#nodehealthcheck-custom-resource) for the default properties.
-If there is an existing resource the controller will not create a default one.
-
 ## NodeHealthCheck Custom Resource
 
-Here is the default NHC resource the operator creates on start:
+The Node Healthcheck operator requires configuration by creating one or more
+NHC custom resources. An example CR for remediating worker nodes with the
+Self Node Remediation operator looks like this:
 
 ```yaml
 apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
-  name: nhc-worker-default
+  name: nhc-snr-worker
 spec:
   # mandatory
   remediationTemplate:
@@ -138,8 +129,8 @@ When a node turns healthy:
 
 ### External Remediation Resources
 
-External remediation resources are custom resource meant to be reconciled by speciallized remediation providers.
-The NHC object has a property of a External Remediation Template, and this template Spec will be
+External remediation resources are custom resource meant to be reconciled by specialized remediation providers.
+The NHC object has a property of a Remediation Template, and this template Spec will be
 copied over to the External Remediation Object Spec.
 For example this example NHC has this template defined:
 
@@ -156,8 +147,7 @@ spec:
     name: test-template
 ```
 
-- For the default configuration this will work out of the box. For other remediators or configurations
-  it is the admin's responsibility to ensure the relevant template resource exists. 
+- The template refers to a resource with the given properties. It is the admin's responsibility to ensure the relevant template resource exists. 
 
 ```yaml
 apiVersion: self-node-remediation.medik8s.io/v1alpha1

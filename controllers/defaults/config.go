@@ -8,7 +8,6 @@ import (
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,8 +43,8 @@ var DefaultSelector = metav1.LabelSelector{
 	},
 }
 
-// CreateOrUpdateDefaultNHC creates the default config
-func CreateOrUpdateDefaultNHC(cl client.Client, namespace string, log logr.Logger) error {
+// UpdateDefaultNHC updates the default config. We do not create a default config anymore though
+func UpdateDefaultNHC(cl client.Client, namespace string, log logr.Logger) error {
 
 	DefaultTemplateRef.Namespace = namespace
 
@@ -67,56 +66,40 @@ func CreateOrUpdateDefaultNHC(cl client.Client, namespace string, log logr.Logge
 		return errors.Wrap(err, "failed to list NHC objects")
 	}
 
-	if len(list.Items) > 0 {
-		// If we have already some NHC then this is a restart, an upgrade, or a redeploy
-		// For upgrades we need to check if we have outdated default configs
-		log.Info("there are existing NHC resources, checking if we need to update the default config", "numOfNHC", len(list.Items))
-
-		for _, nhc := range list.Items {
-			nhc := nhc
-			updated := false
-
-			// We need to check if we still have a default config with the deprecated Poison Pill remediator,
-			// and update it to the new Self Node Remediation.
-			if nhc.Spec.RemediationTemplate.Name == deprecatedTemplateName {
-				log.Info("updating config from old Poison Pill to new Self Node Remediation", "NHC name", nhc.Name)
-				nhc.Spec.RemediationTemplate = DefaultTemplateRef
-				updated = true
-			}
-
-			// Update node selector from worker to !control-plane AND !master, in order to prevent unwanted remediation of control
-			// plane nodes in case they also are workers
-			if nhc.Name == DefaultCRName && nhc.Spec.Selector.MatchExpressions[0].Key == utils.WorkerRoleLabel {
-				log.Info("updating default config from selecting worker role to selecting !control-plane && !master role", "NHC name", nhc.Name)
-				nhc.Spec.Selector = DefaultSelector
-				updated = true
-			}
-
-			if updated {
-				if err := cl.Update(context.Background(), &nhc); err != nil {
-					return errors.Wrap(err, "failed to update default NHC")
-				}
-			}
-		}
-
-		// no need to go on with creating the default config
+	if len(list.Items) == 0 {
 		return nil
 	}
 
-	nhc := remediationv1alpha1.NodeHealthCheck{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: DefaultCRName,
-		},
-		Spec: remediationv1alpha1.NodeHealthCheckSpec{
-			Selector:            DefaultSelector,
-			RemediationTemplate: DefaultTemplateRef,
-		},
+	// If we have already some NHC then this is a restart, an upgrade, or a redeploy
+	// For upgrades we need to check if we have outdated default configs
+	log.Info("there are existing NHC resources, checking if we need to update the default config", "numOfNHC", len(list.Items))
+
+	for _, nhc := range list.Items {
+		nhc := nhc
+		updated := false
+
+		// We need to check if we still have a default config with the deprecated Poison Pill remediator,
+		// and update it to the new Self Node Remediation.
+		if nhc.Spec.RemediationTemplate.Name == deprecatedTemplateName {
+			log.Info("updating config from old Poison Pill to new Self Node Remediation", "NHC name", nhc.Name)
+			nhc.Spec.RemediationTemplate = DefaultTemplateRef
+			updated = true
+		}
+
+		// Update node selector from worker to !control-plane AND !master, in order to prevent unwanted remediation of control
+		// plane nodes in case they also are workers
+		if nhc.Name == DefaultCRName && nhc.Spec.Selector.MatchExpressions[0].Key == utils.WorkerRoleLabel {
+			log.Info("updating default config from selecting worker role to selecting !control-plane && !master role", "NHC name", nhc.Name)
+			nhc.Spec.Selector = DefaultSelector
+			updated = true
+		}
+
+		if updated {
+			if err := cl.Update(context.Background(), &nhc); err != nil {
+				return errors.Wrap(err, "failed to update default NHC")
+			}
+		}
 	}
 
-	err = cl.Create(context.Background(), &nhc, &client.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return errors.Wrap(err, "failed to create a default node-healthcheck resource")
-	}
-	log.Info("created a default NHC resource", "name", DefaultCRName)
 	return nil
 }
