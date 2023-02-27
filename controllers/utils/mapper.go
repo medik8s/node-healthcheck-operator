@@ -6,6 +6,7 @@ import (
 	"github.com/go-logr/logr"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,7 +28,9 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 
 		node := &v1.Node{}
 		if err := c.Get(context.Background(), client.ObjectKey{Name: o.GetName()}, node); err != nil {
-			logger.Error(err, "failed to get node", "node name", o.GetName())
+			if !errors.IsNotFound(err) {
+				logger.Error(err, "failed to get node", "node name", o.GetName())
+			}
 			return requests
 		}
 
