@@ -83,9 +83,18 @@ var _ = BeforeSuite(func() {
 	}
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseFlagOptions(&opts)))
 
+	testScheme := runtime.NewScheme()
+
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
+		CRDInstallOptions: envtest.CRDInstallOptions{
+			Scheme: testScheme,
+			Paths: []string{
+				filepath.Join("..", "vendor", "github.com", "openshift", "api", "machine", "v1beta1"),
+				filepath.Join("..", "config", "crd", "bases"),
+			},
+			ErrorIfPathMissing: true,
+		},
 	}
 
 	var err error
@@ -93,16 +102,16 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	scheme.AddToScheme(scheme.Scheme)
-	Expect(remediationv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
-	Expect(machinev1beta1.Install(scheme.Scheme)).To(Succeed())
-	Expect(apiextensionsv1.AddToScheme(scheme.Scheme)).To(Succeed())
+	scheme.AddToScheme(testScheme)
+	Expect(remediationv1alpha1.AddToScheme(testScheme)).To(Succeed())
+	Expect(machinev1beta1.Install(testScheme)).To(Succeed())
+	Expect(apiextensionsv1.AddToScheme(testScheme)).To(Succeed())
 	// +kubebuilder:scaffold:scheme
 
-	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: testScheme})
 	Expect(err).NotTo(HaveOccurred())
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	k8sClient, err = client.New(cfg, client.Options{Scheme: testScheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
