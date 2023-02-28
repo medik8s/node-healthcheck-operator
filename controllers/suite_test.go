@@ -20,6 +20,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,10 +28,12 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -55,6 +58,7 @@ import (
 
 const (
 	DeploymentNamespace = "testns"
+	MachineNamespace    = "openshift-machine-api"
 )
 
 var cfg *rest.Config
@@ -103,10 +107,25 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	// Deploy test remediation CRDs and CR
-	Expect(k8sClient.Create(context.Background(), testRemediationCRD)).To(Succeed())
-	Expect(k8sClient.Create(context.Background(), testRemediationTemplateCRD)).To(Succeed())
+	testKind := "InfrastructureRemediation"
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(testKind))).To(Succeed())
 	time.Sleep(time.Second)
-	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR())).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, "default", "template"))).To(Succeed())
+
+	testKind = "Metal3Remediation"
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(testKind))).To(Succeed())
+	time.Sleep(time.Second)
+	ns := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "openshift-machine-api",
+		},
+		Spec: v1.NamespaceSpec{},
+	}
+	Expect(k8sClient.Create(context.Background(), ns)).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, MachineNamespace, "ok"))).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, "default", "nok"))).To(Succeed())
 
 	upgradeChecker = &fakeClusterUpgradeChecker{
 		Err:       nil,
@@ -133,6 +152,7 @@ var _ = BeforeSuite(func() {
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
+		onOpenShift:                 true,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -174,95 +194,99 @@ func (c *fakeClusterUpgradeChecker) Check() (bool, error) {
 	return c.Upgrading, c.Err
 }
 
-var testRemediationCRD = &apiextensionsv1.CustomResourceDefinition{
-	TypeMeta: metav1.TypeMeta{
-		APIVersion: apiextensions.SchemeGroupVersion.String(),
-		Kind:       "CustomResourceDefinition",
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name: "infrastructureremediations.test.medik8s.io",
-	},
-	Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-		Group: "test.medik8s.io",
-		Scope: apiextensionsv1.NamespaceScoped,
-		Names: apiextensionsv1.CustomResourceDefinitionNames{
-			Kind:   "InfrastructureRemediation",
-			Plural: "infrastructureremediations",
+func newTestRemediationTemplateCRD(kind string) *apiextensionsv1.CustomResourceDefinition {
+	return &apiextensionsv1.CustomResourceDefinition{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: apiextensionsv1.SchemeGroupVersion.String(),
+			Kind:       "CustomResourceDefinition",
 		},
-		Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-			{
-				Name:    "v1alpha1",
-				Served:  true,
-				Storage: true,
-				Subresources: &apiextensionsv1.CustomResourceSubresources{
-					Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
-				},
-				Schema: &apiextensionsv1.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-						Type: "object",
-						Properties: map[string]apiextensionsv1.JSONSchemaProps{
-							"spec": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.Bool(true),
-							},
-							"status": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.Bool(true),
+		ObjectMeta: metav1.ObjectMeta{
+			Name: strings.ToLower(kind) + "templates.test.medik8s.io",
+		},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "test.medik8s.io",
+			Scope: apiextensionsv1.NamespaceScoped,
+			Names: apiextensionsv1.CustomResourceDefinitionNames{
+				Kind:   kind + "Template",
+				Plural: strings.ToLower(kind) + "templates",
+			},
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+				{
+					Name:    "v1alpha1",
+					Served:  true,
+					Storage: true,
+					Subresources: &apiextensionsv1.CustomResourceSubresources{
+						Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
+					},
+					Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+							Type: "object",
+							Properties: map[string]apiextensionsv1.JSONSchemaProps{
+								"spec": {
+									Type:                   "object",
+									XPreserveUnknownFields: pointer.Bool(true),
+								},
+								"status": {
+									Type:                   "object",
+									XPreserveUnknownFields: pointer.Bool(true),
+								},
 							},
 						},
 					},
 				},
 			},
 		},
-	},
+	}
 }
 
-var testRemediationTemplateCRD = &apiextensionsv1.CustomResourceDefinition{
-	TypeMeta: metav1.TypeMeta{
-		APIVersion: apiextensionsv1.SchemeGroupVersion.String(),
-		Kind:       "CustomResourceDefinition",
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name: "infrastructureremediationtemplates.test.medik8s.io",
-	},
-	Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-		Group: "test.medik8s.io",
-		Scope: apiextensionsv1.NamespaceScoped,
-		Names: apiextensionsv1.CustomResourceDefinitionNames{
-			Kind:   "InfrastructureRemediationTemplate",
-			Plural: "infrastructureremediationtemplates",
+func newTestRemediationCRD(kind string) *apiextensionsv1.CustomResourceDefinition {
+	return &apiextensionsv1.CustomResourceDefinition{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: apiextensions.SchemeGroupVersion.String(),
+			Kind:       "CustomResourceDefinition",
 		},
-		Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-			{
-				Name:    "v1alpha1",
-				Served:  true,
-				Storage: true,
-				Subresources: &apiextensionsv1.CustomResourceSubresources{
-					Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
-				},
-				Schema: &apiextensionsv1.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-						Type: "object",
-						Properties: map[string]apiextensionsv1.JSONSchemaProps{
-							"spec": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.Bool(true),
-							},
-							"status": {
-								Type:                   "object",
-								XPreserveUnknownFields: pointer.Bool(true),
+		ObjectMeta: metav1.ObjectMeta{
+			Name: strings.ToLower(kind) + "s.test.medik8s.io",
+		},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "test.medik8s.io",
+			Scope: apiextensionsv1.NamespaceScoped,
+			Names: apiextensionsv1.CustomResourceDefinitionNames{
+				Kind:   kind,
+				Plural: strings.ToLower(kind) + "s",
+			},
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+				{
+					Name:    "v1alpha1",
+					Served:  true,
+					Storage: true,
+					Subresources: &apiextensionsv1.CustomResourceSubresources{
+						Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
+					},
+					Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+							Type: "object",
+							Properties: map[string]apiextensionsv1.JSONSchemaProps{
+								"spec": {
+									Type:                   "object",
+									XPreserveUnknownFields: pointer.Bool(true),
+								},
+								"status": {
+									Type:                   "object",
+									XPreserveUnknownFields: pointer.Bool(true),
+								},
 							},
 						},
 					},
 				},
 			},
 		},
-	},
+	}
 }
 
-func newTestRemediationTemplateCR() client.Object {
+func newTestRemediationTemplateCR(kind, namespace, name string) client.Object {
 	remediation := map[string]interface{}{
-		"kind":       "InfrastructureRemediation",
+		"kind":       kind,
 		"apiVersion": "test.medik8s.io/v1alpha1",
 		"metadata":   map[string]interface{}{},
 		"spec": map[string]interface{}{
@@ -279,9 +303,9 @@ func newTestRemediationTemplateCR() client.Object {
 	template.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "test.medik8s.io",
 		Version: "v1alpha1",
-		Kind:    "InfrastructureRemediationTemplate",
+		Kind:    kind + "Template",
 	})
-	template.SetNamespace("default")
-	template.SetName("template")
+	template.SetNamespace(namespace)
+	template.SetName(name)
 	return template
 }
