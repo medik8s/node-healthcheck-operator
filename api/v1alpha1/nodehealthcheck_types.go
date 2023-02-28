@@ -30,6 +30,8 @@ const (
 	ConditionReasonDisabledMHC = "ConflictingMachineHealthCheckDetected"
 	// ConditionReasonDisabledTemplateNotFound is the reason for type Disabled when the template wasn't found
 	ConditionReasonDisabledTemplateNotFound = "RemediationTemplateNotFound"
+	// ConditionReasonDisabledTemplateWrongNamespace is the reason for type Disabled when the template is in the wrong namespace
+	ConditionReasonDisabledTemplateWrongNamespace = "RemediationTemplateWrongNamespace"
 	// ConditionReasonEnabled is the condition reason for type Disabled and status False
 	ConditionReasonEnabled = "NodeHealthCheckEnabled"
 )

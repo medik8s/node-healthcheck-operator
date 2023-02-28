@@ -12,19 +12,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
 
-const templateSuffix = "Template"
+const (
+	templateSuffix    = "Template"
+	machineAnnotation = "machine.openshift.io/machine"
+)
 
 type Manager interface {
 	GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
-	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) *unstructured.Unstructured
-	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, log logr.Logger) (bool, error)
+	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
+	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
+	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 	GetOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error)
@@ -33,15 +40,19 @@ type Manager interface {
 
 type manager struct {
 	client.Client
-	ctx context.Context
+	ctx         context.Context
+	log         logr.Logger
+	onOpenshift bool
 }
 
 var _ Manager = &manager{}
 
-func NewManager(c client.Client, ctx context.Context) Manager {
+func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshift bool) Manager {
 	return &manager{
-		Client: c,
-		ctx:    ctx,
+		Client:      c,
+		ctx:         ctx,
+		log:         log.WithName("resource manager"),
+		onOpenshift: onOpenshift,
 	}
 }
 
@@ -63,7 +74,7 @@ func (m *manager) GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstru
 	return template, nil
 }
 
-func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) *unstructured.Unstructured {
+func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 
 	remediationCR := m.GenerateRemediationCRBase(template.GroupVersionKind())
 
@@ -79,22 +90,54 @@ func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alp
 	remediationCR.SetSelfLink("")
 	remediationCR.SetCreationTimestamp(metav1.Now())
 
+	owners := make([]metav1.OwnerReference, 0)
 	if nhc != nil {
-		remediationCR.SetOwnerReferences([]metav1.OwnerReference{
-			{
-				APIVersion:         nhc.APIVersion,
-				Kind:               nhc.Kind,
-				Name:               nhc.Name,
-				UID:                nhc.UID,
-				Controller:         pointer.Bool(false),
-				BlockOwnerDeletion: nil,
-			},
+		owners = append(owners, metav1.OwnerReference{
+			APIVersion:         nhc.APIVersion,
+			Kind:               nhc.Kind,
+			Name:               nhc.Name,
+			UID:                nhc.UID,
+			Controller:         pointer.Bool(false),
+			BlockOwnerDeletion: nil,
 		})
 		remediationCR.SetLabels(map[string]string{
 			"app.kubernetes.io/part-of": "node-healthcheck-controller",
 		})
 	}
 
+	// TODO also handle CAPI clusters / machines
+	if m.onOpenshift {
+		machineRef, machineNamespace, err := m.getOwningMachineWithNamespace(node)
+		if err != nil {
+			return nil, err
+		}
+		if machineRef != nil && machineNamespace != "" {
+			// Owners must be cluster scoped, or in the same namespace as their dependent
+			// Machines are always namespaced
+			if remediationCR.GetNamespace() == machineNamespace {
+				owners = append(owners, *machineRef)
+			} else {
+				// What to do if namespaces don't match?
+				// So far this is a known issue for Metal3 remediation only, and that case was checked already
+				// in the Reconciler. So just log it, but do not fail remediation.
+				m.log.Info("Not setting remediation CR's owner ref to the machine, because namespaces don't match",
+					"template ns", remediationCR.GetNamespace(),
+					"machine ns", machineNamespace)
+			}
+		}
+	}
+
+	if len(owners) > 0 {
+		remediationCR.SetOwnerReferences(owners)
+	}
+
+	return remediationCR, nil
+}
+
+func (m *manager) GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured {
+	remediationCR := m.GenerateRemediationCRBase(gvk)
+	remediationCR.SetName(name)
+	remediationCR.SetNamespace(namespace)
 	return remediationCR
 }
 
@@ -108,28 +151,28 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 	return remediationCRBase
 }
 
-func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, log logr.Logger) (bool, error) {
+func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error) {
 	// check if CR already exists
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
 		if !IsOwner(remediationCR, nhc) {
-			log.Info("external remediation CR already exists, but it's not owned by us", "owners", remediationCR.GetOwnerReferences())
+			m.log.Info("external remediation CR already exists, but it's not owned by us", "owners", remediationCR.GetOwnerReferences())
 		} else {
-			log.Info("external remediation CR already exists")
+			m.log.Info("external remediation CR already exists")
 		}
 		return false, nil
 	} else if !apierrors.IsNotFound(err) {
-		log.Error(err, "failed to check for existing external remediation object")
+		m.log.Error(err, "failed to check for existing external remediation object")
 		return false, err
 	}
 
 	// create CR
-	log.Info("Creating an remediation CR",
+	m.log.Info("Creating an remediation CR",
 		"CR Name", remediationCR.GetName(),
 		"CR KVK", remediationCR.GroupVersionKind(),
 		"namespace", remediationCR.GetNamespace())
 
 	if err := m.Create(m.ctx, remediationCR); err != nil {
-		log.Error(err, "failed to create an external remediation object")
+		m.log.Error(err, "failed to create an external remediation object")
 		return false, err
 	}
 	return true, nil
@@ -204,4 +247,31 @@ func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.
 		}
 	}
 	return false
+}
+
+func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.OwnerReference, string, error) {
+	// TODO this is Openshift / MachineAPI specific
+	// TODO add support for upstream CAPI machines
+	namespacedMachine, exists := node.GetAnnotations()[machineAnnotation]
+	if !exists {
+		m.log.Info("didn't find machine annotation for Openshift machine", "node", node.GetName())
+		// nothing we can do, continue without owning machine
+		return nil, "", nil
+	}
+	ns, name, err := cache.SplitMetaNamespaceKey(namespacedMachine)
+	if err != nil {
+		return nil, "", errors.Wrapf(err, "failed to split machine annotation value into namespace + name: %v", namespacedMachine)
+	}
+	machine := &machinev1beta1.Machine{}
+	if err := m.Get(m.ctx, client.ObjectKey{Namespace: ns, Name: name}, machine); err != nil {
+		return nil, "", errors.Wrapf(err, "failed to get machine. namespace %v, name: %v", ns, name)
+	}
+	return &metav1.OwnerReference{
+		APIVersion:         machine.APIVersion,
+		Kind:               machine.Kind,
+		Name:               name,
+		UID:                machine.UID,
+		Controller:         pointer.Bool(false),
+		BlockOwnerDeletion: pointer.Bool(false),
+	}, ns, nil
 }
