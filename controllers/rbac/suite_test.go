@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -65,7 +66,6 @@ var _ = BeforeSuite(func() {
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
-
 	scheme.AddToScheme(scheme.Scheme)
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
@@ -84,6 +84,11 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// sometimes the aggregation test fails in CI because the default ns doesn't exist...
+	// let's wait for it here
+	ns := &v1.Namespace{ObjectMeta: ctrl.ObjectMeta{Name: "default"}}
+	Eventually(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(ns), ns)).Should(Succeed())
 })
 
 var _ = AfterSuite(func() {
