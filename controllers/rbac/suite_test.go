@@ -26,6 +26,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -86,9 +87,14 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	// sometimes the aggregation test fails in CI because the default ns doesn't exist...
-	// let's wait for it here
+	// let's create it
 	ns := &v1.Namespace{ObjectMeta: ctrl.ObjectMeta{Name: "default"}}
-	Eventually(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(ns), ns)).Should(Succeed())
+	err = k8sClient.Create(context.Background(), ns)
+	Expect(err).To(Or(
+		BeNil(),
+		WithTransform(func(err error) bool { return errors.IsAlreadyExists(err) }, BeTrue()),
+	))
+
 })
 
 var _ = AfterSuite(func() {
