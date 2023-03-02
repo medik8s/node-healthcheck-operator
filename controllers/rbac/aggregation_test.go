@@ -22,6 +22,7 @@ var _ = Describe("Aggregation Tests", func() {
 	var aggr Aggregation
 
 	BeforeEach(func() {
+		// fake the NHC deployment
 		depl := getDeployment()
 		err := k8sClient.Create(context.Background(), depl)
 		Expect(err).To(Or(
@@ -142,11 +143,6 @@ var _ = Describe("Aggregation Tests", func() {
 				oldRole.OwnerReferences[0].UID = "1234"
 
 				oldRoleBinding := aggr.getRoleBinding()
-				oldRoleBinding.RoleRef = rbacv1.RoleRef{
-					APIGroup: "rbac.authorization.k8s.io",
-					Kind:     "ClusterRole",
-					Name:     "foo",
-				}
 				oldRoleBinding.Subjects = []rbacv1.Subject{
 					{
 						Kind:      "ServiceAccount",
@@ -162,6 +158,8 @@ var _ = Describe("Aggregation Tests", func() {
 						UID:        "123",
 					},
 				}
+				Expect(k8sClient.Create(context.Background(), oldRole)).To(Succeed())
+				Expect(k8sClient.Create(context.Background(), oldRoleBinding)).To(Succeed())
 			})
 
 			It("Should update rule and binding", func() {
