@@ -140,6 +140,7 @@ var _ = Describe("Aggregation Tests", func() {
 						Verbs:     []string{"all"},
 					},
 				}
+				oldRole.OwnerReferences[0].UID = "1234"
 
 				oldRoleBinding := aggr.getRoleBinding()
 				oldRoleBinding.Subjects = []rbacv1.Subject{
