@@ -61,8 +61,6 @@ const (
 	eventTypeNormal               = "Normal"
 	eventTypeWarning              = "Warning"
 	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
-	metal3RemediationTemplateKind = "Metal3RemediationTemplate"
-	machineAPINamespace           = "openshift-machine-api"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -167,42 +165,26 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, nil
 	}
 
-	// check if we need to disable NHC because of missing or misconfigured template CR
-	var template *unstructured.Unstructured
-	if template, err = resourceManager.GetTemplate(nhc); err != nil {
-		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledTemplateNotFound) {
-			log.Info("disabling NHC, template not found")
-			rt := nhc.Spec.RemediationTemplate
+	// check if we need to disable NHC because of missing or misconfigured template CRs
+	if valid, reason, message, err := resourceManager.ValidateTemplates(nhc); err != nil {
+		log.Error(err, "failed to validate template")
+		return result, err
+	} else if !valid {
+		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, reason) {
+			log.Info("disabling NHC", "reason", reason, "message", message)
 			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
 				Type:    remediationv1alpha1.ConditionTypeDisabled,
 				Status:  metav1.ConditionTrue,
-				Reason:  remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
-				Message: fmt.Sprintf("Failed to get remediation template %v: %v", rt, errors.Cause(err)),
+				Reason:  reason,
+				Message: message,
 			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Remediation Template not found. Kind: %s, Namespace: %s, Name %s", rt.GroupVersionKind().Kind, rt.Namespace, rt.Name)
+			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
 		}
-		// requeue for checking back if template exists later
-		result.RequeueAfter = 15 * time.Second
+		if reason == remediationv1alpha1.ConditionReasonDisabledTemplateNotFound {
+			// requeue for checking back if template exists later
+			result.RequeueAfter = 15 * time.Second
+		}
 		return result, nil
-	} else if template.GetKind() == metal3RemediationTemplateKind {
-		// Metal3 remediation needs the node's machine as owner ref,
-		// and owners need to be in the same namespace as their dependent.
-		// Make sure that the template is in the Machine's namespace.
-		if template.GetNamespace() != machineAPINamespace {
-			if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledTemplateWrongNamespace) {
-				log.Info("disabling NHC, Metal3RemediationTemplate must be in the openshift-machine-api namespace")
-				rt := nhc.Spec.RemediationTemplate
-				meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
-					Type:    remediationv1alpha1.ConditionTypeDisabled,
-					Status:  metav1.ConditionTrue,
-					Reason:  remediationv1alpha1.ConditionReasonDisabledTemplateWrongNamespace,
-					Message: fmt.Sprintf("Metal3RemediationTemplate must be in the openshift-machine-api namespace"),
-				})
-				r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Metal3RemediationTemplate must be in the openshift-machine-api namespace. It is configured to be in namespace: %s", rt.Namespace)
-			}
-			// stop reconciling
-			return result, nil
-		}
 	}
 
 	// all checks passed, update status if needed
@@ -243,6 +225,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info(msg)
 		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
 		return result, nil
+	}
+
+	template, err := resourceManager.GetTemplate(nhc)
+	if err != nil {
+		log.Error(err, "failed to get template")
+		return result, err
 	}
 
 	// from here on these can change

@@ -401,8 +401,8 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
 				Expect(underTest.Status.Reason).To(
 					And(
-						ContainSubstring("Failed to get"),
-						ContainSubstring("dummy"),
+						ContainSubstring("failed to get"),
+						ContainSubstring("dummyTemplate"),
 					))
 				Expect(underTest.Status.Conditions).To(ContainElement(
 					And(
@@ -483,7 +483,7 @@ var _ = Describe("Node Health Check CR", func() {
 						And(
 							HaveField("Type", v1alpha1.ConditionTypeDisabled),
 							HaveField("Status", metav1.ConditionTrue),
-							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateWrongNamespace),
+							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateInvalid),
 						)))
 				})
 			})

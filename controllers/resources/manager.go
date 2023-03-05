@@ -28,6 +28,7 @@ const (
 
 type Manager interface {
 	GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error)
+	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
@@ -54,24 +55,6 @@ func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshi
 		log:         log.WithName("resource manager"),
 		onOpenshift: onOpenshift,
 	}
-}
-
-func (m *manager) GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
-	t := nhc.Spec.RemediationTemplate.DeepCopy()
-	template := new(unstructured.Unstructured)
-	template.SetGroupVersionKind(t.GroupVersionKind())
-	template.SetName(t.Name)
-	template.SetNamespace(t.Namespace)
-	if err := m.Get(m.ctx, client.ObjectKeyFromObject(template), template); err != nil {
-		return nil, errors.Wrapf(err, "failed to get external remdiation template %q/%q", template.GetNamespace(), template.GetName())
-	}
-
-	// check if template is valid
-	_, found, err := unstructured.NestedMap(template.Object, "spec", "template")
-	if !found || err != nil {
-		return nil, errors.Errorf("invalid template %q/%q, didn't find spec.template.spec", template.GetNamespace(), template.GetName())
-	}
-	return template, nil
 }
 
 func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
