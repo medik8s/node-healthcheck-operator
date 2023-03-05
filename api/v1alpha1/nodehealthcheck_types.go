@@ -67,6 +67,8 @@ type NodeHealthCheckSpec struct {
 	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
 	//
 	//+optional
+	//+patchStrategy=merge
+	//+patchMergeKey=type
 	//+kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
@@ -100,7 +102,7 @@ type NodeHealthCheckSpec struct {
 	//
 	// Mutually exclusive with RemediationTemplate
 	//
-	// +optional
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	EscalatingRemediations []EscalatingRemediation `json:"escalatingRemediations,omitempty"`
 
@@ -200,10 +202,8 @@ type NodeHealthCheckStatus struct {
 	// Represents the observations of a NodeHealthCheck's current state.
 	// Known .status.conditions.type are: "Disabled"
 	//
-	//+patchMergeKey=type
 	//+patchStrategy=merge
-	//+listType=map
-	//+listMapKey=type
+	//+patchMergeKey=type
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.conditions"
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
