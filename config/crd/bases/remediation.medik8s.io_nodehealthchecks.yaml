@@ -344,7 +344,7 @@ spec:
                   format: date-time
                   type: string
                 description: InFlightRemediations records the timestamp when remediation
-                  triggered per node.
+                  triggered per node. Deprecated in favour of UnhealthyNodes.
                 type: object
               observedNodes:
                 default: 0
@@ -360,6 +360,82 @@ spec:
               reason:
                 description: Reason explains the current phase in more detail.
                 type: string
+              unhealthyNodes:
+                description: UnhealthyNodes tracks currently unhealthy nodes and their
+                  remediations.
+                items:
+                  description: UnhealthyNode defines an unhealthy node and its remediations
+                  properties:
+                    name:
+                      description: Name is the name of the unhealthy node
+                      type: string
+                    remediations:
+                      description: Remediations tracks the remediations created for
+                        this node
+                      items:
+                        description: Remediation defines a remediation which was created
+                          for a node
+                        properties:
+                          resource:
+                            description: Resource is the reference to the remediation
+                              CR which was created
+                            properties:
+                              apiVersion:
+                                description: API version of the referent.
+                                type: string
+                              fieldPath:
+                                description: 'If referring to a piece of an object
+                                  instead of an entire object, this string should
+                                  contain a valid JSON/Go field access statement,
+                                  such as desiredState.manifest.containers[2]. For
+                                  example, if the object reference is to a container
+                                  within a pod, this would take on a value like: "spec.containers{name}"
+                                  (where "name" refers to the name of the container
+                                  that triggered the event) or if no container name
+                                  is specified "spec.containers[2]" (container with
+                                  index 2 in this pod). This syntax is chosen only
+                                  to have some well-defined way of referencing a part
+                                  of an object. TODO: this design is not final and
+                                  this field is subject to change in the future.'
+                                type: string
+                              kind:
+                                description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                              namespace:
+                                description: 'Namespace of the referent. More info:
+                                  https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                type: string
+                              resourceVersion:
+                                description: 'Specific resourceVersion to which this
+                                  reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                                type: string
+                              uid:
+                                description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          started:
+                            description: Started is the creation time of the remediation
+                              CR
+                            format: date-time
+                            type: string
+                          timedOut:
+                            description: TimedOut is the time when the remedetion
+                              timed out. Applicable for escalating remediations only.
+                            format: date-time
+                            type: string
+                        required:
+                        - resource
+                        - started
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
             required:
             - healthyNodes
             - observedNodes

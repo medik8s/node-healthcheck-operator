@@ -193,7 +193,16 @@ type NodeHealthCheckStatus struct {
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	HealthyNodes int `json:"healthyNodes"`
 
-	// InFlightRemediations records the timestamp when remediation triggered per node
+	// UnhealthyNodes tracks currently unhealthy nodes and their remediations.
+	//
+	//+patchStrategy=merge
+	//+patchMergeKey=type
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	UnhealthyNodes []*UnhealthyNode `json:"unhealthyNodes,omitempty"`
+
+	// InFlightRemediations records the timestamp when remediation triggered per node.
+	// Deprecated in favour of UnhealthyNodes.
 	//
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
@@ -223,6 +232,42 @@ type NodeHealthCheckStatus struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase:reason"
 	Reason string `json:"reason,omitempty"`
+}
+
+// UnhealthyNode defines an unhealthy node and its remediations
+type UnhealthyNode struct {
+	// Name is the name of the unhealthy node
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Name string `json:"name"`
+
+	// Remediations tracks the remediations created for this node
+	//
+	//+patchStrategy=merge
+	//+patchMergeKey=type
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Remediations []*Remediation `json:"remediations,omitempty"`
+}
+
+// Remediation defines a remediation which was created for a node
+type Remediation struct {
+	// Resource is the reference to the remediation CR which was created
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Resource corev1.ObjectReference `json:"resource"`
+
+	// Started is the creation time of the remediation CR
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Started metav1.Time `json:"started"`
+
+	// TimedOut is the time when the remedetion timed out.
+	// Applicable for escalating remediations only.
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	TimedOut *metav1.Time `json:"timedOut,omitempty"`
 }
 
 //+kubebuilder:object:root=true
