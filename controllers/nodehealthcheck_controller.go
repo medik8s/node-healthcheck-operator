@@ -34,6 +34,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,16 +52,18 @@ import (
 )
 
 const (
-	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
-	remediationCRAlertTimeout     = time.Hour * 48
-	eventReasonRemediationCreated = "RemediationCreated"
-	eventReasonRemediationSkipped = "RemediationSkipped"
-	eventReasonRemediationRemoved = "RemediationRemoved"
-	eventReasonDisabled           = "Disabled"
-	eventReasonEnabled            = "Enabled"
-	eventTypeNormal               = "Normal"
-	eventTypeWarning              = "Warning"
-	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
+	oldRemediationCRAnnotationKey    = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
+	remediationTimedOutAnnotationkey = "remediation.medik8s.io/nhc-timed-out"
+	remediationCRAlertTimeout        = time.Hour * 48
+	eventReasonRemediationCreated    = "RemediationCreated"
+	eventReasonRemediationSkipped    = "RemediationSkipped"
+	eventReasonRemediationRemoved    = "RemediationRemoved"
+	eventReasonNoTemplateLeft        = "NoTemplateLeft"
+	eventReasonDisabled              = "Disabled"
+	eventReasonEnabled               = "Enabled"
+	eventTypeNormal                  = "Normal"
+	eventTypeWarning                 = "Warning"
+	enabledMessage                   = "No issues found, NodeHealthCheck is enabled."
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -227,50 +230,38 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, nil
 	}
 
-	template, err := resourceManager.GetTemplate(nhc.Spec.RemediationTemplate)
-	if err != nil {
-		log.Error(err, "failed to get template")
-		return result, err
-	}
-
 	// from here on these can change
 	patchInFlightRemediations = true
 
 	// delete remediation CRs for healthy nodes
 	for _, node := range healthyNodes {
-		remediationCR := resourceManager.GenerateRemediationCRBaseNamed(template.GroupVersionKind(), template.GetNamespace(), node.GetName())
-		if deleted, err := resourceManager.DeleteRemediationCR(remediationCR, nhc); err != nil {
-			log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)
-			return result, err
-		} else if deleted {
-			log.Info("deleted remediation CR", "name", remediationCR.GetName(), "NHC name", nhc.Name)
-			r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
+		remediationCRs := resourceManager.GenerateAllRemediationCRs(&node, nhc)
+		for _, remediationCR := range remediationCRs {
+			if deleted, err := resourceManager.DeleteRemediationCR(remediationCR, nhc); err != nil {
+				log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)
+				return result, err
+			} else if deleted {
+				log.Info("deleted remediation CR", "name", remediationCR.GetName(), "NHC name", nhc.Name)
+				r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
+			}
 		}
 	}
 
-	minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true)
-	if err != nil {
+	// check if we enough healthy nodes
+	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
-	}
-
-	nrHealthyNodes := len(healthyNodes)
-	if nrHealthyNodes < minHealthy {
-		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", nrHealthyNodes, minHealthy)
+	} else if len(healthyNodes) < minHealthy {
+		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", len(healthyNodes), minHealthy)
 		log.Info(msg)
 		r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 		return
 	}
 
+	// remediate unhealthy nodes
 	for _, node := range unhealthyNodes {
-		remediationCR, err := resourceManager.GenerateRemediationCR(&node, nhc, template)
-		if err != nil {
-			// don't try to remediate other nodes
-			log.Error(err, "failed to generate remediation CR")
-			return result, err
-		}
-		nextReconcile, err := r.remediate(&node, nhc, remediationCR, resourceManager)
+		nextReconcile, err := r.remediate(&node, nhc, resourceManager)
 		if err != nil {
 			// don't try to remediate other nodes
 			log.Error(err, "failed to start remediation")
@@ -326,7 +317,7 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 	return true
 }
 
-func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationCR *unstructured.Unstructured, rm resources.Manager) (*time.Duration, error) {
+func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
 
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
@@ -342,7 +333,21 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		}
 	}
 
-	// set control plane marker label
+	currentTemplate, timeout, err := rm.GetCurrentTemplateWithTimeout(node, nhc)
+	if err != nil {
+		if _, ok := err.(resources.NoTemplateLeftError); ok {
+			log.Error(err, "Remediation timed out, and no template left to try")
+			r.Recorder.Event(nhc, eventTypeWarning, eventReasonNoTemplateLeft, fmt.Sprintf("Remediation timed out, and no template left to try. %s", err.Error()))
+			// there is nothing we can do about this
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "failed to get current template")
+	}
+	remediationCR, err := rm.GenerateRemediationCR(node, nhc, currentTemplate)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to generate remediation CR")
+	}
+
 	if isControlPlaneNode {
 		labels := remediationCR.GetLabels()
 		labels[RemediationControlPlaneLabelKey] = ""
@@ -353,8 +358,29 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
 	} else if created {
 		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
+	} else {
+		// CR already exists, check for timeout
+		startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
+			return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
+		})
+		if startedRemediation != nil && startedRemediation.Started.Add(timeout.Duration).After(time.Now()) {
+			now := metav1.Now()
+			startedRemediation.TimedOut = &now
+
+			// add time out annotation to remediation CR
+			annotations := remediationCR.GetAnnotations()
+			annotations[remediationTimedOutAnnotationkey] = metav1.Now().Format(time.RFC3339)
+			remediationCR.SetAnnotations(annotations)
+			if rm.UpdateRemediationCR(remediationCR); err != nil {
+				return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
+			}
+
+			// try next remediation asap
+			return pointer.Duration(1 * time.Second), nil
+		}
 	}
 
+	// TODO adapt to escalating remediation
 	isAlert, nextReconcile := r.alertOldRemediationCR(remediationCR)
 	if isAlert {
 		metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)

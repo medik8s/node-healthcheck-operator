@@ -27,13 +27,15 @@ const (
 )
 
 type Manager interface {
-	GetTemplate(templateRef *corev1.ObjectReference) (*unstructured.Unstructured, error)
+	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *metav1.Duration, error)
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
+	GenerateAllRemediationCRs(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) []*unstructured.Unstructured
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
+	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 	GetOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error)
 	GetAllInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error)
@@ -55,6 +57,25 @@ func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshi
 		log:         log.WithName("resource manager"),
 		onOpenshift: onOpenshift,
 	}
+}
+
+func (m *manager) GenerateAllRemediationCRs(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) []*unstructured.Unstructured {
+	if nhc.Spec.RemediationTemplate != nil {
+		cr := m.GenerateRemediationCRBaseNamed(nhc.Spec.RemediationTemplate.GroupVersionKind(), nhc.Spec.RemediationTemplate.Namespace, node.GetName())
+		return []*unstructured.Unstructured{cr}
+	}
+
+	crs := make([]*unstructured.Unstructured, 0)
+	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
+		if unhealthyNode.Name == node.GetName() {
+			for _, rem := range unhealthyNode.Remediations {
+				ref := rem.Resource
+				cr := m.GenerateRemediationCRBaseNamed(ref.GroupVersionKind(), ref.Namespace, ref.Namespace)
+				crs = append(crs, cr)
+			}
+		}
+	}
+	return crs
 }
 
 func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
@@ -185,6 +206,10 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	return true, nil
 }
 
+func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) error {
+	return m.Update(m.ctx, remediationCR)
+}
+
 func (m *manager) GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error) {
 	var nodes corev1.NodeList
 	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
@@ -211,16 +236,29 @@ func (m *manager) GetOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHeal
 }
 
 func (m *manager) GetAllInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error) {
-	baseRemediationCR := m.GenerateRemediationCRBase(nhc.Spec.RemediationTemplate.GroupVersionKind())
-	crList := &unstructured.UnstructuredList{Object: baseRemediationCR.Object}
-	err := m.List(m.ctx, crList)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, errors.Wrapf(err,
-			"failed to get all remediation objects with kind %s and apiVersion %s",
-			baseRemediationCR.GroupVersionKind(),
-			baseRemediationCR.GetAPIVersion())
+	gvks := make([]schema.GroupVersionKind, 0)
+	if nhc.Spec.RemediationTemplate != nil {
+		gvks = append(gvks, nhc.Spec.RemediationTemplate.GroupVersionKind())
+	} else {
+		for _, escRem := range nhc.Spec.EscalatingRemediations {
+			gvks = append(gvks, escRem.RemediationTemplate.GroupVersionKind())
+		}
 	}
-	return crList.Items, nil
+	remediationCRs := make([]unstructured.Unstructured, 0)
+	for _, gvk := range gvks {
+		baseRemediationCR := m.GenerateRemediationCRBase(gvk)
+		crList := &unstructured.UnstructuredList{Object: baseRemediationCR.Object}
+		err := m.List(m.ctx, crList)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, errors.Wrapf(err,
+				"failed to get all remediation objects with kind %s and apiVersion %s",
+				baseRemediationCR.GroupVersionKind(),
+				baseRemediationCR.GetAPIVersion())
+		} else {
+			remediationCRs = append(remediationCRs, crList.Items...)
+		}
+	}
+	return remediationCRs, nil
 }
 
 func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
@@ -230,6 +268,20 @@ func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.
 		}
 	}
 	return false
+}
+
+// FindStatusRemediation return the first remediation in the NHC's status for the given node which matches the remediationFilter
+func FindStatusRemediation(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationFilter func(r *remediationv1alpha1.Remediation) bool) *remediationv1alpha1.Remediation {
+	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
+		if unhealthyNode.Name == node.GetName() {
+			for _, rem := range unhealthyNode.Remediations {
+				if remediationFilter(&rem) {
+					return &rem
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.OwnerReference, string, error) {

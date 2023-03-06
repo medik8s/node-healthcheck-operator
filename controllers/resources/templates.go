@@ -2,13 +2,16 @@ package resources
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
@@ -19,11 +22,48 @@ const (
 	machineAPINamespace           = "openshift-machine-api"
 )
 
-type brokenTemplate struct{ msg string }
+type brokenTemplateError struct{ msg string }
 
-func (bt brokenTemplate) Error() string { return bt.msg }
+func (bt brokenTemplateError) Error() string { return bt.msg }
 
-func (m *manager) GetTemplate(templateRef *v1.ObjectReference) (*unstructured.Unstructured, error) {
+type NoTemplateLeftError struct{ msg string }
+
+func (nt NoTemplateLeftError) Error() string { return nt.msg }
+
+// GetCurrentTemplateWithTimeout returns the current template to use. It might have been used for starting remediation already, but remediation didn't time out yet
+func (m *manager) GetCurrentTemplateWithTimeout(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *metav1.Duration, error) {
+	if nhc.Spec.RemediationTemplate != nil {
+		template, err := m.getTemplate(nhc.Spec.RemediationTemplate)
+		return template, nil, err
+	}
+
+	remediations := nhc.Spec.EscalatingRemediations
+	sort.Slice(remediations, func(i, j int) bool {
+		return remediations[i].Order < remediations[j].Order
+	})
+	for _, rem := range remediations {
+		// ensure this remediation wasn't used and timed out already
+		startedRemediation := FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
+			gvk := schema.GroupVersionKind{
+				Group:   rem.RemediationTemplate.GroupVersionKind().Group,
+				Version: rem.RemediationTemplate.GroupVersionKind().Version,
+				// remove Template suffix
+				Kind: rem.RemediationTemplate.GroupVersionKind().Kind[:len(rem.RemediationTemplate.GroupVersionKind().Kind)-len("Template")],
+			}
+			return r.Resource.GroupVersionKind() == gvk && r.TimedOut != nil
+		})
+		if startedRemediation == nil {
+			// not started, or ongoing, but not timed out
+			template, err := m.getTemplate(&rem.RemediationTemplate)
+			return template, &rem.Timeout, err
+		}
+	}
+
+	// no template left
+	return nil, nil, NoTemplateLeftError{msg: fmt.Sprintf("didn't find a template to use for NHC %s and node %s", nhc.Name, node.Name)}
+}
+
+func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Unstructured, error) {
 	template := new(unstructured.Unstructured)
 	template.SetGroupVersionKind(templateRef.GroupVersionKind())
 	template.SetName(templateRef.Name)
@@ -35,7 +75,7 @@ func (m *manager) GetTemplate(templateRef *v1.ObjectReference) (*unstructured.Un
 	// check if template is valid
 	_, found, err := unstructured.NestedMap(template.Object, "spec", "template")
 	if !found || err != nil {
-		return nil, brokenTemplate{fmt.Sprintf("invalid template %s/%s, didn't find spec.template.spec", template.GetNamespace(), template.GetName())}
+		return nil, brokenTemplateError{fmt.Sprintf("invalid template %s/%s, didn't find spec.template.spec", template.GetNamespace(), template.GetName())}
 	}
 	return template, nil
 }
@@ -43,7 +83,7 @@ func (m *manager) GetTemplate(templateRef *v1.ObjectReference) (*unstructured.Un
 // ValidateTemplates only returns an error when we don't know whether the template is valid or not, for triggering a requeue with backoff
 func (m *manager) ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason, message string, err error) {
 	if templateRef := nhc.Spec.RemediationTemplate; templateRef != nil {
-		template, templateError := m.GetTemplate(templateRef)
+		template, templateError := m.getTemplate(templateRef)
 		valid, reason, message, err = m.validateTemplate(template, templateError)
 		if !valid || err != nil {
 			return
@@ -51,7 +91,7 @@ func (m *manager) ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (v
 	}
 	for _, escRem := range nhc.Spec.EscalatingRemediations {
 		templateRef := escRem.RemediationTemplate
-		template, templateError := m.GetTemplate(&templateRef)
+		template, templateError := m.getTemplate(&templateRef)
 		valid, reason, message, err = m.validateTemplate(template, templateError)
 		if !valid || err != nil {
 			return
@@ -68,7 +108,7 @@ func (m *manager) validateTemplate(template *unstructured.Unstructured, template
 				remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
 				fmt.Sprintf("Remediation template not found: %q", templateError.Error()),
 				nil
-		} else if _, ok := templateError.(brokenTemplate); ok {
+		} else if _, ok := templateError.(brokenTemplateError); ok {
 			return false,
 				remediationv1alpha1.ConditionReasonDisabledTemplateInvalid,
 				fmt.Sprintf("Remediation template is invalid: %q", templateError.Error()),
