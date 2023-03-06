@@ -227,7 +227,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, nil
 	}
 
-	template, err := resourceManager.GetTemplate(nhc)
+	template, err := resourceManager.GetTemplate(nhc.Spec.RemediationTemplate)
 	if err != nil {
 		log.Error(err, "failed to get template")
 		return result, err

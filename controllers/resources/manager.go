@@ -27,7 +27,7 @@ const (
 )
 
 type Manager interface {
-	GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error)
+	GetTemplate(templateRef *corev1.ObjectReference) (*unstructured.Unstructured, error)
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured

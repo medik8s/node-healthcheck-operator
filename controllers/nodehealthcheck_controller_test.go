@@ -160,9 +160,12 @@ var _ = Describe("Node Health Check CR", func() {
 
 		setupObjects := func(unhealthy int, healthy int) {
 			objects = newNodes(unhealthy, healthy, false)
-			underTest = newNodeHealthCheck()
 			objects = append(objects, underTest)
 		}
+
+		BeforeEach(func() {
+			underTest = newNodeHealthCheck()
+		})
 
 		JustBeforeEach(func() {
 			createObjects(objects...)
@@ -177,7 +180,13 @@ var _ = Describe("Node Health Check CR", func() {
 			deleteObjects(objects...)
 
 			// delete all remediation CRs
-			if underTest.Spec.RemediationTemplate.Kind != "dummyTemplate" {
+			var remediationKind string
+			if underTest.Spec.RemediationTemplate != nil {
+				remediationKind = underTest.Spec.RemediationTemplate.Kind
+			} else {
+				remediationKind = underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind
+			}
+			if remediationKind != "dummyTemplate" {
 				cr := newRemediationCR("", underTest)
 				crList := &unstructured.UnstructuredList{Object: cr.Object}
 				Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
@@ -188,6 +197,91 @@ var _ = Describe("Node Health Check CR", func() {
 
 			// let thing settle a bit
 			time.Sleep(1 * time.Second)
+		})
+
+		testReconcile := func() {
+
+			When("Nodes are candidates for remediation but remediation template is broken", func() {
+				BeforeEach(func() {
+					setupObjects(1, 2)
+
+					if underTest.Spec.RemediationTemplate != nil {
+						underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
+					} else {
+						underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind = "dummyTemplate"
+					}
+				})
+
+				It("should set corresponding condition", func() {
+					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+					Expect(underTest.Status.Reason).To(
+						And(
+							ContainSubstring("failed to get"),
+							ContainSubstring("dummyTemplate"),
+						))
+					Expect(underTest.Status.Conditions).To(ContainElement(
+						And(
+							HaveField("Type", v1alpha1.ConditionTypeDisabled),
+							HaveField("Status", metav1.ConditionTrue),
+							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateNotFound),
+						)))
+				})
+			})
+
+			Context("Machine owners", func() {
+				When("Metal3RemediationTemplate is in wrong namespace", func() {
+
+					BeforeEach(func() {
+						setupObjects(1, 2)
+
+						// set metal3 template
+						if underTest.Spec.RemediationTemplate != nil {
+							underTest.Spec.RemediationTemplate.Kind = "Metal3RemediationTemplate"
+							underTest.Spec.RemediationTemplate.Name = "nok"
+							underTest.Spec.RemediationTemplate.Namespace = "default"
+						} else {
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind = "Metal3RemediationTemplate"
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Name = "nok"
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Namespace = "default"
+						}
+					})
+
+					It("should be disabled", func() {
+						Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+						Expect(underTest.Status.Reason).To(
+							ContainSubstring("Metal3RemediationTemplate must be in the openshift-machine-api namespace"),
+						)
+						Expect(underTest.Status.Conditions).To(ContainElement(
+							And(
+								HaveField("Type", v1alpha1.ConditionTypeDisabled),
+								HaveField("Status", metav1.ConditionTrue),
+								HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateInvalid),
+							)))
+					})
+				})
+			})
+
+		}
+
+		Context("with spec.remediationTemplate", func() {
+			testReconcile()
+		})
+
+		Context("with escalating remediation", func() {
+
+			BeforeEach(func() {
+				templateRef := underTest.Spec.RemediationTemplate
+				underTest.Spec.RemediationTemplate = nil
+				underTest.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
+					{
+						RemediationTemplate: *templateRef,
+						Order:               0,
+						Timeout:             metav1.Duration{Duration: time.Minute},
+					},
+				}
+			})
+
+			testReconcile()
 		})
 
 		When("few nodes are unhealthy and healthy nodes meet min healthy", func() {
@@ -391,28 +485,6 @@ var _ = Describe("Node Health Check CR", func() {
 
 		})
 
-		When("Nodes are candidates for remediation but remediation template is broken", func() {
-			BeforeEach(func() {
-				setupObjects(1, 2)
-				underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
-			})
-
-			It("should set corresponding condition", func() {
-				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
-				Expect(underTest.Status.Reason).To(
-					And(
-						ContainSubstring("failed to get"),
-						ContainSubstring("dummyTemplate"),
-					))
-				Expect(underTest.Status.Conditions).To(ContainElement(
-					And(
-						HaveField("Type", v1alpha1.ConditionTypeDisabled),
-						HaveField("Status", metav1.ConditionTrue),
-						HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateNotFound),
-					)))
-			})
-		})
-
 		Context("Machine owners", func() {
 			When("Metal3RemediationTemplate is in correct namespace", func() {
 
@@ -463,31 +535,8 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 			})
 
-			When("Metal3RemediationTemplate is in wrong namespace", func() {
-
-				BeforeEach(func() {
-					setupObjects(1, 2)
-
-					// set metal3 template
-					underTest.Spec.RemediationTemplate.Kind = "Metal3RemediationTemplate"
-					underTest.Spec.RemediationTemplate.Name = "nok"
-					underTest.Spec.RemediationTemplate.Namespace = "default"
-				})
-
-				It("should be disabled", func() {
-					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
-					Expect(underTest.Status.Reason).To(
-						ContainSubstring("Metal3RemediationTemplate must be in the openshift-machine-api namespace"),
-					)
-					Expect(underTest.Status.Conditions).To(ContainElement(
-						And(
-							HaveField("Type", v1alpha1.ConditionTypeDisabled),
-							HaveField("Status", metav1.ConditionTrue),
-							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateInvalid),
-						)))
-				})
-			})
 		})
+
 	})
 
 	// TODO move to new suite in utils package
@@ -572,15 +621,23 @@ func newRemediationCR(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructu
 }
 
 func newRemediationCRWithRole(nodeName string, nhc *v1alpha1.NodeHealthCheck, isControlPlaneNode bool) *unstructured.Unstructured {
+
+	var templateRef v1.ObjectReference
+	if nhc.Spec.RemediationTemplate != nil {
+		templateRef = *nhc.Spec.RemediationTemplate
+	} else {
+		templateRef = nhc.Spec.EscalatingRemediations[0].RemediationTemplate
+	}
+
 	cr := unstructured.Unstructured{}
 	cr.SetName(nodeName)
-	cr.SetNamespace(nhc.Spec.RemediationTemplate.Namespace)
-	kind := nhc.Spec.RemediationTemplate.GroupVersionKind().Kind
+	cr.SetNamespace(templateRef.Namespace)
+	kind := templateRef.GroupVersionKind().Kind
 	// remove trailing template
 	kind = kind[:len(kind)-len("template")]
 	cr.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   nhc.Spec.RemediationTemplate.GroupVersionKind().Group,
-		Version: nhc.Spec.RemediationTemplate.GroupVersionKind().Version,
+		Group:   templateRef.GroupVersionKind().Group,
+		Version: templateRef.GroupVersionKind().Version,
 		Kind:    kind,
 	})
 	cr.SetOwnerReferences([]metav1.OwnerReference{

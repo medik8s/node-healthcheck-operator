@@ -5,6 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,12 +23,11 @@ type brokenTemplate struct{ msg string }
 
 func (bt brokenTemplate) Error() string { return bt.msg }
 
-func (m *manager) GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, error) {
-	t := nhc.Spec.RemediationTemplate.DeepCopy()
+func (m *manager) GetTemplate(templateRef *v1.ObjectReference) (*unstructured.Unstructured, error) {
 	template := new(unstructured.Unstructured)
-	template.SetGroupVersionKind(t.GroupVersionKind())
-	template.SetName(t.Name)
-	template.SetNamespace(t.Namespace)
+	template.SetGroupVersionKind(templateRef.GroupVersionKind())
+	template.SetName(templateRef.Name)
+	template.SetNamespace(templateRef.Namespace)
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(template), template); err != nil {
 		return nil, errors.Wrapf(err, "failed to get external remediation template %s/%s", template.GetNamespace(), template.GetName())
 	}
@@ -42,8 +42,21 @@ func (m *manager) GetTemplate(nhc *remediationv1alpha1.NodeHealthCheck) (*unstru
 
 // ValidateTemplates only returns an error when we don't know whether the template is valid or not, for triggering a requeue with backoff
 func (m *manager) ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason, message string, err error) {
-	template, templateError := m.GetTemplate(nhc)
-	valid, reason, message, err = m.validateTemplate(template, templateError)
+	if templateRef := nhc.Spec.RemediationTemplate; templateRef != nil {
+		template, templateError := m.GetTemplate(templateRef)
+		valid, reason, message, err = m.validateTemplate(template, templateError)
+		if !valid || err != nil {
+			return
+		}
+	}
+	for _, escRem := range nhc.Spec.EscalatingRemediations {
+		templateRef := escRem.RemediationTemplate
+		template, templateError := m.GetTemplate(&templateRef)
+		valid, reason, message, err = m.validateTemplate(template, templateError)
+		if !valid || err != nil {
+			return
+		}
+	}
 	return
 }
 
