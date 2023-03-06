@@ -19,6 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
@@ -181,11 +183,13 @@ var _ = Describe("Node Health Check CR", func() {
 			deleteObjects(objects...)
 
 			// delete all remediation CRs
-			cr := newRemediationCR("")
-			crList := &unstructured.UnstructuredList{Object: cr.Object}
-			Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
-			for _, item := range crList.Items {
-				Expect(k8sClient.Delete(context.Background(), &item)).To(Succeed())
+			if underTest.Spec.RemediationTemplate.Kind != "dummyTemplate" {
+				cr := newRemediationCR("", underTest)
+				crList := &unstructured.UnstructuredList{Object: cr.Object}
+				Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
+				for _, item := range crList.Items {
+					Expect(k8sClient.Delete(context.Background(), &item)).To(Succeed())
+				}
 			}
 
 			// let thing settle a bit
@@ -198,7 +202,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("create a remediation CR for each unhealthy node and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cr.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
@@ -208,6 +212,7 @@ var _ = Describe("Node Health Check CR", func() {
 							// Kind and API version aren't set on underTest, envtest issue...
 							// Controller is empty for HaveField because false is the zero value?
 							HaveField("Name", underTest.Name),
+							HaveField("UID", underTest.UID),
 						),
 					))
 				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
@@ -234,7 +239,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation - CR is not created, status updated correctly", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -250,8 +255,8 @@ var _ = Describe("Node Health Check CR", func() {
 		When("few nodes become healthy", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
-				remediationCR := newRemediationCR("healthy-worker-node-2")
-				remediationCROther := newRemediationCR("healthy-worker-node-1")
+				remediationCR := newRemediationCR("healthy-worker-node-2", underTest)
+				remediationCROther := newRemediationCR("healthy-worker-node-1", underTest)
 				refs := remediationCROther.GetOwnerReferences()
 				refs[0].Name = "other"
 				remediationCROther.SetOwnerReferences(refs)
@@ -259,16 +264,16 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("deletes an existing remediation CR and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(err).NotTo(HaveOccurred())
 
-				cr = newRemediationCR("healthy-worker-node-2")
+				cr = newRemediationCR("healthy-worker-node-2", underTest)
 				err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
 				// owned by other NHC, should not be deleted
-				cr = newRemediationCR("healthy-worker-node-1")
+				cr = newRemediationCR("healthy-worker-node-1", underTest)
 				err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -302,7 +307,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
 				time.Sleep(2 * time.Second)
 
-				cr := newRemediationCR("unhealthy-worker-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
@@ -319,7 +324,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("creates a one remediation CR for control plane node and updates status", func() {
-					cr := newRemediationCR("")
+					cr := newRemediationCR("", underTest)
 					crList := &unstructured.UnstructuredList{Object: cr.Object}
 					Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
 
@@ -344,7 +349,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -368,7 +373,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("doesn't not remediate but requeues reconciliation and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -395,7 +400,7 @@ var _ = Describe("Node Health Check CR", func() {
 		When("Nodes are candidates for remediation but remediation template is broken", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2)
-				underTest.Spec.RemediationTemplate.Kind = "dummy"
+				underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
 			})
 
 			It("should set corresponding condition", func() {
@@ -411,6 +416,82 @@ var _ = Describe("Node Health Check CR", func() {
 						HaveField("Status", metav1.ConditionTrue),
 						HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateNotFound),
 					)))
+			})
+		})
+
+		Context("Machine owners", func() {
+			When("Metal3RemediationTemplate is in correct namespace", func() {
+
+				var machine *machinev1beta1.Machine
+
+				BeforeEach(func() {
+					setupObjects(1, 2)
+
+					// create machine
+					machine = &machinev1beta1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-machine",
+							Namespace: MachineNamespace,
+						},
+					}
+					objects = append(objects, machine)
+
+					// set machine annotation to unhealthy node
+					for _, o := range objects {
+						o := o
+						if o.GetName() == "unhealthy-worker-node-1" {
+							ann := make(map[string]string)
+							ann["machine.openshift.io/machine"] = fmt.Sprintf("%s/%s", machine.Namespace, machine.Name)
+							o.SetAnnotations(ann)
+						}
+					}
+
+					// set metal3 template
+					underTest.Spec.RemediationTemplate.Kind = "Metal3RemediationTemplate"
+					underTest.Spec.RemediationTemplate.Name = "ok"
+					underTest.Spec.RemediationTemplate.Namespace = MachineNamespace
+
+				})
+
+				It("should set owner ref to the machine", func() {
+					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					Expect(cr.GetOwnerReferences()).To(
+						ContainElement(
+							And(
+								// Kind and API version aren't set on underTest, envtest issue...
+								// Controller is empty for HaveField because false is the zero value?
+								HaveField("Name", machine.Name),
+								HaveField("UID", machine.UID),
+							),
+						),
+					)
+				})
+			})
+
+			When("Metal3RemediationTemplate is in wrong namespace", func() {
+
+				BeforeEach(func() {
+					setupObjects(1, 2)
+
+					// set metal3 template
+					underTest.Spec.RemediationTemplate.Kind = "Metal3RemediationTemplate"
+					underTest.Spec.RemediationTemplate.Name = "nok"
+					underTest.Spec.RemediationTemplate.Namespace = "default"
+				})
+
+				It("should be disabled", func() {
+					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+					Expect(underTest.Status.Reason).To(
+						ContainSubstring("Metal3RemediationTemplate must be in the openshift-machine-api namespace"),
+					)
+					Expect(underTest.Status.Conditions).To(ContainElement(
+						And(
+							HaveField("Type", v1alpha1.ConditionTypeDisabled),
+							HaveField("Status", metav1.ConditionTrue),
+							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateWrongNamespace),
+						)))
+				})
 			})
 		})
 	})
@@ -492,25 +573,28 @@ var _ = Describe("Node Health Check CR", func() {
 	})
 })
 
-func newRemediationCR(nodeName string) *unstructured.Unstructured {
-	return newRemediationCRWithRole(nodeName, false)
+func newRemediationCR(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
+	return newRemediationCRWithRole(nodeName, nhc, false)
 }
 
-func newRemediationCRWithRole(nodeName string, isControlPlaneNode bool) *unstructured.Unstructured {
+func newRemediationCRWithRole(nodeName string, nhc *v1alpha1.NodeHealthCheck, isControlPlaneNode bool) *unstructured.Unstructured {
 	cr := unstructured.Unstructured{}
 	cr.SetName(nodeName)
-	cr.SetNamespace("default")
+	cr.SetNamespace(nhc.Spec.RemediationTemplate.Namespace)
+	kind := nhc.Spec.RemediationTemplate.GroupVersionKind().Kind
+	// remove trailing template
+	kind = kind[:len(kind)-len("template")]
 	cr.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   testRemediationCRD.Spec.Group,
-		Version: testRemediationCRD.Spec.Versions[0].Name,
-		Kind:    testRemediationCRD.Spec.Names.Kind,
+		Group:   nhc.Spec.RemediationTemplate.GroupVersionKind().Group,
+		Version: nhc.Spec.RemediationTemplate.GroupVersionKind().Version,
+		Kind:    kind,
 	})
 	cr.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			APIVersion: "remediation.medik8s.io/v1alpha1",
-			Kind:       "NodeHealthCheck",
-			Name:       "test",
-			UID:        "1234",
+			APIVersion: nhc.APIVersion,
+			Kind:       nhc.Kind,
+			Name:       nhc.Name,
+			UID:        nhc.UID,
 		},
 	})
 	if isControlPlaneNode {
