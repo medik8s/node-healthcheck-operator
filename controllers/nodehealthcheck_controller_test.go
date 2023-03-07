@@ -261,6 +261,124 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 			})
 
+			When("few nodes are unhealthy and healthy nodes meet min healthy", func() {
+				BeforeEach(func() {
+					setupObjects(1, 2)
+				})
+
+				It("create a remediation CR for each unhealthy node and updates status", func() {
+					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(cr.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
+					Expect(cr.GetOwnerReferences()).
+						To(ContainElement(
+							And(
+								// Kind and API version aren't set on underTest, envtest issue...
+								// Controller is empty for HaveField because false is the zero value?
+								HaveField("Name", underTest.Name),
+								HaveField("UID", underTest.UID),
+							),
+						))
+					Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
+
+					Expect(underTest.Status.HealthyNodes).To(Equal(2))
+					Expect(underTest.Status.ObservedNodes).To(Equal(3))
+					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+					Expect(underTest.Status.Reason).ToNot(BeEmpty())
+					Expect(underTest.Status.Conditions).To(ContainElement(
+						And(
+							HaveField("Type", v1alpha1.ConditionTypeDisabled),
+							HaveField("Status", metav1.ConditionFalse),
+							HaveField("Reason", v1alpha1.ConditionReasonEnabled),
+						)))
+
+				})
+
+			})
+
+			When("few nodes are unhealthy and healthy nodes above min healthy", func() {
+				BeforeEach(func() {
+					setupObjects(4, 3)
+				})
+
+				It("skips remediation - CR is not created, status updated correctly", func() {
+					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(errors.IsNotFound(err)).To(BeTrue())
+
+					Expect(underTest.Status.HealthyNodes).To(Equal(3))
+					Expect(underTest.Status.ObservedNodes).To(Equal(7))
+					Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
+					Expect(underTest.Status.Reason).ToNot(BeEmpty())
+				})
+
+			})
+
+			When("few nodes become healthy", func() {
+				BeforeEach(func() {
+					setupObjects(1, 2)
+					remediationCR := newRemediationCR("healthy-worker-node-2", underTest)
+					remediationCROther := newRemediationCR("healthy-worker-node-1", underTest)
+					refs := remediationCROther.GetOwnerReferences()
+					refs[0].Name = "other"
+					remediationCROther.SetOwnerReferences(refs)
+					objects = append(objects, remediationCR, remediationCROther)
+				})
+
+				It("deletes an existing remediation CR and updates status", func() {
+					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(err).NotTo(HaveOccurred())
+
+					cr = newRemediationCR("healthy-worker-node-2", underTest)
+					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(errors.IsNotFound(err)).To(BeTrue())
+
+					// owned by other NHC, should not be deleted
+					cr = newRemediationCR("healthy-worker-node-1", underTest)
+					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(underTest.Status.HealthyNodes).To(Equal(2))
+					Expect(underTest.Status.ObservedNodes).To(Equal(3))
+					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+					Expect(underTest.Status.Reason).ToNot(BeEmpty())
+				})
+			})
+
+			When("an old remediation cr exist", func() {
+				BeforeEach(func() {
+					setupObjects(1, 2)
+				})
+
+				AfterEach(func() {
+					fakeTime = nil
+				})
+
+				It("an alert flag is set on remediation cr", func() {
+					By("faking time and triggering another reconcile")
+					afterTimeout := time.Now().Add(remediationCRAlertTimeout).Add(2 * time.Minute)
+					fakeTime = &afterTimeout
+					labels := underTest.Labels
+					if labels == nil {
+						labels = make(map[string]string)
+					}
+					labels["trigger"] = "now"
+					underTest.Labels = labels
+					Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
+					time.Sleep(2 * time.Second)
+
+					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
+				})
+			})
+
 		}
 
 		Context("with spec.remediationTemplate", func() {
@@ -282,124 +400,6 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			testReconcile()
-		})
-
-		When("few nodes are unhealthy and healthy nodes meet min healthy", func() {
-			BeforeEach(func() {
-				setupObjects(1, 2)
-			})
-
-			It("create a remediation CR for each unhealthy node and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
-				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cr.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
-				Expect(cr.GetOwnerReferences()).
-					To(ContainElement(
-						And(
-							// Kind and API version aren't set on underTest, envtest issue...
-							// Controller is empty for HaveField because false is the zero value?
-							HaveField("Name", underTest.Name),
-							HaveField("UID", underTest.UID),
-						),
-					))
-				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
-
-				Expect(underTest.Status.HealthyNodes).To(Equal(2))
-				Expect(underTest.Status.ObservedNodes).To(Equal(3))
-				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
-				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
-				Expect(underTest.Status.Reason).ToNot(BeEmpty())
-				Expect(underTest.Status.Conditions).To(ContainElement(
-					And(
-						HaveField("Type", v1alpha1.ConditionTypeDisabled),
-						HaveField("Status", metav1.ConditionFalse),
-						HaveField("Reason", v1alpha1.ConditionReasonEnabled),
-					)))
-
-			})
-
-		})
-
-		When("few nodes are unhealthy and healthy nodes above min healthy", func() {
-			BeforeEach(func() {
-				setupObjects(4, 3)
-			})
-
-			It("skips remediation - CR is not created, status updated correctly", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
-				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-				Expect(errors.IsNotFound(err)).To(BeTrue())
-
-				Expect(underTest.Status.HealthyNodes).To(Equal(3))
-				Expect(underTest.Status.ObservedNodes).To(Equal(7))
-				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
-				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
-				Expect(underTest.Status.Reason).ToNot(BeEmpty())
-			})
-
-		})
-
-		When("few nodes become healthy", func() {
-			BeforeEach(func() {
-				setupObjects(1, 2)
-				remediationCR := newRemediationCR("healthy-worker-node-2", underTest)
-				remediationCROther := newRemediationCR("healthy-worker-node-1", underTest)
-				refs := remediationCROther.GetOwnerReferences()
-				refs[0].Name = "other"
-				remediationCROther.SetOwnerReferences(refs)
-				objects = append(objects, remediationCR, remediationCROther)
-			})
-
-			It("deletes an existing remediation CR and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
-				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-				Expect(err).NotTo(HaveOccurred())
-
-				cr = newRemediationCR("healthy-worker-node-2", underTest)
-				err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-				Expect(errors.IsNotFound(err)).To(BeTrue())
-
-				// owned by other NHC, should not be deleted
-				cr = newRemediationCR("healthy-worker-node-1", underTest)
-				err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-				Expect(err).NotTo(HaveOccurred())
-
-				Expect(underTest.Status.HealthyNodes).To(Equal(2))
-				Expect(underTest.Status.ObservedNodes).To(Equal(3))
-				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
-				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
-				Expect(underTest.Status.Reason).ToNot(BeEmpty())
-			})
-		})
-
-		When("an old remediation cr exist", func() {
-			BeforeEach(func() {
-				setupObjects(1, 2)
-			})
-
-			AfterEach(func() {
-				fakeTime = nil
-			})
-
-			It("an alert flag is set on remediation cr", func() {
-				By("faking time and triggering another reconcile")
-				afterTimeout := time.Now().Add(remediationCRAlertTimeout).Add(2 * time.Minute)
-				fakeTime = &afterTimeout
-				labels := underTest.Labels
-				if labels == nil {
-					labels = make(map[string]string)
-				}
-				labels["trigger"] = "now"
-				underTest.Labels = labels
-				Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
-				time.Sleep(2 * time.Second)
-
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
-				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
-			})
 		})
 
 		Context("control plane nodes", func() {

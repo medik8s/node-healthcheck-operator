@@ -230,9 +230,15 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// delete remediation CRs for healthy nodes
 	for _, node := range healthyNodes {
-		remediationCRs := resourceManager.GenerateAllRemediationCRs(&node, nhc)
+		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+			return cr.GetName() == node.GetName()
+		})
+		if err != nil {
+			log.Error(err, "failed to get remediation CRs for healthy node", "node", node.Name)
+			return result, err
+		}
 		for _, remediationCR := range remediationCRs {
-			if deleted, err := resourceManager.DeleteRemediationCR(remediationCR, nhc); err != nil {
+			if deleted, err := resourceManager.DeleteRemediationCR(&remediationCR, nhc); err != nil {
 				log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)
 				return result, err
 			} else if deleted {
@@ -402,20 +408,16 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 	if !utils.IsControlPlane(node) {
 		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
 	}
+
 	// check all remediation CRs. If there already is one for another control plane node, skip remediation
-	remediations, err := rm.ListRemediationCRs(nhc)
+	controlPlaneRemediationCRs, err := rm.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+		_, isControlPlane := cr.GetLabels()[RemediationControlPlaneLabelKey]
+		return isControlPlane && cr.GetName() != node.GetName()
+	})
 	if err != nil {
 		return false, err
 	}
-	for _, remediation := range remediations {
-		labels := remediation.GetLabels()
-		if _, isControlPlane := labels[RemediationControlPlaneLabelKey]; isControlPlane {
-			if remediation.GetName() != node.GetName() {
-				return false, nil
-			}
-		}
-	}
-	return true, nil
+	return len(controlPlaneRemediationCRs) == 0, nil
 }
 
 func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {

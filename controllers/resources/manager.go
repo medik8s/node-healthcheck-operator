@@ -29,14 +29,13 @@ const (
 type Manager interface {
 	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *metav1.Duration, error)
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
-	GenerateAllRemediationCRs(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) []*unstructured.Unstructured
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
-	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error)
+	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 }
 
@@ -56,25 +55,6 @@ func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshi
 		log:         log.WithName("resource manager"),
 		onOpenshift: onOpenshift,
 	}
-}
-
-func (m *manager) GenerateAllRemediationCRs(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) []*unstructured.Unstructured {
-	if nhc.Spec.RemediationTemplate != nil {
-		cr := m.GenerateRemediationCRBaseNamed(nhc.Spec.RemediationTemplate.GroupVersionKind(), nhc.Spec.RemediationTemplate.Namespace, node.GetName())
-		return []*unstructured.Unstructured{cr}
-	}
-
-	crs := make([]*unstructured.Unstructured, 0)
-	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
-		if unhealthyNode.Name == node.GetName() {
-			for _, rem := range unhealthyNode.Remediations {
-				ref := rem.Resource
-				cr := m.GenerateRemediationCRBaseNamed(ref.GroupVersionKind(), ref.Namespace, ref.Namespace)
-				crs = append(crs, cr)
-			}
-		}
-	}
-	return crs
 }
 
 func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
@@ -209,15 +189,20 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 	return m.Update(m.ctx, remediationCR)
 }
 
-func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error) {
+func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
+	// gather all GVKs
 	gvks := make([]schema.GroupVersionKind, 0)
 	if nhc.Spec.RemediationTemplate != nil {
+		// the classic one
 		gvks = append(gvks, nhc.Spec.RemediationTemplate.GroupVersionKind())
 	} else {
+		// the escalating ones
 		for _, escRem := range nhc.Spec.EscalatingRemediations {
 			gvks = append(gvks, escRem.RemediationTemplate.GroupVersionKind())
 		}
 	}
+
+	// get CRs
 	remediationCRs := make([]unstructured.Unstructured, 0)
 	for _, gvk := range gvks {
 		baseRemediationCR := m.GenerateRemediationCRBase(gvk)
@@ -232,7 +217,15 @@ func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck) (
 			remediationCRs = append(remediationCRs, crList.Items...)
 		}
 	}
-	return remediationCRs, nil
+
+	// apply filter
+	matches := make([]unstructured.Unstructured, 0)
+	for _, cr := range remediationCRs {
+		if remediationCRFilter(cr) {
+			matches = append(matches, cr)
+		}
+	}
+	return matches, nil
 }
 
 func (m *manager) GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error) {
