@@ -274,6 +274,20 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if nextReconcile != nil {
 			updateResultNextReconcile(&result, *nextReconcile)
 		}
+
+		// check if we need to alert about a very old remediation CR
+		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+			return cr.GetName() == node.GetName()
+		})
+		for _, remediationCR := range remediationCRs {
+			isAlert, nextReconcile := r.alertOldRemediationCR(&remediationCR)
+			if isAlert {
+				metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
+			}
+			if nextReconcile != nil {
+				updateResultNextReconcile(&result, *nextReconcile)
+			}
+		}
 	}
 
 	return result, nil
@@ -364,44 +378,67 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
 	}
-	if created {
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
-	}
 
 	// always update status, in case patching it failed during last reconcile
 	resources.UpdateStatusRemediationStarted(node, nhc, remediationCR)
 
-	// CR already exists, check for timeout
-	if !created {
-		startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
-			return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
-		})
-		if startedRemediation != nil && timeout != nil && startedRemediation.Started.Add(timeout.Duration).After(time.Now()) {
-			now := metav1.Now()
-			startedRemediation.TimedOut = &now
-
-			// add time out annotation to remediation CR
-			annotations := remediationCR.GetAnnotations()
-			if annotations == nil {
-				annotations = make(map[string]string, 1)
-			}
-			annotations[remediationTimedOutAnnotationkey] = metav1.Now().Format(time.RFC3339)
-			remediationCR.SetAnnotations(annotations)
-			if rm.UpdateRemediationCR(remediationCR); err != nil {
-				return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
-			}
-
-			// try next remediation asap
-			return pointer.Duration(1 * time.Second), nil
+	if created {
+		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
+		var requeueIn *time.Duration
+		if timeout != nil {
+			// come back when timeout expires
+			requeueIn = pointer.Duration(timeout.Duration + 1*time.Second)
 		}
+		return requeueIn, nil
 	}
 
-	// TODO adapt to escalating remediation
-	isAlert, nextReconcile := r.alertOldRemediationCR(remediationCR)
-	if isAlert {
-		metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
+	// CR already exists, check for timeout in case we need to
+	if timeout == nil {
+		// no timeout set for classic remediation
+		// nothing to do anymore here
+		return nil, nil
 	}
-	return nextReconcile, nil
+
+	startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
+		return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
+	})
+
+	if startedRemediation == nil {
+		// should not have happened, seems last status update failed
+		// retry asap
+		return pointer.Duration(1 * time.Second), nil
+	}
+
+	if startedRemediation.TimedOut != nil {
+		// timeout handled already: should not have happened, but ok. Just reconcile again asap for trying the next template
+		return pointer.Duration(1 * time.Second), nil
+	}
+
+	now := metav1.Now()
+	timeoutAt := startedRemediation.Started.Add(timeout.Duration)
+	if !now.After(timeoutAt) {
+		// not timed out yet, come back when we do so
+		return pointer.Duration(timeoutAt.Sub(now.Time)), nil
+	}
+
+	// handle timeout
+
+	// add timeout annotation to remediation CR
+	annotations := remediationCR.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 1)
+	}
+	annotations[remediationTimedOutAnnotationkey] = metav1.Now().Format(time.RFC3339)
+	remediationCR.SetAnnotations(annotations)
+	if rm.UpdateRemediationCR(remediationCR); err != nil {
+		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
+	}
+
+	// update status (important to do this after CR update, else we won't retry that update in case of error)
+	startedRemediation.TimedOut = &now
+
+	// try next remediation asap
+	return pointer.Duration(1 * time.Second), nil
 }
 
 func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (bool, error) {
