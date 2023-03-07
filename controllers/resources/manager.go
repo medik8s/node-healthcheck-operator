@@ -36,9 +36,8 @@ type Manager interface {
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
+	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
-	GetOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error)
-	GetAllInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error)
 }
 
 type manager struct {
@@ -158,10 +157,10 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error) {
 	// check if CR already exists
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
-		if !IsOwner(remediationCR, nhc) {
-			m.log.Info("external remediation CR already exists, but it's not owned by us", "owners", remediationCR.GetOwnerReferences())
+		if !isOwner(remediationCR, nhc) {
+			m.log.Info("external remediation CR already exists, but it's not owned by us", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace(), "owners", remediationCR.GetOwnerReferences())
 		} else {
-			m.log.Info("external remediation CR already exists")
+			m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
 		}
 		return false, nil
 	} else if !apierrors.IsNotFound(err) {
@@ -170,9 +169,9 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 	}
 
 	// create CR
-	m.log.Info("Creating an remediation CR",
-		"CR Name", remediationCR.GetName(),
-		"CR KVK", remediationCR.GroupVersionKind(),
+	m.log.Info("Creating a remediation CR",
+		"CR name", remediationCR.GetName(),
+		"CR kind", remediationCR.GetKind(),
 		"namespace", remediationCR.GetNamespace())
 
 	if err := m.Create(m.ctx, remediationCR); err != nil {
@@ -195,7 +194,7 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	}
 
 	// also check if this is our CR
-	if !IsOwner(remediationCR, nhc) {
+	if !isOwner(remediationCR, nhc) {
 		return false, nil
 	}
 
@@ -210,32 +209,7 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 	return m.Update(m.ctx, remediationCR)
 }
 
-func (m *manager) GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error) {
-	var nodes corev1.NodeList
-	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
-	if err != nil {
-		err = errors.Wrapf(err, "failed converting a selector from NHC selector")
-		return []corev1.Node{}, err
-	}
-	err = m.List(m.ctx, &nodes, &client.ListOptions{LabelSelector: selector})
-	return nodes.Items, err
-}
-
-func (m *manager) GetOwnedInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) (map[string]metav1.Time, error) {
-	all, err := m.GetAllInflightRemediations(nhc)
-	if err != nil {
-		return nil, err
-	}
-	owned := make(map[string]metav1.Time)
-	for _, remediationCR := range all {
-		if IsOwner(&remediationCR, nhc) {
-			owned[remediationCR.GetName()] = remediationCR.GetCreationTimestamp()
-		}
-	}
-	return owned, nil
-}
-
-func (m *manager) GetAllInflightRemediations(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error) {
+func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck) ([]unstructured.Unstructured, error) {
 	gvks := make([]schema.GroupVersionKind, 0)
 	if nhc.Spec.RemediationTemplate != nil {
 		gvks = append(gvks, nhc.Spec.RemediationTemplate.GroupVersionKind())
@@ -261,27 +235,24 @@ func (m *manager) GetAllInflightRemediations(nhc *remediationv1alpha1.NodeHealth
 	return remediationCRs, nil
 }
 
-func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
+func (m *manager) GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error) {
+	var nodes corev1.NodeList
+	selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+	if err != nil {
+		err = errors.Wrapf(err, "failed converting a selector from NHC selector")
+		return []corev1.Node{}, err
+	}
+	err = m.List(m.ctx, &nodes, &client.ListOptions{LabelSelector: selector})
+	return nodes.Items, err
+}
+
+func isOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
 	for _, owner := range remediationCR.GetOwnerReferences() {
 		if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
 			return true
 		}
 	}
 	return false
-}
-
-// FindStatusRemediation return the first remediation in the NHC's status for the given node which matches the remediationFilter
-func FindStatusRemediation(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationFilter func(r *remediationv1alpha1.Remediation) bool) *remediationv1alpha1.Remediation {
-	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
-		if unhealthyNode.Name == node.GetName() {
-			for _, rem := range unhealthyNode.Remediations {
-				if remediationFilter(&rem) {
-					return &rem
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.OwnerReference, string, error) {

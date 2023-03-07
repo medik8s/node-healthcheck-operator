@@ -131,11 +131,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift)
 
 	// always check if we need to patch status before we exit Reconcile
-	// skip inFlightRemediations until we know we have valid templates, else it will fail status update
-	patchInFlightRemediations := false
 	nhcOrig := nhc.DeepCopy()
 	defer func() {
-		patchErr := r.patchStatus(nhc, nhcOrig, patchInFlightRemediations, resourceManager)
+		patchErr := r.patchStatus(nhc, nhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
 			// check if we have an error from the rest of the code already
@@ -230,9 +228,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, nil
 	}
 
-	// from here on these can change
-	patchInFlightRemediations = true
-
 	// delete remediation CRs for healthy nodes
 	for _, node := range healthyNodes {
 		remediationCRs := resourceManager.GenerateAllRemediationCRs(&node, nhc)
@@ -244,6 +239,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				log.Info("deleted remediation CR", "name", remediationCR.GetName(), "NHC name", nhc.Name)
 				r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
 			}
+
+			// always update status, in case patching it failed during last reconcile
+			resources.UpdateStatusNodeHealthy(&node, nhc)
 		}
 	}
 
@@ -333,6 +331,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		}
 	}
 
+	// generate remediation CR
 	currentTemplate, timeout, err := rm.GetCurrentTemplateWithTimeout(node, nhc)
 	if err != nil {
 		if _, ok := err.(resources.NoTemplateLeftError); ok {
@@ -354,21 +353,32 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		remediationCR.SetLabels(labels)
 	}
 
-	if created, err := rm.CreateRemediationCR(remediationCR, nhc); err != nil {
+	// create remediation CR
+	created, err := rm.CreateRemediationCR(remediationCR, nhc)
+	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
-	} else if created {
+	}
+	if created {
 		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
-	} else {
-		// CR already exists, check for timeout
+	}
+
+	// always update status, in case patching it failed during last reconcile
+	resources.UpdateStatusRemediationStarted(node, nhc, remediationCR)
+
+	// CR already exists, check for timeout
+	if !created {
 		startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
 			return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
 		})
-		if startedRemediation != nil && startedRemediation.Started.Add(timeout.Duration).After(time.Now()) {
+		if startedRemediation != nil && timeout != nil && startedRemediation.Started.Add(timeout.Duration).After(time.Now()) {
 			now := metav1.Now()
 			startedRemediation.TimedOut = &now
 
 			// add time out annotation to remediation CR
 			annotations := remediationCR.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string, 1)
+			}
 			annotations[remediationTimedOutAnnotationkey] = metav1.Now().Format(time.RFC3339)
 			remediationCR.SetAnnotations(annotations)
 			if rm.UpdateRemediationCR(remediationCR); err != nil {
@@ -393,7 +403,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
 	}
 	// check all remediation CRs. If there already is one for another control plane node, skip remediation
-	remediations, err := rm.GetAllInflightRemediations(nhc)
+	remediations, err := rm.ListRemediationCRs(nhc)
 	if err != nil {
 		return false, err
 	}
@@ -408,19 +418,9 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 	return true, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck, patchInFlightRemediations bool, rm resources.Manager) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
 
 	log := utils.GetLogWithNHC(r.Log, nhc)
-
-	// update inFlightRemediations if needed
-	if patchInFlightRemediations {
-		inFlightRemediations, err := rm.GetOwnedInflightRemediations(nhc)
-		if err != nil {
-			err = errors.Wrapf(err, "failed to get inflight remediations for status update")
-			return err
-		}
-		nhc.Status.InFlightRemediations = inFlightRemediations
-	}
 
 	// calculate phase and reason
 	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
