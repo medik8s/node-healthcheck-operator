@@ -285,6 +285,15 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(underTest.Status.HealthyNodes).To(Equal(2))
 					Expect(underTest.Status.ObservedNodes).To(Equal(3))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(cr.GetName()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.Name).To(Equal(cr.GetName()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.Namespace).To(Equal(cr.GetNamespace()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.UID).To(Equal(cr.GetUID()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Started).ToNot(BeNil())
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).To(BeNil())
 					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 					Expect(underTest.Status.Reason).ToNot(BeEmpty())
 					Expect(underTest.Status.Conditions).To(ContainElement(
@@ -311,6 +320,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(underTest.Status.HealthyNodes).To(Equal(3))
 					Expect(underTest.Status.ObservedNodes).To(Equal(7))
 					Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+					Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 					Expect(underTest.Status.Reason).ToNot(BeEmpty())
 				})
@@ -329,12 +339,8 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("deletes an existing remediation CR and updates status", func() {
-					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr := newRemediationCR("healthy-worker-node-2", underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-					Expect(err).NotTo(HaveOccurred())
-
-					cr = newRemediationCR("healthy-worker-node-2", underTest)
-					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(errors.IsNotFound(err)).To(BeTrue())
 
 					// owned by other NHC, should not be deleted
@@ -342,15 +348,28 @@ var _ = Describe("Node Health Check CR", func() {
 					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 
+					cr = newRemediationCR("unhealthy-worker-node-1", underTest)
+					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(err).NotTo(HaveOccurred())
+
 					Expect(underTest.Status.HealthyNodes).To(Equal(2))
 					Expect(underTest.Status.ObservedNodes).To(Equal(3))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(cr.GetName()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.Name).To(Equal(cr.GetName()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.Namespace).To(Equal(cr.GetNamespace()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.UID).To(Equal(cr.GetUID()))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Started).ToNot(BeNil())
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).To(BeNil())
 					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 					Expect(underTest.Status.Reason).ToNot(BeEmpty())
 				})
 			})
 
-			When("an old remediation cr exist", func() {
+			When("an old remediation cr exists", func() {
 				BeforeEach(func() {
 					setupObjects(1, 2)
 				})
@@ -426,6 +445,29 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(underTest.Status.HealthyNodes).To(Equal(6))
 					Expect(underTest.Status.ObservedNodes).To(Equal(9))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(2))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(2))
+					Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
+						And(
+							HaveField("Name", "unhealthy-worker-node-1"),
+							HaveField("Remediations", ContainElement(
+								And(
+									HaveField("Resource.Name", "unhealthy-worker-node-1"),
+									HaveField("Started", Not(BeNil())),
+									HaveField("TimedOut", BeNil()),
+								),
+							)),
+						),
+						And(
+							HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
+							HaveField("Remediations", ContainElement(
+								And(
+									HaveField("Resource.Name", ContainSubstring("unhealthy-control-plane-node")),
+									HaveField("Started", Not(BeNil())),
+									HaveField("TimedOut", BeNil()),
+								),
+							)),
+						),
+					))
 				})
 			})
 		})
@@ -444,6 +486,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
 				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+				Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhasePaused))
 				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 			})
@@ -467,7 +510,8 @@ var _ = Describe("Node Health Check CR", func() {
 
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
-				Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
+				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+				Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 				Expect(underTest.Status.Reason).ToNot(BeEmpty())
 
@@ -481,6 +525,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(underTest.Status.ObservedNodes).To(Equal(3))
 				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
 			})
 
 		})

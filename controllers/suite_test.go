@@ -73,6 +73,8 @@ var fakeTime *time.Time
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
+	// debugging time values needs much place...
+	//format.MaxLength = 10000
 	RunSpecs(t, "Controller Suite")
 }
 
