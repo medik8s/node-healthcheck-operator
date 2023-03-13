@@ -404,7 +404,7 @@ var _ = Describe("Node Health Check CR", func() {
 			testReconcile()
 		})
 
-		Context("with escalating remediation", func() {
+		Context("with a single escalating remediation", func() {
 
 			BeforeEach(func() {
 				templateRef := underTest.Spec.RemediationTemplate
@@ -419,6 +419,115 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			testReconcile()
+		})
+
+		Context("with multiple escalating remediations", func() {
+
+			BeforeEach(func() {
+				templateRef1 := underTest.Spec.RemediationTemplate
+				underTest.Spec.RemediationTemplate = nil
+
+				templateRef2 := templateRef1.DeepCopy()
+				templateRef2.Kind = "Metal3RemediationTemplate"
+				templateRef2.Name = "ok"
+				templateRef2.Namespace = MachineNamespace
+
+				underTest.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
+					{
+						RemediationTemplate: *templateRef1,
+						Order:               0,
+						Timeout:             metav1.Duration{Duration: 5 * time.Second},
+					},
+					{
+						RemediationTemplate: *templateRef2,
+						Order:               5,
+						Timeout:             metav1.Duration{Duration: 5 * time.Second},
+					},
+				}
+
+				setupObjects(1, 2)
+
+			})
+
+			It("it should try one remediation after another", func() {
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+				Expect(underTest.Status.HealthyNodes).To(Equal(2))
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(cr.GetName()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.Name).To(Equal(cr.GetName()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.Namespace).To(Equal(cr.GetNamespace()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.UID).To(Equal(cr.GetUID()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Started).ToNot(BeNil())
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).To(BeNil())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+
+				// Wait for 1st remediation to time out and 2nd to start
+				time.Sleep(7 * time.Second)
+
+				// get updated CR
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+				Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).ToNot(BeNil())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+
+				// get new CR
+				cr = newRemediationCRForSecondRemediation("unhealthy-worker-node-1", underTest)
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+				Expect(underTest.Status.HealthyNodes).To(Equal(2))
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(cr.GetName()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(2))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.Name).To(Equal(cr.GetName()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.Namespace).To(Equal(cr.GetNamespace()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.UID).To(Equal(cr.GetUID()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Started).ToNot(BeNil())
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).To(BeNil())
+
+				// Wait for 2nd remediation to time out
+				time.Sleep(7 * time.Second)
+
+				// get updated CR
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+				Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).ToNot(BeNil())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+
+				// make node healthy
+				node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "unhealthy-worker-node-1"}}
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(node), node)).To(Succeed())
+				node.Status.Conditions[0].Status = v1.ConditionTrue
+				Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+				// wait a bit
+				time.Sleep(2 * time.Second)
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.HealthyNodes).To(Equal(3))
+				Expect(underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(0))
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
+
+			})
 		})
 
 		Context("control plane nodes", func() {
@@ -662,16 +771,23 @@ var _ = Describe("Node Health Check CR", func() {
 })
 
 func newRemediationCR(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
-	return newRemediationCRWithRole(nodeName, nhc, false)
+	return newRemediationCRImpl(nodeName, nhc, false)
 }
 
-func newRemediationCRWithRole(nodeName string, nhc *v1alpha1.NodeHealthCheck, isControlPlaneNode bool) *unstructured.Unstructured {
+func newRemediationCRForSecondRemediation(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
+	return newRemediationCRImpl(nodeName, nhc, true)
+}
+
+func newRemediationCRImpl(nodeName string, nhc *v1alpha1.NodeHealthCheck, use2ndEscRem bool) *unstructured.Unstructured {
 
 	var templateRef v1.ObjectReference
 	if nhc.Spec.RemediationTemplate != nil {
 		templateRef = *nhc.Spec.RemediationTemplate
 	} else {
 		templateRef = nhc.Spec.EscalatingRemediations[0].RemediationTemplate
+		if use2ndEscRem {
+			templateRef = nhc.Spec.EscalatingRemediations[1].RemediationTemplate
+		}
 	}
 
 	cr := unstructured.Unstructured{}
@@ -693,11 +809,6 @@ func newRemediationCRWithRole(nodeName string, nhc *v1alpha1.NodeHealthCheck, is
 			UID:        nhc.UID,
 		},
 	})
-	if isControlPlaneNode {
-		cr.SetLabels(map[string]string{
-			RemediationControlPlaneLabelKey: "",
-		})
-	}
 	return &cr
 }
 
