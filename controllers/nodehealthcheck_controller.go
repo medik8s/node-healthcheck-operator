@@ -242,7 +242,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)
 				return result, err
 			} else if deleted {
-				log.Info("deleted remediation CR", "name", remediationCR.GetName(), "NHC name", nhc.Name)
+				log.Info("deleted remediation CR", "name", remediationCR.GetName())
 				r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
 			}
 
