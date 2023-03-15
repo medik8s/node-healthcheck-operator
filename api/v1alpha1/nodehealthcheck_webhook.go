@@ -144,10 +144,10 @@ func (nhc *NodeHealthCheck) validateSelector() error {
 }
 
 func (nhc *NodeHealthCheck) validateMutualRemediations() error {
-	if nhc.Spec.RemediationTemplate == nil && (nhc.Spec.EscalatingRemediations == nil || len(nhc.Spec.EscalatingRemediations) == 0) {
+	if nhc.Spec.RemediationTemplate == nil && len(nhc.Spec.EscalatingRemediations) == 0 {
 		return fmt.Errorf(mandatoryRemediationError)
 	}
-	if !(nhc.Spec.RemediationTemplate == nil || nhc.Spec.EscalatingRemediations == nil) {
+	if nhc.Spec.RemediationTemplate != nil && len(nhc.Spec.EscalatingRemediations) > 0 {
 		return fmt.Errorf(mutualRemediationError)
 	}
 	return nil
