@@ -59,7 +59,7 @@ spec:
           capped at 100%. 100% is valid and will block all remediation.
         displayName: Min Healthy
         path: minHealthy
-      - description: 'PauseRequests will prevent any new remdiation to start, while
+      - description: 'PauseRequests will prevent any new remediation to start, while
           in-flight remediations keep running. Each entry is free form, and ideally
           represents the requested party reason for this pausing - i.e: "imaginary-cluster-upgrade-manager-operator"'
         displayName: Pause Requests
@@ -138,7 +138,7 @@ spec:
       - description: Started is the creation time of the remediation CR
         displayName: Started
         path: unhealthyNodes[0].remediations[0].started
-      - description: TimedOut is the time when the remedetion timed out. Applicable
+      - description: TimedOut is the time when the remediation timed out. Applicable
           for escalating remediations only.
         displayName: Timed Out
         path: unhealthyNodes[0].remediations[0].timedOut

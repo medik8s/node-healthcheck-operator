@@ -126,7 +126,7 @@ spec:
                 pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
                 x-kubernetes-int-or-string: true
               pauseRequests:
-                description: 'PauseRequests will prevent any new remdiation to start,
+                description: 'PauseRequests will prevent any new remediation to start,
                   while in-flight remediations keep running. Each entry is free form,
                   and ideally represents the requested party reason for this pausing
                   - i.e: "imaginary-cluster-upgrade-manager-operator"'
@@ -424,7 +424,7 @@ spec:
                             format: date-time
                             type: string
                           timedOut:
-                            description: TimedOut is the time when the remedetion
+                            description: TimedOut is the time when the remediation
                               timed out. Applicable for escalating remediations only.
                             format: date-time
                             type: string

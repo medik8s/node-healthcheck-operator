@@ -106,7 +106,7 @@ type NodeHealthCheckSpec struct {
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	EscalatingRemediations []EscalatingRemediation `json:"escalatingRemediations,omitempty"`
 
-	// PauseRequests will prevent any new remdiation to start, while in-flight remediations
+	// PauseRequests will prevent any new remediation to start, while in-flight remediations
 	// keep running. Each entry is free form, and ideally represents the requested party reason
 	// for this pausing - i.e:
 	//     "imaginary-cluster-upgrade-manager-operator"
@@ -262,7 +262,7 @@ type Remediation struct {
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	Started metav1.Time `json:"started"`
 
-	// TimedOut is the time when the remedetion timed out.
+	// TimedOut is the time when the remediation timed out.
 	// Applicable for escalating remediations only.
 	//
 	//+optional
