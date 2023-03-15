@@ -376,6 +376,10 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	// create remediation CR
 	created, err := rm.CreateRemediationCR(remediationCR, nhc)
 	if err != nil {
+		if _, ok := err.(resources.RemediationCRNotOwned); ok {
+			// CR exists but not owned by us, nothing to do
+			return nil, nil
+		}
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
 	}
 

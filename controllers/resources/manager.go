@@ -40,6 +40,10 @@ type Manager interface {
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 }
 
+type RemediationCRNotOwned struct{ msg string }
+
+func (r RemediationCRNotOwned) Error() string { return r.msg }
+
 type manager struct {
 	client.Client
 	ctx         context.Context
@@ -140,9 +144,9 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
 		if !isOwner(remediationCR, nhc) {
 			m.log.Info("external remediation CR already exists, but it's not owned by us", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace(), "owners", remediationCR.GetOwnerReferences())
-		} else {
-			m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
+			return false, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
+		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
 		return false, nil
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
