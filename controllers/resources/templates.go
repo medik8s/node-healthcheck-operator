@@ -3,13 +3,13 @@ package resources
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,7 +31,7 @@ type NoTemplateLeftError struct{ msg string }
 func (nt NoTemplateLeftError) Error() string { return nt.msg }
 
 // GetCurrentTemplateWithTimeout returns the current template to use. It might have been used for starting remediation already, but remediation didn't time out yet
-func (m *manager) GetCurrentTemplateWithTimeout(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *metav1.Duration, error) {
+func (m *manager) GetCurrentTemplateWithTimeout(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *time.Duration, error) {
 	if nhc.Spec.RemediationTemplate != nil {
 		template, err := m.getTemplate(nhc.Spec.RemediationTemplate)
 		return template, nil, err
@@ -55,7 +55,7 @@ func (m *manager) GetCurrentTemplateWithTimeout(node *v1.Node, nhc *remediationv
 		if startedRemediation == nil {
 			// not started, or ongoing, but not timed out
 			template, err := m.getTemplate(&rem.RemediationTemplate)
-			return template, &rem.Timeout, err
+			return template, &rem.Timeout.Duration, err
 		}
 	}
 

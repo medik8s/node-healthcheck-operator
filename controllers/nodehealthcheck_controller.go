@@ -251,7 +251,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// check if we enough healthy nodes
+	// check if we have enough healthy nodes
 	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
@@ -387,7 +387,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		var requeueIn *time.Duration
 		if timeout != nil {
 			// come back when timeout expires
-			requeueIn = pointer.Duration(timeout.Duration + 1*time.Second)
+			requeueIn = pointer.Duration(*timeout + 1*time.Second)
 		}
 		return requeueIn, nil
 	}
@@ -415,7 +415,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 
 	now := metav1.Now()
-	timeoutAt := startedRemediation.Started.Add(timeout.Duration)
+	timeoutAt := startedRemediation.Started.Add(*timeout)
 	if !now.After(timeoutAt) {
 		// not timed out yet, come back when we do so
 		return pointer.Duration(timeoutAt.Sub(now.Time)), nil
