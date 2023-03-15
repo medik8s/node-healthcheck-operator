@@ -83,49 +83,48 @@ func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Un
 // ValidateTemplates only returns an error when we don't know whether the template is valid or not, for triggering a requeue with backoff
 func (m *manager) ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason, message string, err error) {
 	if templateRef := nhc.Spec.RemediationTemplate; templateRef != nil {
-		template, templateError := m.getTemplate(templateRef)
-		valid, reason, message, err = m.validateTemplate(template, templateError)
-		if !valid || err != nil {
-			return
+		if template, err := m.getTemplate(templateRef); err != nil {
+			return m.handleTemplateError(err)
+		} else {
+			return m.validateTemplate(template)
 		}
 	}
 	for _, escRem := range nhc.Spec.EscalatingRemediations {
 		templateRef := escRem.RemediationTemplate
-		template, templateError := m.getTemplate(&templateRef)
-		valid, reason, message, err = m.validateTemplate(template, templateError)
-		if !valid || err != nil {
-			return
+		if template, err := m.getTemplate(&templateRef); err != nil {
+			return m.handleTemplateError(err)
+		} else if valid, reason, message, err = m.validateTemplate(template); !valid {
+			return valid, reason, message, err
 		}
 	}
-	return
+	return true, "", "", nil
 }
 
-func (m *manager) validateTemplate(template *unstructured.Unstructured, templateError error) (valid bool, reason, message string, err error) {
-	if templateError != nil {
-		cause := errors.Cause(templateError)
-		if apierrors.IsNotFound(cause) || meta.IsNoMatchError(cause) {
-			return false,
-				remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
-				fmt.Sprintf("Remediation template not found: %q", templateError.Error()),
-				nil
-		} else if _, ok := templateError.(brokenTemplateError); ok {
-			return false,
-				remediationv1alpha1.ConditionReasonDisabledTemplateInvalid,
-				fmt.Sprintf("Remediation template is invalid: %q", templateError.Error()),
-				nil
-		}
-		return false, "", "", templateError
+func (m *manager) handleTemplateError(templateError error) (valid bool, reason, message string, err error) {
+	cause := errors.Cause(templateError)
+	if apierrors.IsNotFound(cause) || meta.IsNoMatchError(cause) {
+		return false,
+			remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
+			fmt.Sprintf("Remediation template not found: %q", templateError.Error()),
+			nil
+	} else if _, ok := templateError.(brokenTemplateError); ok {
+		return false,
+			remediationv1alpha1.ConditionReasonDisabledTemplateInvalid,
+			fmt.Sprintf("Remediation template is invalid: %q", templateError.Error()),
+			nil
 	}
-	if template != nil {
-		// Metal3 remediation needs the node's machine as owner ref,
-		// and owners need to be in the same namespace as their dependent.
-		// Make sure that the template is in the Machine's namespace.
-		if template.GetKind() == metal3RemediationTemplateKind && template.GetNamespace() != machineAPINamespace {
-			return false,
-				remediationv1alpha1.ConditionReasonDisabledTemplateInvalid,
-				fmt.Sprintf("Metal3RemediationTemplate must be in the openshift-machine-api namespace. It is configured to be in namespace: %s", template.GetNamespace()),
-				nil
-		}
+	return false, "", "", templateError
+}
+
+func (m *manager) validateTemplate(template *unstructured.Unstructured) (valid bool, reason, message string, err error) {
+	// Metal3 remediation needs the node's machine as owner ref,
+	// and owners need to be in the same namespace as their dependent.
+	// Make sure that the template is in the Machine's namespace.
+	if template.GetKind() == metal3RemediationTemplateKind && template.GetNamespace() != machineAPINamespace {
+		return false,
+			remediationv1alpha1.ConditionReasonDisabledTemplateInvalid,
+			fmt.Sprintf("Metal3RemediationTemplate must be in the openshift-machine-api namespace. It is configured to be in namespace: %s", template.GetNamespace()),
+			nil
 	}
 	return true, "", "", nil
 }
