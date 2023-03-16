@@ -133,6 +133,7 @@ func main() {
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
+		OnOpenShift:                 onOpenshift,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)

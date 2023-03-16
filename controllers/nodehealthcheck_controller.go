@@ -81,7 +81,7 @@ type NodeHealthCheckReconciler struct {
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
-	onOpenShift                 bool
+	OnOpenShift                 bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -126,7 +126,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.onOpenShift)
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift)
 
 	// always check if we need to patch status before we exit Reconcile
 	// skip inFlightRemediations until we know we have valid templates, else it will fail status update
