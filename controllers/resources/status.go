@@ -31,7 +31,6 @@ func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.
 
 	foundNode := false
 	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
-		unhealthyNode := unhealthyNode
 		if unhealthyNode.Name == node.Name {
 			foundNode = true
 			foundRem := false
@@ -74,7 +73,6 @@ func FindStatusRemediation(node *corev1.Node, nhc *remediationv1alpha1.NodeHealt
 	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
 		if unhealthyNode.Name == node.GetName() {
 			for _, rem := range unhealthyNode.Remediations {
-				rem := rem
 				if remediationFilter(rem) {
 					return rem
 				}
