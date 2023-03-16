@@ -307,7 +307,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			})
 
-			When("few nodes are unhealthy and healthy nodes above min healthy", func() {
+			When("few nodes are unhealthy and healthy nodes below min healthy", func() {
 				BeforeEach(func() {
 					setupObjects(4, 3)
 				})
@@ -398,6 +398,21 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 			})
 
+			When("a remediation cr not owned by current NHC exists", func() {
+				BeforeEach(func() {
+					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					owners := cr.GetOwnerReferences()
+					owners[0].Name = "not-me"
+					cr.SetOwnerReferences(owners)
+					Expect(k8sClient.Create(context.Background(), cr)).To(Succeed())
+					setupObjects(1, 2)
+				})
+
+				It("remediation cr should not be processed", func() {
+					Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+					Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
+				})
+			})
 		}
 
 		Context("with spec.remediationTemplate", func() {
