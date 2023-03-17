@@ -312,6 +312,11 @@ bundle-build-k8s: bundle-k8s bundle-update
 bundle-push:
 	podman push ${BUNDLE_IMG}
 
+# Run bundle image
+.PHONY: bundle-run
+bundle-run: operator-sdk
+	$(OPERATOR_SDK) -n openshift-operators run bundle $(BUNDLE_IMG)
+
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
