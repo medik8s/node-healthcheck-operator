@@ -161,7 +161,7 @@ var _ = BeforeSuite(func() {
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
-		onOpenShift:                 true,
+		OnOpenShift:                 true,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

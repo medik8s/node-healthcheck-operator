@@ -81,7 +81,7 @@ type NodeHealthCheckReconciler struct {
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
-	onOpenShift                 bool
+	OnOpenShift                 bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -107,6 +107,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -126,7 +127,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.onOpenShift)
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift)
 
 	// always check if we need to patch status before we exit Reconcile
 	// skip inFlightRemediations until we know we have valid templates, else it will fail status update
