@@ -40,6 +40,7 @@ const (
 	OngoingRemediationError   = "prohibited due to running remediation"
 	minHealthyError           = "MinHealthy must not be negative"
 	invalidSelectorError      = "Invalid selector"
+	missingSelectorError      = "Selector is mandatory"
 	mandatoryRemediationError = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
 	mutualRemediationError    = "RemediationTemplate and EscalatingRemediations usage is mutual exclusive"
 	uniqueOrderError          = "EscalatingRemediation Order must be unique"
@@ -137,6 +138,9 @@ func (nhc *NodeHealthCheck) validateMinHealthy() error {
 }
 
 func (nhc *NodeHealthCheck) validateSelector() error {
+	if len(nhc.Spec.Selector.MatchExpressions) == 0 && len(nhc.Spec.Selector.MatchLabels) == 0 {
+		return fmt.Errorf(missingSelectorError)
+	}
 	if _, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector); err != nil {
 		return fmt.Errorf("%s: %v", invalidSelectorError, err.Error())
 	}

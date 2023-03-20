@@ -70,8 +70,11 @@ spec:
           picked up by a remediation provider. \n Mutually exclusive with EscalatingRemediations"
         displayName: Remediation Template
         path: remediationTemplate
-      - description: 'Label selector to match nodes whose health will be exercised.
-          Note: An empty selector will match all nodes.'
+      - description: "Label selector to match nodes whose health will be exercised.
+          \n Selecting both control-plane and worker nodes in one NHC CR is highly
+          discouraged and can result in undesired behaviour. \n Note: mandatory now
+          for above reason, but for backwards compatibility existing CRs will continue
+          to work with an empty selector, which matches all nodes."
         displayName: Selector
         path: selector
       - description: UnhealthyConditions contains a list of the conditions that determine
