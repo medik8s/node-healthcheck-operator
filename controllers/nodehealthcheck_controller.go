@@ -251,6 +251,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	// we are done in case we don't have unhealthy nodes
+	if len(unhealthyNodes) == 0 {
+		return result, nil
+	}
+
 	// check if we have enough healthy nodes
 	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
