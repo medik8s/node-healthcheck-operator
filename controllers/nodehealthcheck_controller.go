@@ -55,7 +55,7 @@ import (
 const (
 	oldRemediationCRAnnotationKey    = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
 	remediationTimedOutAnnotationkey = "remediation.medik8s.io/nhc-timed-out"
-	remediationNotProgressingTimeout = 30 * time.Second
+	remediationNotProcessingTimeout  = 30 * time.Second
 	remediationCRAlertTimeout        = time.Hour * 48
 	eventReasonRemediationCreated    = "RemediationCreated"
 	eventReasonRemediationSkipped    = "RemediationSkipped"
@@ -419,7 +419,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return nil, nil
 	}
 
-	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Progressing"
+	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Processing"
 	// condition, which can accelerate switching to the next remediator.
 	// So let's start watching the CRs, so we don't need to poll.
 	if err = r.addWatch(remediationCR); err != nil {
@@ -586,9 +586,9 @@ func getTimeoutAt(remediationCR *unstructured.Unstructured, remediation *remedia
 	configuredTimeoutAt := remediation.Started.Add(*configuredTimeout)
 
 	var progressingTimeout time.Time
-	condition := getProgressingCondition(remediationCR, log)
+	condition := getProcessingCondition(remediationCR, log)
 	if condition != nil && condition.Status == metav1.ConditionFalse && !condition.LastTransitionTime.IsZero() {
-		progressingTimeout = condition.LastTransitionTime.Time.Add(remediationNotProgressingTimeout)
+		progressingTimeout = condition.LastTransitionTime.Time.Add(remediationNotProcessingTimeout)
 		if progressingTimeout.Before(configuredTimeoutAt) {
 			log.Info("remediation not progressing anymore", "timeoutAt", progressingTimeout.UTC().Format(time.RFC3339))
 			return progressingTimeout
@@ -598,11 +598,11 @@ func getTimeoutAt(remediationCR *unstructured.Unstructured, remediation *remedia
 	return configuredTimeoutAt
 }
 
-func getProgressingCondition(u *unstructured.Unstructured, log logr.Logger) *metav1.Condition {
+func getProcessingCondition(u *unstructured.Unstructured, log logr.Logger) *metav1.Condition {
 	if conditions, found, _ := unstructured.NestedSlice(u.Object, "status", "conditions"); found {
 		for _, condition := range conditions {
 			if condition, ok := condition.(map[string]interface{}); ok {
-				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == "Progressing" {
+				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == "Processing" {
 					condStatus, _, _ := unstructured.NestedString(condition, "status")
 					var condLastTransition time.Time
 					if condLastTransitionString, foundLastTransition, _ := unstructured.NestedString(condition, "lastTransitionTime"); foundLastTransition {
