@@ -70,7 +70,9 @@ spec:
       - description: "EscalatingRemediations contain a list of ordered remediation
           templates with a timeout. The remediation templates will be used one after
           another, until the unhealthy node gets healthy within the timeout of the
-          currently processed remediation. \n Mutually exclusive with RemediationTemplate"
+          currently processed remediation. The order of remediation is defined by
+          the \"order\" field of each \"escalatingRemediation\". \n Mutually exclusive
+          with RemediationTemplate"
         displayName: Escalating Remediations
         path: escalatingRemediations
       - description: Order defines the order for this remediation. Remediations with
