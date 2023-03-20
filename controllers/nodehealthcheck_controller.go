@@ -418,7 +418,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return pointer.Duration(1 * time.Second), nil
 	}
 
-	now := metav1.Now()
+	now := metav1.Time{Time: currentTime()}
 	timeoutAt := startedRemediation.Started.Add(*timeout)
 	if !now.After(timeoutAt) {
 		// not timed out yet, come back when we do so
@@ -432,7 +432,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
-	annotations[remediationTimedOutAnnotationkey] = metav1.Now().Format(time.RFC3339)
+	annotations[remediationTimedOutAnnotationkey] = now.Format(time.RFC3339)
 	remediationCR.SetAnnotations(annotations)
 	if rm.UpdateRemediationCR(remediationCR); err != nil {
 		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
