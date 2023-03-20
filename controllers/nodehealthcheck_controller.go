@@ -38,6 +38,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -83,11 +84,13 @@ type NodeHealthCheckReconciler struct {
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
 	OnOpenShift                 bool
+	ctrl                        controller.Controller
+	watches                     map[string]struct{}
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	ctrl, err := ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
 		Watches(
 			&source.Kind{Type: &v1.Node{}},
@@ -100,7 +103,14 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Complete(r)
+		Build(r)
+
+	if err != nil {
+		return err
+	}
+	r.ctrl = ctrl
+	r.watches = make(map[string]struct{})
+	return nil
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -408,6 +418,13 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return nil, nil
 	}
 
+	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Progressing"
+	// condition, which can accelerate switching to the next remediator.
+	// So let's start watching the CRs, so we don't need to poll.
+	if err = r.addWatch(remediationCR); err != nil {
+		return nil, errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
+	}
+
 	startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
 		return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
 	})
@@ -536,4 +553,26 @@ func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Dur
 	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = updatedRequeueAfter
 	}
+}
+
+func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstructured) error {
+	key := remediationCR.GroupVersionKind().String()
+	if _, exists := r.watches[key]; exists {
+		// already watching
+		return nil
+	}
+	if err := r.ctrl.Watch(
+		&source.Kind{Type: remediationCR},
+		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Client, r.Log)),
+		predicate.Funcs{
+			// we are just interested in update events for now
+			CreateFunc:  func(_ event.CreateEvent) bool { return false },
+			DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
+			GenericFunc: func(_ event.GenericEvent) bool { return false },
+		},
+	); err != nil {
+		return err
+	}
+	r.watches[key] = struct{}{}
+	return nil
 }
