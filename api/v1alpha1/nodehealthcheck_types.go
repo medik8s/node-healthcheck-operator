@@ -30,8 +30,8 @@ const (
 	ConditionReasonDisabledMHC = "ConflictingMachineHealthCheckDetected"
 	// ConditionReasonDisabledTemplateNotFound is the reason for type Disabled when the template wasn't found
 	ConditionReasonDisabledTemplateNotFound = "RemediationTemplateNotFound"
-	// ConditionReasonDisabledTemplateWrongNamespace is the reason for type Disabled when the template is in the wrong namespace
-	ConditionReasonDisabledTemplateWrongNamespace = "RemediationTemplateWrongNamespace"
+	// ConditionReasonDisabledTemplateInvalid is the reason for type Disabled when the template is invalid
+	ConditionReasonDisabledTemplateInvalid = "RemediationTemplateInvalid"
 	// ConditionReasonEnabled is the condition reason for type Disabled and status False
 	ConditionReasonEnabled = "NodeHealthCheckEnabled"
 )
@@ -57,7 +57,8 @@ const (
 type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
 	// Note: An empty selector will match all nodes.
-	// +optional
+	//
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	Selector metav1.LabelSelector `json:"selector"`
 
@@ -65,19 +66,22 @@ type NodeHealthCheckSpec struct {
 	// whether a node is considered unhealthy.  The conditions are combined in a
 	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
 	//
-	// +optional
-	// +kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
-	// +operator-sdk:csv:customresourcedefinitions:type=spec
+	//+optional
+	//+patchStrategy=merge
+	//+patchMergeKey=type
+	//+kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Remediation is allowed if at least "MinHealthy" nodes selected by "selector" are healthy.
 	// Expects either a positive integer value or a percentage value.
 	// Percentage values must be positive whole numbers and are capped at 100%.
 	// 100% is valid and will block all remediation.
-	// +kubebuilder:default="51%"
-	// +kubebuilder:validation:XIntOrString
-	// +kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
-	// +operator-sdk:csv:customresourcedefinitions:type=spec
+	//
+	//+kubebuilder:default="51%"
+	//+kubebuilder:validation:XIntOrString
+	//+kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	MinHealthy *intstr.IntOrString `json:"minHealthy,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template
@@ -85,14 +89,28 @@ type NodeHealthCheckSpec struct {
 	//
 	// If a node needs remediation the controller will create an object from this template
 	// and then it should be picked up by a remediation provider.
+	//
+	// Mutually exclusive with EscalatingRemediations
+	//
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
-	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate"`
+	RemediationTemplate *corev1.ObjectReference `json:"remediationTemplate,omitempty"`
 
-	// PauseRequests will prevent any new remdiation to start, while in-flight remediations
+	// EscalatingRemediations contain a list of ordered remediation templates with a timeout.
+	// The remediation templates will be used one after another, until the unhealthy node
+	// gets healthy within the timeout of the currently processed remediation.
+	//
+	// Mutually exclusive with RemediationTemplate
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	EscalatingRemediations []EscalatingRemediation `json:"escalatingRemediations,omitempty"`
+
+	// PauseRequests will prevent any new remediation to start, while in-flight remediations
 	// keep running. Each entry is free form, and ideally represents the requested party reason
 	// for this pausing - i.e:
 	//     "imaginary-cluster-upgrade-manager-operator"
-	// +optional
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	PauseRequests []string `json:"pauseRequests,omitempty"`
 }
@@ -101,70 +119,163 @@ type NodeHealthCheckSpec struct {
 // specified duration. When the named condition has been in the given
 // status for at least the duration value a node is considered unhealthy.
 type UnhealthyCondition struct {
-	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:MinLength=1
+	// The condition type in the node's status to watch for.
+	//
+	//+kubebuilder:validation:Type=string
+	//+kubebuilder:validation:MinLength=1
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	Type corev1.NodeConditionType `json:"type"`
 
-	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:MinLength=1
+	// The condition status in the node's status to watch for.
+	// Typically False, True or Unknown.
+	//
+	//+kubebuilder:validation:Type=string
+	//+kubebuilder:validation:MinLength=1
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	Status corev1.ConditionStatus `json:"status"`
 
-	// Duration of the condition specified where a node is considered unhealthy.
+	// Duration of the condition specified when a node is considered unhealthy.
+	//
 	// Expects a string of decimal numbers each with optional
 	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-	// +kubebuilder:validation:Type=string
+	//
+	//+kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	//+kubebuilder:validation:Type=string
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	Duration metav1.Duration `json:"duration"`
+}
+
+// EscalatingRemediation defines a remediation template with order and timeout
+type EscalatingRemediation struct {
+	// RemediationTemplate is a reference to a remediation template
+	// provided by a remediation provider.
+	//
+	// If a node needs remediation the controller will create an object from this template
+	// and then it should be picked up by a remediation provider.
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	RemediationTemplate corev1.ObjectReference `json:"remediationTemplate"`
+
+	// Order defines the order for this remediation.
+	// Remediations with lower order will be used before remediations with higher order.
+	// Remediations must not have the same order.
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	Order int `json:"order"`
+
+	// Timeout defines how long NHC will wait for the node getting healthy
+	// before the next remediation (if any) will be used. When the last remediation times out,
+	// the overall remediation is considered as failed.
+	// As a safeguard for preventing parallel remediations, a minimum of 60s is enforced.
+	//
+	// Expects a string of decimal numbers each with optional
+	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+	//
+	//+kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	//+kubebuilder:validation:Type=string
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	Timeout metav1.Duration `json:"timeout"`
 }
 
 // NodeHealthCheckStatus defines the observed state of NodeHealthCheck
 type NodeHealthCheckStatus struct {
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="observedNodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:observedNodes"
-	//ObservedNodes specified the number of nodes observed by using the NHC spec.selector
-	// +kubebuilder:default:=0
+	// ObservedNodes specified the number of nodes observed by using the NHC spec.selector
+	//
+	//+kubebuilder:default:=0
+	//+operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedNodes int `json:"observedNodes"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="healthynodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:healthyNodes"
-	//HealthyNodes specified the number of healthy nodes observed
-	// +kubebuilder:default:=0
+	// HealthyNodes specified the number of healthy nodes observed
+	//
+	//+kubebuilder:default:=0
+	//+operator-sdk:csv:customresourcedefinitions:type=status
 	HealthyNodes int `json:"healthyNodes"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:inFlightRemediations"
-	//InFlightRemediations records the timestamp when remediation triggered per node
+	// UnhealthyNodes tracks currently unhealthy nodes and their remediations.
+	//
+	//+patchStrategy=merge
+	//+patchMergeKey=type
 	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	UnhealthyNodes []*UnhealthyNode `json:"unhealthyNodes,omitempty"`
+
+	// InFlightRemediations records the timestamp when remediation triggered per node.
+	// Deprecated in favour of UnhealthyNodes.
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
 	InFlightRemediations map[string]metav1.Time `json:"inFlightRemediations,omitempty"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="conditions",xDescriptors="urn:alm:descriptor:com.tectonic.ui:conditions"
 	// Represents the observations of a NodeHealthCheck's current state.
 	// Known .status.conditions.type are: "Disabled"
-	// +patchMergeKey=type
-	// +patchStrategy=merge
-	// +listType=map
-	// +listMapKey=type
-	// +optional
+	//
+	//+patchStrategy=merge
+	//+patchMergeKey=type
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.conditions"
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="phase",xDescriptors="urn:alm:descriptor:com.tectonic.ui:text"
 	// Phase represents the current phase of this Config.
 	// Known phases are Disabled, Paused, Remediating and Enabled, based on:\n
 	// - the status of the Disabled condition\n
 	// - the value of PauseRequests\n
 	// - the value of InFlightRemediations
-	// +optional
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase"
 	Phase NHCPhase `json:"phase,omitempty"`
 
-	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="reason",xDescriptors="urn:alm:descriptor:com.tectonic.ui:text"
 	// Reason explains the current phase in more detail.
-	// +optional
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase:reason"
 	Reason string `json:"reason,omitempty"`
 }
 
-// +kubebuilder:object:root=true
-// +kubebuilder:resource:path=nodehealthchecks,scope=Cluster,shortName=nhc
-// +kubebuilder:subresource:status
+// UnhealthyNode defines an unhealthy node and its remediations
+type UnhealthyNode struct {
+	// Name is the name of the unhealthy node
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Name string `json:"name"`
+
+	// Remediations tracks the remediations created for this node
+	//
+	//+patchStrategy=merge
+	//+patchMergeKey=type
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Remediations []*Remediation `json:"remediations,omitempty"`
+}
+
+// Remediation defines a remediation which was created for a node
+type Remediation struct {
+	// Resource is the reference to the remediation CR which was created
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Resource corev1.ObjectReference `json:"resource"`
+
+	// Started is the creation time of the remediation CR
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	Started metav1.Time `json:"started"`
+
+	// TimedOut is the time when the remediation timed out.
+	// Applicable for escalating remediations only.
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	TimedOut *metav1.Time `json:"timedOut,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:resource:path=nodehealthchecks,scope=Cluster,shortName=nhc
+//+kubebuilder:subresource:status
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API
+//
 // +operator-sdk:csv:customresourcedefinitions:resources={{"NodeHealthCheck","v1alpha1","nodehealthchecks"}}
 type NodeHealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -174,7 +285,7 @@ type NodeHealthCheck struct {
 	Status NodeHealthCheckStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // NodeHealthCheckList contains a list of NodeHealthCheck
 type NodeHealthCheckList struct {

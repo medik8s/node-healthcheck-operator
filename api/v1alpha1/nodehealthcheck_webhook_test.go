@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -31,11 +33,27 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 							},
 						},
 					},
+					RemediationTemplate: &v1.ObjectReference{
+						Kind:       "R",
+						Namespace:  "dummy",
+						Name:       "r",
+						APIVersion: "r",
+					},
 				},
 			}
 		})
 
-		Context("with valid config", func() {
+		Context("with valid config and remediation template", func() {
+			It("should be allowed", func() {
+				Expect(nhc.validate()).To(Succeed())
+			})
+		})
+
+		Context("with valid config and escalating remediations", func() {
+			BeforeEach(func() {
+				setEscalatingRemediations(nhc)
+			})
+
 			It("should be allowed", func() {
 				Expect(nhc.validate()).To(Succeed())
 			})
@@ -68,6 +86,52 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 
 			It("should be denied", func() {
 				Expect(nhc.validate()).To(MatchError(ContainSubstring(invalidSelectorError)))
+			})
+		})
+
+		Context("with neither remediation template or escalating remediations set", func() {
+			BeforeEach(func() {
+				nhc.Spec.RemediationTemplate = nil
+				nhc.Spec.EscalatingRemediations = []EscalatingRemediation{}
+			})
+			It("should be denied", func() {
+				Expect(nhc.validate()).To(MatchError(ContainSubstring(mandatoryRemediationError)))
+			})
+		})
+
+		Context("with both remediation template and escalating remediations set", func() {
+			BeforeEach(func() {
+				templ := nhc.Spec.RemediationTemplate
+				setEscalatingRemediations(nhc)
+				nhc.Spec.RemediationTemplate = templ
+			})
+			It("should be denied", func() {
+				Expect(nhc.validate()).To(MatchError(ContainSubstring(mutualRemediationError)))
+			})
+		})
+
+		Context("with escalating remediations", func() {
+			Context("with duplicate order", func() {
+				BeforeEach(func() {
+					setEscalatingRemediations(nhc)
+					nhc.Spec.EscalatingRemediations[0].Order = 42
+					nhc.Spec.EscalatingRemediations[2].Order = 42
+				})
+				It("should be denied", func() {
+					Expect(nhc.validate()).To(MatchError(ContainSubstring(uniqueOrderError)))
+					Expect(nhc.validate()).To(MatchError(ContainSubstring("42")))
+				})
+			})
+
+			Context("with too low timeout", func() {
+				BeforeEach(func() {
+					setEscalatingRemediations(nhc)
+					nhc.Spec.EscalatingRemediations[0].Timeout = metav1.Duration{Duration: 42 * time.Second}
+				})
+				It("should be denied", func() {
+					Expect(nhc.validate()).To(MatchError(ContainSubstring(minimumTimeoutError)))
+					Expect(nhc.validate()).To(MatchError(ContainSubstring("42s")))
+				})
 			})
 		})
 	})
@@ -120,7 +184,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 		})
 
-		Context("updating template", func() {
+		Context("updating remediation template", func() {
 			BeforeEach(func() {
 				nhcNew = nhcOld.DeepCopy()
 				nhcNew.Spec.RemediationTemplate.Name = "newName"
@@ -134,5 +198,57 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				))
 			})
 		})
+
+		Context("updating escalating remediations", func() {
+			BeforeEach(func() {
+				setEscalatingRemediations(nhcOld)
+				nhcNew = nhcOld.DeepCopy()
+				nhcNew.Spec.EscalatingRemediations[0].Order = 42
+			})
+			It("should be denied", func() {
+				Expect(nhcNew.ValidateUpdate(nhcOld)).To(MatchError(
+					And(
+						ContainSubstring(OngoingRemediationError),
+						ContainSubstring("escalating remediations"),
+					),
+				))
+			})
+		})
 	})
 })
+
+func setEscalatingRemediations(nhc *NodeHealthCheck) {
+	nhc.Spec.RemediationTemplate = nil
+	nhc.Spec.EscalatingRemediations = []EscalatingRemediation{
+		{
+			RemediationTemplate: v1.ObjectReference{
+				Kind:       "R2",
+				Namespace:  "dummy",
+				Name:       "r2",
+				APIVersion: "r2",
+			},
+			Order:   20,
+			Timeout: metav1.Duration{Duration: 2 * time.Minute},
+		},
+		{
+			RemediationTemplate: v1.ObjectReference{
+				Kind:       "R3",
+				Namespace:  "dummy",
+				Name:       "r3",
+				APIVersion: "r3",
+			},
+			Order:   30,
+			Timeout: metav1.Duration{Duration: 3 * time.Minute},
+		},
+		{
+			RemediationTemplate: v1.ObjectReference{
+				Kind:       "R1",
+				Namespace:  "dummy",
+				Name:       "r1",
+				APIVersion: "r1",
+			},
+			Order:   10,
+			Timeout: metav1.Duration{Duration: 1 * time.Minute},
+		},
+	}
+}

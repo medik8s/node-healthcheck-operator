@@ -36,6 +36,7 @@ jobs:
 
   e2e-k8s:
     runs-on: ubuntu-20.04
+    timeout-minutes: 120
     env:
       BUILD_SCRIPT: build-nhc-snr.sh
       IMAGE_REGISTRY: kind-registry:5000
@@ -152,7 +153,9 @@ jobs:
 
     - name: Run NHC e2e
       run: |
+        echo "running e2e test"
         OPERATOR_NS=${DEPLOY_NAMESPACE} SKIP_FOR_K8S=true make test-e2e
+        echo "finished e2e test"
 
     - name: Debug
       if: ${{ failure() }}

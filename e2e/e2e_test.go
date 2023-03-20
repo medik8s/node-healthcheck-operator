@@ -29,22 +29,30 @@ import (
 )
 
 const (
-	remediationStartedTimeout = 10 * time.Minute
+	remediationStartedTimeout = 2 * time.Minute
 	nodeRebootedTimeout       = 10 * time.Minute
 )
 
 var _ = Describe("e2e", func() {
 	var nodeUnderTest *v1.Node
-	var testStart time.Time
+	var node1 *v1.Node
+	var node2 *v1.Node
+	var nhcName string
+	//var testStart time.Time
+	testLabelKey := "nhc-test.medik8s.io"
 
 	BeforeEach(func() {
 
+		nhcName = "test-nhc"
+
 		// ensure a NHC CR exists
-		testNHC := &v1alpha1.NodeHealthCheck{
+		minHealthy := intstr.FromInt(1)
+		nhc := &v1alpha1.NodeHealthCheck{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-nhc",
+				Name: nhcName,
 			},
 			Spec: v1alpha1.NodeHealthCheckSpec{
+				MinHealthy: &minHealthy,
 				Selector: metav1.LabelSelector{
 					MatchExpressions: []metav1.LabelSelectorRequirement{
 						{
@@ -55,6 +63,10 @@ var _ = Describe("e2e", func() {
 							Key:      nhcUtils.MasterRoleLabel,
 							Operator: metav1.LabelSelectorOpDoesNotExist,
 						},
+						{
+							Key:      testLabelKey,
+							Operator: metav1.LabelSelectorOpDoesNotExist,
+						},
 					},
 				},
 				RemediationTemplate: &v1.ObjectReference{
@@ -63,16 +75,25 @@ var _ = Describe("e2e", func() {
 					Name:       "self-node-remediation-resource-deletion-template",
 					Namespace:  operatorNsName,
 				},
+				UnhealthyConditions: []v1alpha1.UnhealthyCondition{
+					{
+						Type:     "Ready",
+						Status:   "False",
+						Duration: metav1.Duration{Duration: 10 * time.Second},
+					},
+					{
+						Type:     "Ready",
+						Status:   "Unknown",
+						Duration: metav1.Duration{Duration: 10 * time.Second},
+					},
+				},
 			},
 		}
-		nhc := &v1alpha1.NodeHealthCheck{}
-		if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(testNHC), nhc); err != nil {
+		if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nhc), nhc); err != nil {
 			Expect(errors.IsNotFound(err)).To(BeTrue(), "unexpected error when checking for test NHC CR")
-			Expect(k8sClient.Create(context.Background(), testNHC)).To(Succeed(), "failed to create test NHC CR")
+			Expect(k8sClient.Create(context.Background(), nhc)).To(Succeed(), "failed to create test NHC CR")
 		}
 
-		// randomly pick a host (or let the scheduler do it by running the blocking pod)
-		// block the api port to make it go Ready Unknown
 		if nodeUnderTest == nil {
 
 			// find a worker node
@@ -82,11 +103,13 @@ var _ = Describe("e2e", func() {
 			reqMRole, _ := labels.NewRequirement("node-role.kubernetes.io/master", selection.DoesNotExist, []string{})
 			selector = selector.Add(*reqCpRole, *reqMRole)
 			Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
-			Expect(len(workers.Items)).To(BeNumerically(">=", 2))
-			nodeUnderTest = &workers.Items[0]
+			Expect(len(workers.Items)).To(BeNumerically(">=", 3))
+			node1 = &workers.Items[0]
+			node2 = &workers.Items[1]
+			nodeUnderTest = node1
 
-			// save boot time
-			testStart = time.Now()
+			// save test start time
+			//testStart = time.Now()
 
 		}
 
@@ -153,7 +176,7 @@ var _ = Describe("e2e", func() {
 			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed())
 			// ensure NHC reverts to enabled
 			Eventually(func(g Gomega) {
-				nhc := getConfig()
+				nhc := getConfig(nhcName)
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
 				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled")
@@ -161,7 +184,7 @@ var _ = Describe("e2e", func() {
 
 		It("should report disabled NHC", func() {
 			Eventually(func(g Gomega) {
-				nhc := getConfig()
+				nhc := getConfig(nhcName)
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
 				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseDisabled), "phase should be Disabled")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
@@ -206,6 +229,9 @@ var _ = Describe("e2e", func() {
 		})
 
 		It("should not remediate", func() {
+			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
+				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
+			}
 			Consistently(
 				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 30*time.Second).
 				ShouldNot(Succeed())
@@ -214,81 +240,140 @@ var _ = Describe("e2e", func() {
 
 	When("Node conditions meets the unhealthy criteria", func() {
 
-		BeforeEach(func() {
-			// on k8s, the node is not made unready yet
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				makeNodeUnready(nodeUnderTest)
-			}
-		})
+		Context("with classic remediation config", func() {
+			BeforeEach(func() {
+				// on k8s, the node is not made unready yet
+				if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
+					makeNodeUnready(nodeUnderTest)
+				}
+			})
 
-		It("Remediates a host and prevents config updates", func() {
-			By("ensuring remediation CR exists")
-			Eventually(
-				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 10*time.Second).
-				Should(Succeed())
+			It("Remediates a host and prevents config updates", func() {
+				By("ensuring remediation CR exists")
+				Eventually(
+					fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 1*time.Second).
+					Should(Succeed())
 
-			// let's do some NHC validation tests here
-			// wrap 1st webhook test in eventually in order to wait until webhook is up and running
-			By("ensuring negative minHealthy update fails")
-			Eventually(func() error {
-				nhc := getConfig()
+				By("ensuring status is set")
+				nhc := getConfig(nhcName)
+				Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+				Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+
+				// let's do some NHC validation tests here
+				// wrap 1st webhook test in eventually in order to wait until webhook is up and running
+				By("ensuring negative minHealthy update fails")
 				negValue := intstr.FromInt(-1)
 				nhc.Spec.MinHealthy = &negValue
-				return k8sClient.Update(context.Background(), nhc)
-			}, 20*time.Second, 5*time.Second).Should(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
+				Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
 
-			By("ensuring selector update fails")
-			nhc := getConfig()
-			nhc.Spec.Selector = metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"foo": "bar",
-				},
-			}
-			err := k8sClient.Update(context.Background(), nhc)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError), "selector update should be prevented")
+				By("ensuring selector update fails")
+				nhc = getConfig(nhcName)
+				nhc.Spec.Selector = metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"foo": "bar",
+					},
+				}
+				Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "selector update should be prevented")
 
-			By("ensuring config deletion fails")
-			nhc = getConfig()
-			err = k8sClient.Delete(context.Background(), nhc)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(v1alpha1.OngoingRemediationError), "deletion should be prevented")
+				By("ensuring config deletion fails")
+				nhc = getConfig(nhcName)
+				Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "deletion should be prevented")
 
-			By("ensuring minHealthy update succeeds")
-			nhc = getConfig()
-			newValue := intstr.FromString("52%")
-			nhc.Spec.MinHealthy = &newValue
-			err = k8sClient.Update(context.Background(), nhc)
-			Expect(err).ToNot(HaveOccurred(), "minHealthy update should be allowed")
+				By("ensuring minHealthy update succeeds")
+				nhc = getConfig(nhcName)
+				newValue := intstr.FromString("10%")
+				nhc.Spec.MinHealthy = &newValue
+				Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
 
-			// TODO node reboot doesn't work on k8s
-			// investigate if this is something we can fix in SNR
-			// not relevant for NHC itself, so ignore for now
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); !exists {
-				By("waiting for reboot")
-				Eventually(func() (time.Time, error) {
-					bootTime, err := utils.GetBootTime(clientSet, nodeUnderTest.Name, testNsName, log)
-					if bootTime != nil && err == nil {
-						log.Info("got boot time", "time", *bootTime)
-						return *bootTime, nil
-					}
-					log.Error(err, "failed to get boot time")
-					return time.Time{}, err
-				}, nodeRebootedTimeout, 30*time.Second).Should(
-					BeTemporally(">", testStart),
-				)
-			} else {
-				log.Info("skipping reboot check on k8s, doesn't work atm")
-			}
+				By("waiting for healthy node")
+				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+
+			})
 		})
+
+		Context("with single escalating remediation config", func() {
+			BeforeEach(func() {
+
+				// ensure we don't get into a conflict with the original NHC config, which might be still remediating
+				By("labeling 2nd test node")
+				nodeUnderTest = node2
+				Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
+				nodeUnderTest.Labels[testLabelKey] = ""
+				Expect(k8sClient.Update(context.Background(), nodeUnderTest)).To(Succeed())
+
+				By("creating new NHC")
+				nhcName = "escalating-nhc"
+				minHealthy := intstr.FromInt(0)
+				secondNHC := &v1alpha1.NodeHealthCheck{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: nhcName,
+					},
+					Spec: v1alpha1.NodeHealthCheckSpec{
+						MinHealthy: &minHealthy,
+						Selector: metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      testLabelKey,
+									Operator: metav1.LabelSelectorOpExists,
+								},
+							},
+						},
+						EscalatingRemediations: []v1alpha1.EscalatingRemediation{
+							{
+								RemediationTemplate: v1.ObjectReference{
+									Kind:       "SelfNodeRemediationTemplate",
+									APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
+									Name:       "self-node-remediation-resource-deletion-template",
+									Namespace:  operatorNsName,
+								},
+								Order:   0,
+								Timeout: metav1.Duration{Duration: 5 * time.Minute},
+							},
+						},
+						UnhealthyConditions: []v1alpha1.UnhealthyCondition{
+							{
+								Type:     "Ready",
+								Status:   "False",
+								Duration: metav1.Duration{Duration: 10 * time.Second},
+							},
+							{
+								Type:     "Ready",
+								Status:   "Unknown",
+								Duration: metav1.Duration{Duration: 10 * time.Second},
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Create(context.Background(), secondNHC)).To(Succeed())
+
+				By("making node unhealthy")
+				makeNodeUnready(nodeUnderTest)
+			})
+
+			It("Remediates a host", func() {
+				By("ensuring remediation CR exists")
+				Eventually(
+					fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 1*time.Second).
+					Should(Succeed())
+
+				By("ensuring status is set")
+				nhc := getConfig(nhcName)
+				Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
+				Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+				Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+			})
+		})
+
 	})
 })
 
-func getConfig() *v1alpha1.NodeHealthCheck {
-	nhcList := &v1alpha1.NodeHealthCheckList{}
-	ExpectWithOffset(1, k8sClient.List(context.Background(), nhcList)).To(Succeed(), "failed to list NHCs")
-	ExpectWithOffset(1, nhcList.Items).To(HaveLen(1), "less or more than 1 NHC found")
-	return &nhcList.Items[0]
+func getConfig(name string) *v1alpha1.NodeHealthCheck {
+	nhc := &v1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	ExpectWithOffset(1, k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nhc), nhc)).To(Succeed(), "failed to get NHC")
+	return nhc
 }
 
 func fetchRemediationResourceByName(name string) func() error {
@@ -345,5 +430,5 @@ func waitForNodeHealthyCondition(node *v1.Node, status v1.ConditionStatus) {
 			}
 		}
 		return v1.ConditionStatus("failure")
-	}, 6*time.Minute, 15*time.Second).Should(Equal(status))
+	}, nodeRebootedTimeout, 15*time.Second).Should(Equal(status))
 }

@@ -73,6 +73,8 @@ var fakeTime *time.Time
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
+	// debugging time values needs much place...
+	//format.MaxLength = 10000
 	RunSpecs(t, "Controller Suite")
 }
 
@@ -294,18 +296,14 @@ func newTestRemediationCRD(kind string) *apiextensionsv1.CustomResourceDefinitio
 }
 
 func newTestRemediationTemplateCR(kind, namespace, name string) client.Object {
-	remediation := map[string]interface{}{
-		"kind":       kind,
-		"apiVersion": "test.medik8s.io/v1alpha1",
-		"metadata":   map[string]interface{}{},
-		"spec": map[string]interface{}{
-			"size": "foo",
-		},
-	}
 	template := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"spec": map[string]interface{}{
-				"template": remediation,
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"size": "foo",
+					},
+				},
 			},
 		},
 	}
