@@ -89,6 +89,17 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 		})
 
+		Context("with empty selector", func() {
+			BeforeEach(func() {
+				selector := metav1.LabelSelector{}
+				nhc.Spec.Selector = selector
+			})
+
+			It("should be denied", func() {
+				Expect(nhc.validate()).To(MatchError(ContainSubstring(missingSelectorError)))
+			})
+		})
+
 		Context("with neither remediation template or escalating remediations set", func() {
 			BeforeEach(func() {
 				nhc.Spec.RemediationTemplate = nil

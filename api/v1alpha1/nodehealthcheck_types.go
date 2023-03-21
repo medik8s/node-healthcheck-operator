@@ -56,7 +56,12 @@ const (
 // NodeHealthCheckSpec defines the desired state of NodeHealthCheck
 type NodeHealthCheckSpec struct {
 	// Label selector to match nodes whose health will be exercised.
-	// Note: An empty selector will match all nodes.
+	//
+	// Selecting both control-plane and worker nodes in one NHC CR is
+	// highly discouraged and can result in undesired behaviour.
+	//
+	// Note: mandatory now for above reason, but for backwards compatibility existing
+	// CRs will continue to work with an empty selector, which matches all nodes.
 	//
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
