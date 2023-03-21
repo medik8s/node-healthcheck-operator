@@ -67,6 +67,7 @@ const (
 	eventTypeNormal                  = "Normal"
 	eventTypeWarning                 = "Warning"
 	enabledMessage                   = "No issues found, NodeHealthCheck is enabled."
+	conditionTypeProcessing          = "Processing"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -607,7 +608,7 @@ func getProcessingCondition(u *unstructured.Unstructured, log logr.Logger) *meta
 	if conditions, found, _ := unstructured.NestedSlice(u.Object, "status", "conditions"); found {
 		for _, condition := range conditions {
 			if condition, ok := condition.(map[string]interface{}); ok {
-				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == "Processing" {
+				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == conditionTypeProcessing {
 					condStatus, _, _ := unstructured.NestedString(condition, "status")
 					var condLastTransition time.Time
 					if condLastTransitionString, foundLastTransition, _ := unstructured.NestedString(condition, "lastTransitionTime"); foundLastTransition {
