@@ -57,7 +57,7 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 }
 
 // NHCByRemediationCRMapperFunc return the RemediationCR-to-NHC mapper function
-func NHCByRemediationCRMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+func NHCByRemediationCRMapperFunc(logger logr.Logger) handler.MapFunc {
 	// This closure is meant to get the NHC for the given remediation CR
 	delegate := func(o client.Object) []reconcile.Request {
 		requests := make([]reconcile.Request, 0)

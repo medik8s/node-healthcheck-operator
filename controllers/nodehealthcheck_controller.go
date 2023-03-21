@@ -569,7 +569,7 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 	}
 	if err := r.ctrl.Watch(
 		&source.Kind{Type: remediationCR},
-		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Client, r.Log)),
+		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
 		predicate.Funcs{
 			// we are just interested in update events for now
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
