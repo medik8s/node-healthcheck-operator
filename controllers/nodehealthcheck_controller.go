@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -87,6 +88,7 @@ type NodeHealthCheckReconciler struct {
 	OnOpenShift                 bool
 	ctrl                        controller.Controller
 	watches                     map[string]struct{}
+	watchesLock                 sync.Mutex
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -557,6 +559,9 @@ func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Dur
 }
 
 func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstructured) error {
+	r.watchesLock.Lock()
+	defer r.watchesLock.Unlock()
+
 	key := remediationCR.GroupVersionKind().String()
 	if _, exists := r.watches[key]; exists {
 		// already watching
