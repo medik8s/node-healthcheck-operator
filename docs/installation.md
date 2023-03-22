@@ -1,63 +1,43 @@
 ## Prerequisite
-If you are using a kubernetes distribution with no running OLM (OCP and OKD has
-it by default) you can quickly install it by using the operator-sdk tool.
-See the [operator-sdk installation docs][operator-sdk] for help
 
-```shell
-$ operator-sdk olm install
-```
+The Node Healthcheck operator is developed using the [Operator SDK](https://sdk.operatorframework.io/)
+and designed to be installed using the [Operator Lifecycle Manager (OLM)](https://olm.operatorframework.io/).
 
-## Installation
+If you are using a Kubernetes distribution without OLM (OCP and OKD have it by
+default), you can quickly install it using the operator-sdk tool, see the
+[OLM installation guide](https://olm.operatorframework.io/docs/getting-started/#installing-olm-in-your-cluster).
 
-  - For K8S:
+## Installation using OperatorHub
 
-    ```shell
-     kubectl create -f https://operatorhub.io/install/node-healthcheck-operator.yaml
-    ```
-  - For OpenShift:
+### On Kubernetes
 
-    ```shell
-    curl -s -L https://operatorhub.io/install/node-healthcheck-operator.yaml | \
-    sed -e '/namespace:/ s/operators/openshift-operators/ ; /source:/ s/operatorhubio-catalog/community-operators/ ; /sourceNamespace:/ s/olm/openshift- marketplace/' |   kubectl create -f -
-    ```
+NHC is available on [OperatorHub.io](https://operatorhub.io/operator/node-healthcheck-operator),
+please follow the instructions there.
 
+### On OKD and OpenShift
 
-By default, OLM will resolve the Self Node Remediation operator as a dependency and will install the
-latest available version in the current catalog or other catalog with higher
-priority.
+Please visit the built-in Operatorhub in the UI, search for "Node Health Check",
+and follow the instructions.
 
->NOTE: OLM on k8s install operators under the `operators` namespace while
->      in OCP or OKD it is under `openshift-operators`
+> **Note**
+> 
+> OLM on k8s will install operators in the `operators` namespace,
+> while OCP or OKD are using `openshift-operators`
 
-Your cluster should have 2 deployments and 1 daemonset:
+### For development
 
-```shell
-$ kubectl get deploy -n operators
-NAME                                           READY   UP-TO-DATE   AVAILABLE   AGE
-node-healthcheck-operator-controller-manager   1/1     1            1           3m8s
-self-node-remediation-controller-manager       1/1     1            1           3m10s
+For instructions on how to install NHC for development, please visit
+the [contribution guide](./contributing.md)
 
-$ kubectl get ds -n operators
-NAME                       DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
-self-node-remediation-ds   3         3         3       3            3           <none>          3h6m
-```
+## Configuration
 
-### Customizations:
-See the [README.md](./index.md) for Node Healthcheck CR customizations.
+For configuration of NHC, please follow instructions in the [configuration guide](./configuration.md).
 
+## Installing a remediator
 
-[operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
-[operator-sdk]: https://sdk.operatorframework.io/docs/installation/
+Currently, NHC has the [Self Node Remediation (SNR) operator](https://www.medik8s.io/remediation/self-node-remediation/self-node-remediation/)
+configured as dependency. This means that SNR will be automatically installed by OLM.
 
-
-
-## TODO copied from old README, insert this above...
-
-## Installation
-
-Install the Node Healthcheck operator using [operator hub]. The installation
-will also install the [self-node-remediation] operator as a default remediator.
-
-For development environments you can run `make deploy deploy-snr`.
-See the [Makefile](./../Makefile) for more variables.
-
+If you want to use another remediator, you have to install it manually.
+You can find a list of remediators known to work with NHC on the
+[Medik8s website](https://www.medik8s.io/remediation/remediation/#implementations)
