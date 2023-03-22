@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -38,6 +39,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -54,6 +56,7 @@ import (
 const (
 	oldRemediationCRAnnotationKey    = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
 	remediationTimedOutAnnotationkey = "remediation.medik8s.io/nhc-timed-out"
+	remediationNotProcessingTimeout  = 30 * time.Second
 	remediationCRAlertTimeout        = time.Hour * 48
 	eventReasonRemediationCreated    = "RemediationCreated"
 	eventReasonRemediationSkipped    = "RemediationSkipped"
@@ -64,6 +67,7 @@ const (
 	eventTypeNormal                  = "Normal"
 	eventTypeWarning                 = "Warning"
 	enabledMessage                   = "No issues found, NodeHealthCheck is enabled."
+	conditionTypeProcessing          = "Processing"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -83,11 +87,14 @@ type NodeHealthCheckReconciler struct {
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
 	OnOpenShift                 bool
+	ctrl                        controller.Controller
+	watches                     map[string]struct{}
+	watchesLock                 sync.Mutex
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	ctrl, err := ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
 		Watches(
 			&source.Kind{Type: &v1.Node{}},
@@ -100,7 +107,14 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Complete(r)
+		Build(r)
+
+	if err != nil {
+		return err
+	}
+	r.ctrl = ctrl
+	r.watches = make(map[string]struct{})
+	return nil
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -249,6 +263,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// always update status, in case patching it failed during last reconcile
 			resources.UpdateStatusNodeHealthy(&node, nhc)
 		}
+	}
+
+	// we are done in case we don't have unhealthy nodes
+	if len(unhealthyNodes) == 0 {
+		return result, nil
 	}
 
 	// check if we have enough healthy nodes
@@ -403,6 +422,13 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return nil, nil
 	}
 
+	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Processing"
+	// condition, which can accelerate switching to the next remediator.
+	// So let's start watching the CRs, so we don't need to poll.
+	if err = r.addWatch(remediationCR); err != nil {
+		return nil, errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
+	}
+
 	startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
 		return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
 	})
@@ -418,21 +444,21 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return pointer.Duration(1 * time.Second), nil
 	}
 
-	now := metav1.Now()
-	timeoutAt := startedRemediation.Started.Add(*timeout)
+	now := metav1.Time{Time: currentTime()}
+	timeoutAt := getTimeoutAt(remediationCR, startedRemediation, timeout, log)
 	if !now.After(timeoutAt) {
 		// not timed out yet, come back when we do so
 		return pointer.Duration(timeoutAt.Sub(now.Time)), nil
 	}
 
 	// handle timeout
-
+	log.Info("remediation timed out", "timedOutAt", now.Format(time.RFC3339))
 	// add timeout annotation to remediation CR
 	annotations := remediationCR.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
-	annotations[remediationTimedOutAnnotationkey] = metav1.Now().Format(time.RFC3339)
+	annotations[remediationTimedOutAnnotationkey] = now.Format(time.RFC3339)
 	remediationCR.SetAnnotations(annotations)
 	if rm.UpdateRemediationCR(remediationCR); err != nil {
 		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
@@ -531,4 +557,73 @@ func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Dur
 	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = updatedRequeueAfter
 	}
+}
+
+func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstructured) error {
+	r.watchesLock.Lock()
+	defer r.watchesLock.Unlock()
+
+	key := remediationCR.GroupVersionKind().String()
+	if _, exists := r.watches[key]; exists {
+		// already watching
+		return nil
+	}
+	if err := r.ctrl.Watch(
+		&source.Kind{Type: remediationCR},
+		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
+		predicate.Funcs{
+			// we are just interested in update events for now
+			CreateFunc:  func(_ event.CreateEvent) bool { return false },
+			DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
+			GenericFunc: func(_ event.GenericEvent) bool { return false },
+		},
+	); err != nil {
+		return err
+	}
+	r.watches[key] = struct{}{}
+	return nil
+}
+
+func getTimeoutAt(remediationCR *unstructured.Unstructured, remediation *remediationv1alpha1.Remediation, configuredTimeout *time.Duration, log logr.Logger) time.Time {
+	// We have 2 ways to time out:
+	// - after the configured timeout
+	// - after a hardcoded time after the CR's progressing status condition changed to false
+
+	configuredTimeoutAt := remediation.Started.Add(*configuredTimeout)
+
+	var progressingTimeout time.Time
+	condition := getProcessingCondition(remediationCR, log)
+	if condition != nil && condition.Status == metav1.ConditionFalse && !condition.LastTransitionTime.IsZero() {
+		progressingTimeout = condition.LastTransitionTime.Time.Add(remediationNotProcessingTimeout)
+		if progressingTimeout.Before(configuredTimeoutAt) {
+			log.Info("remediation not progressing anymore", "timeoutAt", progressingTimeout.UTC().Format(time.RFC3339))
+			return progressingTimeout
+		}
+	}
+
+	return configuredTimeoutAt
+}
+
+func getProcessingCondition(u *unstructured.Unstructured, log logr.Logger) *metav1.Condition {
+	if conditions, found, _ := unstructured.NestedSlice(u.Object, "status", "conditions"); found {
+		for _, condition := range conditions {
+			if condition, ok := condition.(map[string]interface{}); ok {
+				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == conditionTypeProcessing {
+					condStatus, _, _ := unstructured.NestedString(condition, "status")
+					var condLastTransition time.Time
+					if condLastTransitionString, foundLastTransition, _ := unstructured.NestedString(condition, "lastTransitionTime"); foundLastTransition {
+						condLastTransition, _ = time.Parse(time.RFC3339, condLastTransitionString)
+					}
+					cond := &metav1.Condition{
+						Type:               condType,
+						Status:             metav1.ConditionStatus(condStatus),
+						LastTransitionTime: metav1.Time{Time: condLastTransition},
+					}
+					log.Info("found progressing condition", "status", cond.Status, "lastTransition", cond.LastTransitionTime.UTC().Format(time.RFC3339))
+					return cond
+				}
+			}
+		}
+	}
+	return nil
 }

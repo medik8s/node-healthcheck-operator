@@ -545,6 +545,54 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 
+		Context("with progressing condition being set", func() {
+
+			BeforeEach(func() {
+				templateRef1 := underTest.Spec.RemediationTemplate
+				underTest.Spec.RemediationTemplate = nil
+				underTest.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
+					{
+						RemediationTemplate: *templateRef1,
+						Order:               0,
+						Timeout:             metav1.Duration{Duration: 5 * time.Minute},
+					},
+				}
+				setupObjects(1, 2)
+			})
+
+			It("it should timeout early", func() {
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Started).ToNot(BeNil())
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).To(BeNil())
+
+				By("letting the remediation stop progressing")
+				conditions := []interface{}{
+					map[string]interface{}{
+						"type":               "Processing",
+						"status":             "False",
+						"lastTransitionTime": time.Now().Format(time.RFC3339),
+					},
+				}
+				unstructured.SetNestedSlice(cr.Object, conditions, "status", "conditions")
+				Expect(k8sClient.Status().Update(context.Background(), cr))
+
+				// Wait for hardcoded timeout to expire
+				time.Sleep(remediationNotProcessingTimeout + 5*time.Second)
+
+				// get updated CR
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+				Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).ToNot(BeNil())
+				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+			})
+		})
+
 		Context("control plane nodes", func() {
 			When("two control plane nodes are unhealthy, just one should be remediated", func() {
 				BeforeEach(func() {

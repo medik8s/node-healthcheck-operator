@@ -103,7 +103,8 @@ type NodeHealthCheckSpec struct {
 
 	// EscalatingRemediations contain a list of ordered remediation templates with a timeout.
 	// The remediation templates will be used one after another, until the unhealthy node
-	// gets healthy within the timeout of the currently processed remediation.
+	// gets healthy within the timeout of the currently processed remediation. The order of
+	// remediation is defined by the "order" field of each "escalatingRemediation".
 	//
 	// Mutually exclusive with RemediationTemplate
 	//
