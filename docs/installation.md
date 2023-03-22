@@ -43,8 +43,21 @@ self-node-remediation-ds   3         3         3       3            3           
 ```
 
 ### Customizations:
-See the [README.md](./README.md) for Node Healthcheck CR customizations.
+See the [README.md](./index.md) for Node Healthcheck CR customizations.
 
 
 [operator hub]: https://operatorhub.io/operator/node-healthcheck-operator
 [operator-sdk]: https://sdk.operatorframework.io/docs/installation/
+
+
+
+## TODO copied from old README, insert this above...
+
+## Installation
+
+Install the Node Healthcheck operator using [operator hub]. The installation
+will also install the [self-node-remediation] operator as a default remediator.
+
+For development environments you can run `make deploy deploy-snr`.
+See the [Makefile](./../Makefile) for more variables.
+
