@@ -32,8 +32,14 @@ when debugging issues, since many steps can potentially fail. See also our
 - Processing stops when minHealthy check fails
 - Unhealthy nodes are remediated:
   - if it's a control plane node, and there are is an ongoing remediation for another control plane nodes, remediation is skipped for that node
-  - if a remediation CR already exists, and it is older than 48 hours, a Prometheus metric is increased, which can be used for triggering alert
-  - if no remediation CR exits yet, NHC will create it
+  - if a remediation CR already exists:
+    - in all cases, when it is older than 48 hours, a Prometheus metric is increased, which can be used for triggering an alert
+    - when using escalating remediations:
+      - and the timout occured
+      - or the processing condition was set + a short amount of time elapsed:
+        - set a timeout annotation the old remediation CR
+        - create a new remediation CR for the next remediator, if any is left
+  - if no remediation CR exits yet, NHC will create it, using the top level remediation template, or the first escalating remediation respectively
 
 ### Remediation providers responsibility
 

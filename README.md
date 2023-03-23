@@ -39,7 +39,9 @@ resources (CRs).
 
 If the Node is deemed to be in a failed state, and remediation is appropriate,
 the controller will instantiate a remediation custom resources based on the
-remediation template(s) as defined in the NHC CR.
+remediation template(s) as defined in the NHC CR. NHC offers to configure
+a single remediation method, or a list of remediation methods which will be
+used one after another with specified order and timeout.
 
 This template based mechanism allows cluster admins to use the best remediator
 for their environment, without NHC having to know them beforehand. Remediators
