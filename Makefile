@@ -258,7 +258,7 @@ bundle: manifests kustomize operator-sdk
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	$(OPERATOR_SDK) bundle validate ./bundle
+	$(MAKE) bundle-validate
 
 export CSV="./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml"
 
@@ -275,7 +275,7 @@ bundle-k8s: bundle
 	sed -r -i "/displayName: Node Health Check Operator/ i\    for rebooting unhealthy nodes, and can be done by labeling the" ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    the target namespace accordingly before installing NHC." ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ ." ${CSV}
-	$(OPERATOR_SDK) bundle validate ./bundle
+	$(MAKE) bundle-validate
 
 # Apply version or build date related changes in the bundle
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
@@ -288,8 +288,12 @@ bundle-update:
 	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ${CSV}
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
 	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
-	$(OPERATOR_SDK) bundle validate ./bundle
+	$(MAKE) bundle-validate
 
+.PHONY: bundle-validate
+bundle-validate: operator-sdk ## Validate the bundle directory with additional validators (suite=operatorframework), such as Kubernetes deprecated APIs (https://kubernetes.io/docs/reference/using-api/deprecation-guide/) based on bundle.CSV.Spec.MinKubeVersion
+	$(OPERATOR_SDK) bundle validate ./bundle --select-optional suite=operatorframework
+	
 # Revert all version or build date related changes
 .PHONY: bundle-reset
 bundle-reset:
