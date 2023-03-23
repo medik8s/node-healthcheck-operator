@@ -75,7 +75,7 @@ func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-//+kubebuilder:webhook:path=/validate-remediation-medik8s-io-v1alpha1-nodehealthcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=update;delete,versions=v1alpha1,name=vnodehealthcheck.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/validate-remediation-medik8s-io-v1alpha1-nodehealthcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=create;update;delete,versions=v1alpha1,name=vnodehealthcheck.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Validator = &NodeHealthCheck{}
 
