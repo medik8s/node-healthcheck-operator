@@ -25,8 +25,8 @@ General advice for debugging the situation is:
 - check the NHC pod logs: last but not least, the logs should give the most
 detailed information
 
-Some common reasons for not remediating are dscribed below.
-The [workflow decsription](./workflow.md) might have useful information as well.
+Some common reasons for not remediating are described below.
+The [workflow description](./workflow.md) might have useful information as well.
 
 ### Minimum healthy nodes in the selection set
 

@@ -16,26 +16,27 @@ spec:
         operator: DoesNotExist
       - key: node-role.kubernetes.io/master
         operator: DoesNotExist
-  remediationTemplate:
+  remediationTemplate: # Note: mutually exclusive with escalatingRemediations
     apiVersion: self-node-remediation.medik8s.io/v1alpha1
     kind: SelfNodeRemediationTemplate
     namespace: <SNR namespace>
     name: self-node-remediation-resource-deletion-template
-  escalatingRemediations:
+  escalatingRemediations: # Note: mutually exclusive with remediationTemplate
     - remediationTemplate:
-        apiVersion: superfast.medik8s.io/v1alpha1
-        name: superfast
-        namespace: openshift-operators
-        kind: SuperFastRemediationTemplate
+        apiVersion: self-node-remediation.medik8s.io/v1alpha1
+        kind: SelfNodeRemediationTemplate
+        namespace: <SNR namespace>
+        name: self-node-remediation-resource-deletion-template
       order: 1
-      timeout: 60s
-    - remediationTemplate:
-        apiVersion: normal.medik8s.io/v1alpha1
-        name: normal
-        namespace: openshift-operators
-        kind: NormalRemediationTemplate
-      order: 2
       timeout: 300s
+    # Note: The remediator below is an example only, it doesn't exist
+    - remediationTemplate:
+        apiVersion: reprovison.example.com/v1
+        kind: ReprovisionRemediationTemplate
+        namespace: example
+        name: reprovision-remediation-template
+      order: 2
+      timeout: 30m
   minHealthy: "51%"
   unhealthyConditions:
     - type: Ready
@@ -123,7 +124,7 @@ by NHC based on the template, see [below](#remediation-resources)
 EscalatingRemediations is a list of RemediationTemplates with an order and
 timeout field. Instead of just creating one remediation CR and waiting forever
 that the node gets healthy, using this field offers the ability to to try
-multiple remediaators one after another.
+multiple remediators one after another.
 The `order` field determines the order in which the remediations are invoked
 (lower order = earlier invocation). The `timeout` field determines when the
 next remediation is invoked.
@@ -180,7 +181,7 @@ unhealthyConditions:
 ### PauseRequests
 
 When pauseRequests has at least one value set, no new remediation will be
-started, while in-flight remediations keep running.
+started, while ongoing remediations keep running.
 
 It's recommended to use descriptive pause reasons like "performing cluster upgrade".
 
@@ -201,7 +202,7 @@ information about what the operator is doing. It contains these fields:
 | _healthyNodes_         | The number of observed healthy nodes.                                                                                                                                                                                                                      |
 | _inFlightRemediations_ | ** DEPRECATED ** A list of "timestamp - node name" pairs of ongoing remediations. Replaced by unhealthyNodes.                                                                                                                                              |
 | _unhealthyNodes_       | A list of unhealthy nodes and their remediations. See details below.                                                                                                                                                                                       |
-| _conditions_           | A list of conditions representing NHC's current state. Currently the only used type is "Disabled", and it is true when the comtroller detects problems which prevent it to work correctly. See the [workflow page](./workflow.md) for further information. |
+| _conditions_           | A list of conditions representing NHC's current state. Currently the only used type is "Disabled", and it is true when the controller detects problems which prevent it to work correctly. See the [workflow page](./workflow.md) for further information. |
 | _phase_                | A short human readable representation of NHC's current state. Known phases are Disabled, Paused, Remediating and Enabled.                                                                                                                                  |
 | _reason_               | A longer human readable explanation of the phase.                                                                                                                                                                                                          |
 
@@ -266,17 +267,19 @@ spec:
 
 > **Note**
 > 
-> - The kind must have a "Template" suffix.
-> - The content of the inner spec doesn't matter. While it can be empty as in this
-example, it has to exist though!
+> - `kind` must have a "Template" suffix.
+> - `spec` must contain the nested `template.spec` fields. The inner spec can be
+> empty as in the above example, or have any content like here:
 
-Here an example for a spec with more content:
 ```yaml
 spec:
   template:
     spec:
       strategy: reboot
       timeout: 5m
+      extraParams:
+        foo: bar
+        importantNumber: 42
 ```
 
 When NHC detects an unhealthy node, it will create a CR based on this template,

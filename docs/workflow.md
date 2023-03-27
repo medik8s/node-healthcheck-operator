@@ -31,11 +31,11 @@ when debugging issues, since many steps can potentially fail. See also our
 - Potentially existing remediation CRs are deleted for healthy nodes
 - Processing stops when minHealthy check fails
 - Unhealthy nodes are remediated:
-  - if it's a control plane node, and there are is an ongoing remediation for another control plane nodes, remediation is skipped for that node
+  - if it's a control plane node, and there are ongoing remediations for other control plane nodes, remediation is skipped for that node
   - if a remediation CR already exists:
     - in all cases, when it is older than 48 hours, a Prometheus metric is increased, which can be used for triggering an alert
     - when using escalating remediations:
-      - and the timout occured
+      - and the timeout occurred
       - or the processing condition was set + a short amount of time elapsed:
         - set a timeout annotation the old remediation CR
         - create a new remediation CR for the next remediator, if any is left

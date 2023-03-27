@@ -16,7 +16,7 @@ please follow the instructions there.
 
 ### On OKD and OpenShift
 
-Please visit the built-in Operatorhub in the UI, search for "Node Health Check",
+Please visit the built-in OperatorHub in the UI, search for "Node Health Check",
 and follow the instructions.
 
 > **Note**
