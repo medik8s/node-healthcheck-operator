@@ -207,7 +207,38 @@ information about what the operator is doing. It contains these fields:
 
 ### UnhealthyNodes
 
-TODO add when documenting escalating remediation
+The `unhealthyNodes` status field holds structured data for keeping track of
+ongoing remediations. When a node recovered and is healthy again, the status
+will be cleaned up.
+
+This replaces the deprecated `inFlightRemediations` field.
+
+An example:
+
+```yaml
+status:
+  # skip other fields here...
+  unhealthyNodes:
+    - name: unhealthy-node-name
+      remediations:
+        - resource:
+            apiVersion: self-node-remediation.medik8s.io/v1alpha1
+            kind: SelfNodeRemediation
+            namespace: <SNR namespace>
+            name: unhealthy-node-name
+            uid: abcd-1234...
+          started: 2023-03-20T15:05:05Z01:00
+          timedOut: 2023-03-20T15:10:05Z01:00 # timed out
+        # when using `escalatingRemediations`, the next remediator will be appended:   
+        - resource:
+            apiVersion: reprovison.example.com/v1
+            kind: ReprovisionRemediation
+            namespace: example
+            name: unhealthy-node-name
+            uid: bcde-2345...
+          started: 2023-03-20T15:10:07Z01:00
+          # no timeout set: ongoing remediation
+```
 
 ## Remediation Resources
 
