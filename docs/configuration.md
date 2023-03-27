@@ -56,7 +56,7 @@ spec:
 | _escalatingRemediations_ | yes but mutually exclusive with above | n/a                                                                                             | A list of ObjectReferences to a remediation template with order and timeout. See details below.                                                                                                |
 | _minHealthy_             | no                                    | 51%                                                                                             | The minimum number of healthy nodes selected by this CR for allowing further remediation. Percentage or absolute number.                                                                       |
 | _pauseRequests_          | no                                    | n/a                                                                                             | A string list. See details below.                                                                                                                                                              |
-| _unhealthyConditions_    | no                                    | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | List of UnhealthyCondition, which define node unhealthiness. See details below.                                                                                                                |
+| _unhealthyConditions_    | no                                    | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | List of UnhealthyCondition, which defines node unhealthiness. See details below.                                                                                                               |
 
 ### Selector
 
@@ -123,7 +123,7 @@ by NHC based on the template, see [below](#remediation-resources)
 
 EscalatingRemediations is a list of RemediationTemplates with an order and
 timeout field. Instead of just creating one remediation CR and waiting forever
-that the node gets healthy, using this field offers the ability to to try
+that the node gets healthy, using this field offers the ability to try
 multiple remediators one after another.
 The `order` field determines the order in which the remediations are invoked
 (lower order = earlier invocation). The `timeout` field determines when the
@@ -136,8 +136,9 @@ remediator can use this to cancel its efforts.
 - The other way around, when the remediator can't remediate the node for whatever
 reason, or thinks it is done with everything, it can set a status condition of
 type "Processing" with status "False" and a current "LastTransitionTime" on the
-remediation CR. NHC will try the next remediator early then, in case the node
-doesn't get healthy within a short period of time.
+remediation CR. When the node doesn't get healthy within a short period of time
+afterwards, NHC will try the next remediator without waiting for the configured
+timeout to occur.
 
 > **Note**
 > 
