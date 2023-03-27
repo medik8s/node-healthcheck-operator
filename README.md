@@ -85,7 +85,7 @@ admins can prevent new remediation by pausing the NHC CR.
 ## Further information
 
 For more details about using or contributing to Node Healthcheck, check out our
-[docs](docs/index.md).
+[docs](docs/readme.md).
 
 ## Help
 
