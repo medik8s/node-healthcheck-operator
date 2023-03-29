@@ -101,7 +101,9 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 			builder.WithPredicates(
 				predicate.Funcs{
-					// we are just interested in create and update events
+					// check for modified conditions on updates in order to prevent unneeded reconciliations
+					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
+					// delete and generic events are not interesting for now
 					DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
 					GenericFunc: func(_ event.GenericEvent) bool { return false },
 				},
@@ -115,6 +117,36 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.ctrl = ctrl
 	r.watches = make(map[string]struct{})
 	return nil
+}
+
+func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
+	var oldNode *v1.Node
+	var newNode *v1.Node
+	var ok bool
+	if oldNode, ok = ev.ObjectOld.(*v1.Node); !ok {
+		return false
+	}
+	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
+		return false
+	}
+	if len(oldNode.Status.Conditions) != len(newNode.Status.Conditions) {
+		return true
+	}
+	for _, condOld := range oldNode.Status.Conditions {
+		found := false
+		for _, condNew := range newNode.Status.Conditions {
+			if condOld.Type == condNew.Type {
+				if condOld.Status != condNew.Status {
+					return true
+				}
+				found = true
+			}
+		}
+		if !found {
+			return true
+		}
+	}
+	return false
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
