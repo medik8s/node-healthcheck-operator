@@ -103,7 +103,8 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				predicate.Funcs{
 					// check for modified conditions on updates in order to prevent unneeded reconciliations
 					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
-					// delete and generic events are not interesting for now
+					// create (new nodes don't have correct conditions yet), delete and generic events are not interesting for now
+					CreateFunc:  func(_ event.CreateEvent) bool { return false },
 					DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
 					GenericFunc: func(_ event.GenericEvent) bool { return false },
 				},
@@ -129,20 +130,35 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
 		return false
 	}
+
+	// Check if the Ready condition exists on the new node.
+	// If not, the node was just created and hasn't updated its status yet
+	readyConditionFound := false
+	for _, cond := range newNode.Status.Conditions {
+		if cond.Type == v1.NodeReady {
+			readyConditionFound = true
+			break
+		}
+	}
+	if !readyConditionFound {
+		return false
+	}
+
+	// Check if conditions changed
 	if len(oldNode.Status.Conditions) != len(newNode.Status.Conditions) {
 		return true
 	}
 	for _, condOld := range oldNode.Status.Conditions {
-		found := false
+		conditionFound := false
 		for _, condNew := range newNode.Status.Conditions {
 			if condOld.Type == condNew.Type {
 				if condOld.Status != condNew.Status {
 					return true
 				}
-				found = true
+				conditionFound = true
 			}
 		}
-		if !found {
+		if !conditionFound {
 			return true
 		}
 	}
