@@ -101,7 +101,10 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 			builder.WithPredicates(
 				predicate.Funcs{
-					// we are just interested in create and update events
+					// check for modified conditions on updates in order to prevent unneeded reconciliations
+					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
+					// create (new nodes don't have correct conditions yet), delete and generic events are not interesting for now
+					CreateFunc:  func(_ event.CreateEvent) bool { return false },
 					DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
 					GenericFunc: func(_ event.GenericEvent) bool { return false },
 				},
@@ -115,6 +118,51 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.ctrl = ctrl
 	r.watches = make(map[string]struct{})
 	return nil
+}
+
+func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
+	var oldNode *v1.Node
+	var newNode *v1.Node
+	var ok bool
+	if oldNode, ok = ev.ObjectOld.(*v1.Node); !ok {
+		return false
+	}
+	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
+		return false
+	}
+
+	// Check if the Ready condition exists on the new node.
+	// If not, the node was just created and hasn't updated its status yet
+	readyConditionFound := false
+	for _, cond := range newNode.Status.Conditions {
+		if cond.Type == v1.NodeReady {
+			readyConditionFound = true
+			break
+		}
+	}
+	if !readyConditionFound {
+		return false
+	}
+
+	// Check if conditions changed
+	if len(oldNode.Status.Conditions) != len(newNode.Status.Conditions) {
+		return true
+	}
+	for _, condOld := range oldNode.Status.Conditions {
+		conditionFound := false
+		for _, condNew := range newNode.Status.Conditions {
+			if condOld.Type == condNew.Type {
+				if condOld.Status != condNew.Status {
+					return true
+				}
+				conditionFound = true
+			}
+		}
+		if !conditionFound {
+			return true
+		}
+	}
+	return false
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch

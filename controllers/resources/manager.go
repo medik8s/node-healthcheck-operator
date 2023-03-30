@@ -107,10 +107,7 @@ func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alp
 			} else {
 				// What to do if namespaces don't match?
 				// So far this is a known issue for Metal3 remediation only, and that case was checked already
-				// in the Reconciler. So just log it, but do not fail remediation.
-				m.log.Info("Not setting remediation CR's owner ref to the machine, because namespaces don't match",
-					"template ns", remediationCR.GetNamespace(),
-					"machine ns", machineNamespace)
+				// in the Reconciler. So ignore, logging it is too verbose.
 			}
 		}
 	}
