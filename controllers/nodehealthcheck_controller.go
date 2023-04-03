@@ -130,11 +130,14 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
 		return false
 	}
+	return conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
+}
 
+func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bool {
 	// Check if the Ready condition exists on the new node.
 	// If not, the node was just created and hasn't updated its status yet
 	readyConditionFound := false
-	for _, cond := range newNode.Status.Conditions {
+	for _, cond := range newConditions {
 		if cond.Type == v1.NodeReady {
 			readyConditionFound = true
 			break
@@ -145,12 +148,12 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 	}
 
 	// Check if conditions changed
-	if len(oldNode.Status.Conditions) != len(newNode.Status.Conditions) {
+	if len(oldConditions) != len(newConditions) {
 		return true
 	}
-	for _, condOld := range oldNode.Status.Conditions {
+	for _, condOld := range oldConditions {
 		conditionFound := false
-		for _, condNew := range newNode.Status.Conditions {
+		for _, condNew := range newConditions {
 			if condOld.Type == condNew.Type {
 				if condOld.Status != condNew.Status {
 					return true
