@@ -342,6 +342,7 @@ index-push: ## Push a catalog image.
 
 # Run end to end tests
 .PHONY: test-e2e
+export OPERATOR_NS ?= openshift-operators
 test-e2e:
 	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
 	echo "Running e2e tests"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
@@ -233,7 +235,7 @@ var _ = Describe("e2e", func() {
 				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
 			}
 			Consistently(
-				fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 30*time.Second).
+				fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 30*time.Second).
 				ShouldNot(Succeed())
 		})
 	})
@@ -251,7 +253,7 @@ var _ = Describe("e2e", func() {
 			It("Remediates a host and prevents config updates", func() {
 				By("ensuring remediation CR exists")
 				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 1*time.Second).
+					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 1*time.Second).
 					Should(Succeed())
 
 				By("ensuring status is set")
@@ -293,7 +295,10 @@ var _ = Describe("e2e", func() {
 			})
 		})
 
-		Context("with single escalating remediation config", func() {
+		Context("with escalating remediation config", func() {
+
+			firstTimeout := metav1.Duration{Duration: 1 * time.Minute}
+
 			BeforeEach(func() {
 
 				// ensure we don't get into a conflict with the original NHC config, which might be still remediating
@@ -323,12 +328,22 @@ var _ = Describe("e2e", func() {
 						EscalatingRemediations: []v1alpha1.EscalatingRemediation{
 							{
 								RemediationTemplate: v1.ObjectReference{
+									Kind:       dummyRemediationTemplateGVK.Kind,
+									APIVersion: dummyRemediationTemplateGVK.GroupVersion().String(),
+									Name:       dummyTemplateName,
+									Namespace:  testNsName,
+								},
+								Order:   0,
+								Timeout: firstTimeout,
+							},
+							{
+								RemediationTemplate: v1.ObjectReference{
 									Kind:       "SelfNodeRemediationTemplate",
 									APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
 									Name:       "self-node-remediation-resource-deletion-template",
 									Namespace:  operatorNsName,
 								},
-								Order:   0,
+								Order:   5,
 								Timeout: metav1.Duration{Duration: 5 * time.Minute},
 							},
 						},
@@ -346,24 +361,51 @@ var _ = Describe("e2e", func() {
 						},
 					},
 				}
-				Expect(k8sClient.Create(context.Background(), secondNHC)).To(Succeed())
+				if err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(secondNHC), secondNHC); err != nil {
+					Expect(errors.IsNotFound(err)).To(BeTrue(), "unexpected error when checking for test NHC CR")
+					Expect(k8sClient.Create(context.Background(), secondNHC)).To(Succeed(), "failed to create test NHC CR")
+				}
 
 				By("making node unhealthy")
 				makeNodeUnready(nodeUnderTest)
 			})
 
 			It("Remediates a host", func() {
-				By("ensuring remediation CR exists")
+				By("ensuring 1st remediation CR exists")
 				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name), remediationStartedTimeout, 1*time.Second).
+					fetchRemediationResourceByName(nodeUnderTest.Name,
+						schema.GroupVersionResource{
+							Group:    dummyRemediationTemplateGVK.Group,
+							Version:  dummyRemediationTemplateGVK.Version,
+							Resource: strings.ToLower(dummyRemediationTemplateGVK.Kind) + "s",
+						},
+						schema.GroupVersionResource{
+							Group:    dummyRemediationGVK.Group,
+							Version:  dummyRemediationGVK.Version,
+							Resource: strings.ToLower(dummyRemediationGVK.Kind) + "s",
+						},
+					), remediationStartedTimeout, 1*time.Second).
+					Should(Succeed())
+
+				By("waiting and checking 1st remediation timed out")
+				time.Sleep(firstTimeout.Duration + 2*time.Second)
+				nhc := getConfig(nhcName)
+				Expect(nhc.Status.UnhealthyNodes[0].Remediations[0].TimedOut).ToNot(BeNil())
+
+				By("ensuring 2nd remediation CR exists")
+				Eventually(
+					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 1*time.Second).
 					Should(Succeed())
 
 				By("ensuring status is set")
-				nhc := getConfig(nhcName)
+				nhc = getConfig(nhcName)
 				Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
 				Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
-				Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+				Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(2))
 				Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+
+				By("waiting for healthy node")
+				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
 			})
 		})
 
@@ -376,13 +418,10 @@ func getConfig(name string) *v1alpha1.NodeHealthCheck {
 	return nhc
 }
 
-func fetchRemediationResourceByName(name string) func() error {
+func fetchRemediationResourceByName(name string, remediationTemplateResource, remediationResource schema.GroupVersionResource) func() error {
 	return func() error {
-		ns, err := getTemplateNS()
-		if err != nil {
-			return err
-		}
-		get, err := dynamicClient.Resource(remediationGVR).Namespace(ns).
+		ns := getTemplateNS(remediationTemplateResource)
+		get, err := dynamicClient.Resource(remediationResource).Namespace(ns).
 			Get(context.Background(),
 				name,
 				metav1.GetOptions{})
@@ -394,18 +433,12 @@ func fetchRemediationResourceByName(name string) func() error {
 	}
 }
 
-func getTemplateNS() (string, error) {
-	list, err := dynamicClient.Resource(remediationTemplateGVR).List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return "", err
-	}
-	for _, t := range list.Items {
-		if t.GetName() == "self-node-remediation-resource-deletion-template" {
-			return t.GetNamespace(), err
-		}
-	}
-
-	return "", fmt.Errorf("failed to find the default remediation template")
+func getTemplateNS(templateResource schema.GroupVersionResource) string {
+	list, err := dynamicClient.Resource(templateResource).List(context.Background(), metav1.ListOptions{})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(list.Items).ToNot(BeEmpty())
+	// just use the 1st template for simplicity...
+	return list.Items[0].GetNamespace()
 }
 
 func makeNodeUnready(node *v1.Node) {
