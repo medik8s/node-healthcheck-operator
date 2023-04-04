@@ -100,6 +100,12 @@ ifeq ("${HOME}", "/")
 HOME=/tmp
 endif
 
+ifeq "$(NHC_SKIP_TEST)" "true"
+test:
+	@echo "skipping test target!"
+test-no-verify:
+	@echo "skipping test-no-verify target!"
+else
 # Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
 test: test-no-verify
 	$(MAKE) bundle-reset verify
@@ -107,6 +113,7 @@ test: test-no-verify
 # Generate and format code, and run tests
 test-no-verify: vendor generate test-imports fmt vet envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... -coverprofile cover.out -v -ginkgo.v
+endif
 
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
