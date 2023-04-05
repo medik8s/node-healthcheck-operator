@@ -38,7 +38,6 @@ jobs:
     runs-on: ubuntu-20.04
     timeout-minutes: 120
     env:
-      BUILD_SCRIPT: build-nhc-snr.sh
       IMAGE_REGISTRY: kind-registry:5000
       VERSION: 9.9.9-ci
       DEPLOY_NAMESPACE: k8s-test
@@ -100,30 +99,23 @@ jobs:
       run: |
         curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.22.0/install.sh | bash -s v0.22.0
 
-    - name: Install NHC / SNR build script
-      run: |
-        curl https://raw.githubusercontent.com/medik8s/tools/main/scripts/${BUILD_SCRIPT} -o ${BUILD_SCRIPT}
-        chmod +x ${BUILD_SCRIPT}
-
     - name: Build NHC
       run: |
-        make container-build container-push
-        # make opm findable...
-        cp ./bin/opm /usr/local/bin/
+        export NHC_SKIP_TEST=true
+        make container-build-k8s container-push
+        # make operator-sdk findable...
+        cp ./bin/operator-sdk /usr/local/bin/
 
-    - name: Build and deploy NHC + SNR
+    - name: Deploy NHC + SNR
       run: |
-        # set version vars
-        export NHC_VERSION=${VERSION}
-        export SNR_VERSION=${VERSION}
-        export INDEX_VERSION=${VERSION}
-
-        # set deployment namespace
-        export CATALOG_SOURCE_NAMESPACE=olm
-
-        # build and push images, and deploy
-        ./${BUILD_SCRIPT} --skip-nhc --http
-
+        kubectl create ns ${DEPLOY_NAMESPACE}
+        
+        # deploy SNR first
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/medik8s/self-node-remediation-operator-bundle:latest
+        
+        # deploy NHC
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:v${VERSION}
+        
         # wait a bit for OLM creating CSV etc
         sleep 1m
 
@@ -138,13 +130,13 @@ jobs:
 
     - name: Wait for deployments
       run: |
-        kubectl wait deployment -n ${DEPLOY_NAMESPACE} self-node-remediation-controller-manager --for condition=Available=True --timeout=180s
+        kubectl wait deployment -n ${DEPLOY_NAMESPACE} self-node-remediation-controller-manager --for condition=Available=True --timeout=300s
         # give SNR some time to create the DS
         sleep 30s
-        kubectl rollout status daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds --timeout 180s
-        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-controller-manager --for condition=Available=True --timeout=180s
+        kubectl rollout status daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds --timeout 300s
+        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-controller-manager --for condition=Available=True --timeout=300s
         # should be scaled down to zero by NHC on k8s
-        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-node-remediation-console-plugin --for condition=Available=True --timeout=30s
+        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-node-remediation-console-plugin --for condition=Available=True --timeout=60s
 
     - name: Deployment status
       if: ${{ always() }}
@@ -163,15 +155,23 @@ jobs:
         # debug NHC
         echo "Debugging NHC"
         kubectl describe deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-controller-manager
+        echo "\n\n"
         kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=app.kubernetes.io/name=node-healthcheck-operator,app.kubernetes.io/component=controller-manager
+        echo "\n\n"
         kubectl logs -n ${DEPLOY_NAMESPACE} -c manager --selector=app.kubernetes.io/name=node-healthcheck-operator,app.kubernetes.io/component=controller-manager --tail -1
+        echo "\n\n"
         
         echo "Debugging SNR operator"
         kubectl describe deployment -n ${DEPLOY_NAMESPACE} self-node-remediation-controller-manager
+        echo "\n\n"
         kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=self-node-remediation-operator=,control-plane=controller-manager
+        echo "\n\n"
         kubectl logs -n ${DEPLOY_NAMESPACE} -c manager --selector=self-node-remediation-operator=,control-plane=controller-manager --tail -1
+        echo "\n\n"
         
         echo "Debugging SNR agents"
         kubectl describe daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds
+        echo "\n\n"
         kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=app=self-node-remediation-agent,control-plane=controller-manager
+        echo "\n\n"
         kubectl logs -n ${DEPLOY_NAMESPACE} --selector=app=self-node-remediation-agent,control-plane=controller-manager --tail -1
