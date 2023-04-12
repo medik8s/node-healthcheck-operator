@@ -342,7 +342,6 @@ spec:
                   type: object
                 type: array
               healthyNodes:
-                default: 0
                 description: HealthyNodes specified the number of healthy nodes observed
                 type: integer
               inFlightRemediations:
@@ -353,7 +352,6 @@ spec:
                   triggered per node. Deprecated in favour of UnhealthyNodes.
                 type: object
               observedNodes:
-                default: 0
                 description: ObservedNodes specified the number of nodes observed
                   by using the NHC spec.selector
                 type: integer
@@ -442,9 +440,6 @@ spec:
                   - name
                   type: object
                 type: array
-            required:
-            - healthyNodes
-            - observedNodes
             type: object
         type: object
     served: true
