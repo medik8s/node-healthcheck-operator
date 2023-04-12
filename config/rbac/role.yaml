@@ -12,8 +12,6 @@ rules:
   verbs:
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - config.openshift.io
@@ -39,14 +37,6 @@ rules:
   - ""
   resources:
   - nodes
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - services
   verbs:
   - get
   - list
