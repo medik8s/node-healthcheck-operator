@@ -138,8 +138,6 @@ jobs:
         sleep 30s
         kubectl rollout status daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds --timeout 180s
         kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-controller-manager --for condition=Available=True --timeout=180s
-        # should be scaled down to zero by NHC on k8s
-        kubectl wait deployment -n ${DEPLOY_NAMESPACE} node-healthcheck-node-remediation-console-plugin --for condition=Available=True --timeout=30s
 
     - name: Deployment status
       if: ${{ always() }}
