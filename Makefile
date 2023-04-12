@@ -259,8 +259,9 @@ rm -rf $$TMP_DIR ;\
 endef
 
 # Generate bundle manifests and metadata, then validate generated files.
-.PHONY: bundle
-bundle: manifests kustomize operator-sdk
+.PHONY: bundle-base
+bundle-base: manifests kustomize operator-sdk
+	rm -rf ./bundle/manifests
 	$(OPERATOR_SDK) generate --verbose kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
@@ -270,8 +271,14 @@ bundle: manifests kustomize operator-sdk
 export CSV="./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml"
 
 # Generate bundle manifests and metadata, then validate generated files.
+.PHONY: bundle
+bundle: bundle-base
+	$(KUSTOMIZE) build config/manifests-ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(MAKE) bundle-validate
+
+# Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle-k8s
-bundle-k8s: bundle
+bundle-k8s: bundle-base
 	$(KUSTOMIZE) build config/manifests-k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
 	sed -r -i "/displayName: Node Health Check Operator/ i\    " ${CSV}
