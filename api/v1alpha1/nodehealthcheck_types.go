@@ -189,15 +189,15 @@ type EscalatingRemediation struct {
 type NodeHealthCheckStatus struct {
 	// ObservedNodes specified the number of nodes observed by using the NHC spec.selector
 	//
-	//+kubebuilder:default:=0
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
-	ObservedNodes int `json:"observedNodes"`
+	ObservedNodes int `json:"observedNodes,omitempty"`
 
 	// HealthyNodes specified the number of healthy nodes observed
 	//
-	//+kubebuilder:default:=0
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
-	HealthyNodes int `json:"healthyNodes"`
+	HealthyNodes int `json:"healthyNodes,omitempty"`
 
 	// UnhealthyNodes tracks currently unhealthy nodes and their remediations.
 	//
