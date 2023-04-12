@@ -14,3 +14,9 @@ images:
 - name: console-plugin
   newName: quay.io/medik8s/node-remediation-console
   newTag: latest
+
+# copied from default after removing it from there
+namePrefix: node-healthcheck-
+
+commonLabels:
+  app.kubernetes.io/name: node-healthcheck-operator
