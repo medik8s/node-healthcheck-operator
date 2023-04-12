@@ -20,6 +20,7 @@ const (
 
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=*
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=*
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 
 // Aggregation defines the functions needed for setting up RBAC aggregation
 type Aggregation interface {
