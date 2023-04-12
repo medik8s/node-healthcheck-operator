@@ -235,8 +235,6 @@ spec:
           verbs:
           - get
           - list
-          - patch
-          - update
           - watch
         - apiGroups:
           - config.openshift.io
@@ -262,14 +260,6 @@ spec:
           - ""
           resources:
           - nodes
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - ""
-          resources:
-          - services
           verbs:
           - get
           - list
