@@ -22,11 +22,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
-	v1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -45,8 +42,6 @@ const (
 )
 
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
 
 // CreateOrUpdatePlugin creates or updates the resources needed for the remediation console plugin.
 // HEADS UP: consider cleanup of old resources in case of name changes or removals!
@@ -58,22 +53,7 @@ func CreateOrUpdatePlugin(ctx context.Context, cl client.Client, config *rest.Co
 	if isOpenshift, err := utils.IsOnOpenshift(config); err != nil {
 		return errors.Wrap(err, "failed to check if we are on Openshift")
 	} else if !isOpenshift {
-		log.Info("we are not on Openshift, skipping console plugin activation, but scale down console deployment")
-		list := &v1.DeploymentList{}
-		selector := labels.NewSelector()
-		req, _ := labels.NewRequirement("app.kubernetes.io/component", selection.Equals, []string{"node-remediation-console-plugin"})
-		selector = selector.Add(*req)
-		if err := cl.List(ctx, list, &client.ListOptions{LabelSelector: selector, Namespace: namespace}); err != nil || len(list.Items) != 1 {
-			return errors.Wrap(err, "failed to find console deployment for scaling down")
-		}
-		console := list.Items[0]
-		consoleOrig := console.DeepCopy()
-		replicas := int32(0)
-		console.Spec.Replicas = &replicas
-		mergeFrom := client.MergeFrom(consoleOrig)
-		if err = cl.Patch(ctx, &console, mergeFrom, &client.PatchOptions{}); err != nil {
-			return errors.Wrap(err, "failed to patch console deployment for scaling down")
-		}
+		log.Info("we are not on Openshift, skipping console plugin activation")
 		return nil
 	}
 
