@@ -511,7 +511,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 	annotations[remediationTimedOutAnnotationkey] = now.Format(time.RFC3339)
 	remediationCR.SetAnnotations(annotations)
-	if rm.UpdateRemediationCR(remediationCR); err != nil {
+	if err = rm.UpdateRemediationCR(remediationCR); err != nil {
 		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
 	}
 
