@@ -191,13 +191,13 @@ type NodeHealthCheckStatus struct {
 	//
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
-	ObservedNodes int `json:"observedNodes,omitempty"`
+	ObservedNodes *int `json:"observedNodes,omitempty"`
 
 	// HealthyNodes specified the number of healthy nodes observed
 	//
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
-	HealthyNodes int `json:"healthyNodes,omitempty"`
+	HealthyNodes *int `json:"healthyNodes,omitempty"`
 
 	// UnhealthyNodes tracks currently unhealthy nodes and their remediations.
 	//
