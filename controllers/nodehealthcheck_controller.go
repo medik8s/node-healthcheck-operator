@@ -211,8 +211,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}()
 
 	// set counters to zero for disabled NHC
-	nhc.Status.ObservedNodes = 0
-	nhc.Status.HealthyNodes = 0
+	nhc.Status.ObservedNodes = pointer.Int(0)
+	nhc.Status.HealthyNodes = pointer.Int(0)
 
 	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
@@ -270,11 +270,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return result, err
 	}
-	nhc.Status.ObservedNodes = len(nodes)
+	nhc.Status.ObservedNodes = pointer.Int(len(nodes))
 
 	// check nodes health
 	healthyNodes, unhealthyNodes := r.checkNodesHealth(nodes, nhc)
-	nhc.Status.HealthyNodes = len(healthyNodes)
+	nhc.Status.HealthyNodes = pointer.Int(len(healthyNodes))
 
 	// TODO consider setting Disabled condition?
 	if r.isClusterUpgrading() {
@@ -568,9 +568,10 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 	} else if string(patchBytes) == "{}" {
 		// no change
 		return nil
+	} else {
+		log.Info("Patching NHC status", "new status", nhc.Status, "patch", string(patchBytes))
 	}
 
-	log.Info("Patching NHC status", "new status", nhc.Status)
 	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom)
 }
 
