@@ -56,7 +56,6 @@ import (
 const (
 	oldRemediationCRAnnotationKey    = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
 	remediationTimedOutAnnotationkey = "remediation.medik8s.io/nhc-timed-out"
-	remediationNotProcessingTimeout  = 30 * time.Second
 	remediationCRAlertTimeout        = time.Hour * 48
 	eventReasonRemediationCreated    = "RemediationCreated"
 	eventReasonRemediationSkipped    = "RemediationSkipped"
@@ -67,7 +66,7 @@ const (
 	eventTypeNormal                  = "Normal"
 	eventTypeWarning                 = "Warning"
 	enabledMessage                   = "No issues found, NodeHealthCheck is enabled."
-	conditionTypeProcessing          = "Processing"
+	conditionTypeSucceeded           = "Succeeded"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -474,7 +473,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		return nil, nil
 	}
 
-	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Processing"
+	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Succeeded"
 	// condition, which can accelerate switching to the next remediator.
 	// So let's start watching the CRs, so we don't need to poll.
 	if err = r.addWatch(remediationCR); err != nil {
@@ -497,14 +496,23 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 
 	now := metav1.Time{Time: currentTime()}
-	timeoutAt := getTimeoutAt(remediationCR, startedRemediation, timeout, log)
-	if !now.After(timeoutAt) {
+	timeoutAt := getTimeoutAt(startedRemediation, timeout)
+	timedOut := now.After(timeoutAt)
+
+	failed := remediationFailed(remediationCR, log)
+
+	if !timedOut && !failed {
 		// not timed out yet, come back when we do so
 		return pointer.Duration(timeoutAt.Sub(now.Time)), nil
 	}
 
-	// handle timeout
-	log.Info("remediation timed out", "timedOutAt", now.Format(time.RFC3339))
+	// handle timeout and failure
+	if timedOut {
+		log.Info("remediation timed out")
+	} else if failed {
+		log.Info("remediation failed")
+	}
+
 	// add timeout annotation to remediation CR
 	annotations := remediationCR.GetAnnotations()
 	if annotations == nil {
@@ -637,31 +645,20 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 	return nil
 }
 
-func getTimeoutAt(remediationCR *unstructured.Unstructured, remediation *remediationv1alpha1.Remediation, configuredTimeout *time.Duration, log logr.Logger) time.Time {
-	// We have 2 ways to time out:
-	// - after the configured timeout
-	// - after a hardcoded time after the CR's progressing status condition changed to false
-
-	configuredTimeoutAt := remediation.Started.Add(*configuredTimeout)
-
-	var progressingTimeout time.Time
-	condition := getProcessingCondition(remediationCR, log)
-	if condition != nil && condition.Status == metav1.ConditionFalse && !condition.LastTransitionTime.IsZero() {
-		progressingTimeout = condition.LastTransitionTime.Time.Add(remediationNotProcessingTimeout)
-		if progressingTimeout.Before(configuredTimeoutAt) {
-			log.Info("remediation not progressing anymore", "timeoutAt", progressingTimeout.UTC().Format(time.RFC3339))
-			return progressingTimeout
-		}
-	}
-
-	return configuredTimeoutAt
+func getTimeoutAt(remediation *remediationv1alpha1.Remediation, configuredTimeout *time.Duration) time.Time {
+	return remediation.Started.Add(*configuredTimeout)
 }
 
-func getProcessingCondition(u *unstructured.Unstructured, log logr.Logger) *metav1.Condition {
-	if conditions, found, _ := unstructured.NestedSlice(u.Object, "status", "conditions"); found {
+func remediationFailed(remediationCR *unstructured.Unstructured, log logr.Logger) bool {
+	succeededCondition := getSucceededCondition(remediationCR, log)
+	return succeededCondition != nil && succeededCondition.Status == metav1.ConditionFalse
+}
+
+func getSucceededCondition(remediationCR *unstructured.Unstructured, log logr.Logger) *metav1.Condition {
+	if conditions, found, _ := unstructured.NestedSlice(remediationCR.Object, "status", "conditions"); found {
 		for _, condition := range conditions {
 			if condition, ok := condition.(map[string]interface{}); ok {
-				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == conditionTypeProcessing {
+				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == conditionTypeSucceeded {
 					condStatus, _, _ := unstructured.NestedString(condition, "status")
 					var condLastTransition time.Time
 					if condLastTransitionString, foundLastTransition, _ := unstructured.NestedString(condition, "lastTransitionTime"); foundLastTransition {
@@ -672,7 +669,7 @@ func getProcessingCondition(u *unstructured.Unstructured, log logr.Logger) *meta
 						Status:             metav1.ConditionStatus(condStatus),
 						LastTransitionTime: metav1.Time{Time: condLastTransition},
 					}
-					log.Info("found progressing condition", "status", cond.Status, "lastTransition", cond.LastTransitionTime.UTC().Format(time.RFC3339))
+					log.Info("found succeeded condition", "status", cond.Status, "reason", cond.Reason, "message", cond.Message, "lastTransition", cond.LastTransitionTime.UTC().Format(time.RFC3339))
 					return cond
 				}
 			}
