@@ -3,7 +3,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -33,6 +32,10 @@ import (
 const (
 	remediationStartedTimeout = 2 * time.Minute
 	nodeRebootedTimeout       = 10 * time.Minute
+)
+
+var (
+	labelOcpOnly = Label("OCP-ONLY")
 )
 
 var _ = Describe("e2e", func() {
@@ -117,13 +120,8 @@ var _ = Describe("e2e", func() {
 
 	})
 
-	When("when the operator and the console plugin is deployed", func() {
+	When("when the operator and the console plugin is deployed", labelOcpOnly, func() {
 		It("the plugin manifest should be served", func() {
-			// console deployment is disabled on k8s
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping console plugin test as requested by $SKIP_FOR_K8S env var")
-			}
-
 			By("getting the ConsolePlugin")
 			plugin := &consolev1alpha1.ConsolePlugin{}
 			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: console.PluginName}, plugin)).To(Succeed(), "failed to get ConsolePlugin")
@@ -142,14 +140,9 @@ var _ = Describe("e2e", func() {
 		})
 	})
 
-	Context("with custom MHC", func() {
+	Context("with custom MHC", labelOcpOnly, func() {
 		var mhc *v1beta1.MachineHealthCheck
 		BeforeEach(func() {
-			// we have no MHC on k8s
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping MHC test as requested by $SKIP_FOR_K8S env var")
-			}
-
 			mhc = &v1beta1.MachineHealthCheck{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -171,10 +164,6 @@ var _ = Describe("e2e", func() {
 		})
 
 		AfterEach(func() {
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping MHC test as requested by $SKIP_FOR_K8S env var")
-			}
-
 			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed())
 			// ensure NHC reverts to enabled
 			Eventually(func(g Gomega) {
@@ -193,14 +182,8 @@ var _ = Describe("e2e", func() {
 		})
 	})
 
-	Context("with terminating node", func() {
+	Context("with terminating node", labelOcpOnly, func() {
 		BeforeEach(func() {
-			// on k8s, the node will be remediated because of missing MHC logic, so skip this test
-			// heads up, that means the node is not unhealthy yet for following tests!
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
-			}
-
 			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
 			conditions := nodeUnderTest.Status.Conditions
 			conditions = append(conditions, v1.NodeCondition{
@@ -214,10 +197,6 @@ var _ = Describe("e2e", func() {
 		})
 
 		AfterEach(func() {
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
-			}
-
 			Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
 			conditions := nodeUnderTest.Status.Conditions
 			for i, cond := range conditions {
@@ -231,9 +210,6 @@ var _ = Describe("e2e", func() {
 		})
 
 		It("should not remediate", func() {
-			if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-				Skip("skipping MHC terminating node test as requested by $SKIP_FOR_K8S env var")
-			}
 			Consistently(
 				fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 30*time.Second).
 				ShouldNot(Succeed())
@@ -243,14 +219,11 @@ var _ = Describe("e2e", func() {
 	When("Node conditions meets the unhealthy criteria", func() {
 
 		Context("with classic remediation config", func() {
-			BeforeEach(func() {
-				// on k8s, the node is not made unready yet
-				if _, exists := os.LookupEnv("SKIP_FOR_K8S"); exists {
-					makeNodeUnready(nodeUnderTest)
-				}
-			})
 
 			It("Remediates a host and prevents config updates", func() {
+				By("making node unhealthy")
+				makeNodeUnready(nodeUnderTest)
+
 				By("ensuring remediation CR exists")
 				Eventually(
 					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 1*time.Second).
@@ -442,6 +415,15 @@ func getTemplateNS(templateResource schema.GroupVersionResource) string {
 }
 
 func makeNodeUnready(node *v1.Node) {
+	// check if node is unready already
+	Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == v1.NodeReady && cond.Status == v1.ConditionUnknown {
+			log.Info("node is already unready")
+			return
+		}
+	}
+
 	modifyKubelet(node, "stop")
 	waitForNodeHealthyCondition(node, v1.ConditionUnknown)
 }
