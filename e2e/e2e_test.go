@@ -206,67 +206,11 @@ var _ = Describe("e2e", func() {
 
 	When("Node conditions meets the unhealthy criteria", func() {
 
-		Context("with classic remediation config", func() {
-
-			It("Remediates a host and prevents config updates", func() {
-				By("making node unhealthy")
-				makeNodeUnready(nodeUnderTest)
-
-				By("ensuring remediation CR exists")
-				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 5*time.Second).
-					Should(Succeed())
-
-				By("ensuring status is set")
-				Eventually(func(g Gomega) {
-					nhc = getConfig()
-					g.Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
-					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
-					g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
-					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
-				}, "10s", "2s").Should(Succeed())
-
-				// let's do some NHC validation tests here
-				// wrap 1st webhook test in eventually in order to wait until webhook is up and running
-				By("ensuring negative minHealthy update fails")
-				nhc = getConfig()
-				negValue := intstr.FromInt(-1)
-				nhc.Spec.MinHealthy = &negValue
-				Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
-
-				By("ensuring selector update fails")
-				nhc = getConfig()
-				nhc.Spec.Selector = metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"foo": "bar",
-					},
-				}
-				Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "selector update should be prevented")
-
-				By("ensuring config deletion fails")
-				nhc = getConfig()
-				Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "deletion should be prevented")
-
-				By("ensuring minHealthy update succeeds")
-				nhc = getConfig()
-				newValue := intstr.FromString("10%")
-				nhc.Spec.MinHealthy = &newValue
-				Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
-
-				By("waiting for healthy node")
-				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
-
-			})
-		})
-
 		Context("with escalating remediation config", func() {
 
 			firstTimeout := metav1.Duration{Duration: 1 * time.Minute}
 
 			BeforeEach(func() {
-
-				nodeUnderTest = node2
-
 				// modify nhc to use escalating remediations
 				nhc.Spec.RemediationTemplate = nil
 				nhc.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
@@ -337,6 +281,63 @@ var _ = Describe("e2e", func() {
 
 				By("waiting for healthy node")
 				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+			})
+		})
+
+		Context("with classic remediation config", func() {
+
+			BeforeEach(func() {
+				nodeUnderTest = node2
+			})
+
+			It("Remediates a host and prevents config updates", func() {
+				By("making node unhealthy")
+				makeNodeUnready(nodeUnderTest)
+
+				By("ensuring remediation CR exists")
+				Eventually(
+					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 5*time.Second).
+					Should(Succeed())
+
+				By("ensuring status is set")
+				Eventually(func(g Gomega) {
+					nhc = getConfig()
+					g.Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
+					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
+					g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+				}, "10s", "2s").Should(Succeed())
+
+				// let's do some NHC validation tests here
+				// wrap 1st webhook test in eventually in order to wait until webhook is up and running
+				By("ensuring negative minHealthy update fails")
+				nhc = getConfig()
+				negValue := intstr.FromInt(-1)
+				nhc.Spec.MinHealthy = &negValue
+				Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
+
+				By("ensuring selector update fails")
+				nhc = getConfig()
+				nhc.Spec.Selector = metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"foo": "bar",
+					},
+				}
+				Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "selector update should be prevented")
+
+				By("ensuring config deletion fails")
+				nhc = getConfig()
+				Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "deletion should be prevented")
+
+				By("ensuring minHealthy update succeeds")
+				nhc = getConfig()
+				newValue := intstr.FromString("10%")
+				nhc.Spec.MinHealthy = &newValue
+				Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
+
+				By("waiting for healthy node")
+				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+
 			})
 		})
 
