@@ -102,12 +102,18 @@ var _ = Describe("e2e", func() {
 
 	JustBeforeEach(func() {
 		// create NHC
-		DeferCleanup(func() {
-			Eventually(func() error {
-				return k8sClient.Delete(context.Background(), nhc)
-			}, "1m", "5s").Should(Succeed())
-		})
 		Expect(k8sClient.Create(context.Background(), nhc)).To(Succeed())
+	})
+
+	JustAfterEach(func() {
+		// delete NHC
+		// Heads up: DO NOT PUT THIS INTO A DeferCleanup() ABOVE!
+		// We need to delete the NHC CR before all inner AfterEach() blocks,
+		// in order to not start unwanted remediation when e.g. the Terminating condition is removed!
+		// DeferCleanup() runs after ALL AfterEach blocks.
+		Eventually(func() error {
+			return k8sClient.Delete(context.Background(), nhc)
+		}, "1m", "5s").Should(Succeed())
 	})
 
 	When("when the operator and the console plugin is deployed", labelOcpOnly, func() {
@@ -131,9 +137,9 @@ var _ = Describe("e2e", func() {
 	})
 
 	Context("with custom MHC", labelOcpOnly, func() {
-		var mhc *v1beta1.MachineHealthCheck
-		BeforeEach(func() {
-			mhc = &v1beta1.MachineHealthCheck{
+		It("should report disabled and re-enabled NHC", func() {
+			By("creating a MHC")
+			mhc := &v1beta1.MachineHealthCheck{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-mhc",
@@ -150,25 +156,27 @@ var _ = Describe("e2e", func() {
 					},
 				},
 			}
-			Expect(k8sClient.Create(context.Background(), mhc)).To(Succeed())
-		})
+			Expect(k8sClient.Create(context.Background(), mhc)).To(Succeed(), "failed to create MHC")
 
-		AfterEach(func() {
-			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed())
-			// ensure NHC reverts to enabled
-			Eventually(func(g Gomega) {
-				nhc = getConfig()
-				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
-				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled")
-		})
+			// status is only updated when something triggers reconcile, so we need to wait a long time...
+			// see TODO after NHC controller "r.MHCChecker.NeedDisableNHC()" call
 
-		It("should report disabled NHC", func() {
+			By("waiting for NHC to be disabled")
 			Eventually(func(g Gomega) {
 				nhc = getConfig()
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
 				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseDisabled), "phase should be Disabled")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
+
+			By("deleting the MHC")
+			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed(), "failed to delete MHC")
+
+			By("waiting for NHC to be re-enabled")
+			Eventually(func(g Gomega) {
+				nhc = getConfig()
+				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
+				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
+			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled after MHC deletion")
 		})
 	})
 
