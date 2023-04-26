@@ -103,7 +103,9 @@ var _ = Describe("e2e", func() {
 	JustBeforeEach(func() {
 		// create NHC
 		DeferCleanup(func() {
-			Expect(k8sClient.Delete(context.Background(), nhc)).To(Succeed())
+			Eventually(func() error {
+				return k8sClient.Delete(context.Background(), nhc)
+			}, "1m", "5s").Should(Succeed())
 		})
 		Expect(k8sClient.Create(context.Background(), nhc)).To(Succeed())
 	})
