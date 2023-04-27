@@ -267,17 +267,22 @@ var _ = Describe("e2e", func() {
 					), remediationStartedTimeout, 5*time.Second).
 					Should(Succeed())
 
+				// SNR is very fast on kind, so use a short poll intervals, otherwise node might already be healthy again
+
 				By("waiting and checking 1st remediation timed out")
+				// sleep for most of the configured timeout
+				time.Sleep(firstTimeout.Duration - 2*time.Second)
 				var nhc *v1alpha1.NodeHealthCheck
-				Eventually(func() *metav1.Time {
+				Eventually(func(g Gomega) *metav1.Time {
 					nhc = getConfig()
+					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1), "expected unhealthy node!")
 					log.Info("checking timeout", "node", nhc.Status.UnhealthyNodes[0].Name, "remediation kind", nhc.Status.UnhealthyNodes[0].Remediations[0].Resource.Kind, "timedOut", nhc.Status.UnhealthyNodes[0].Remediations[0].TimedOut)
 					return nhc.Status.UnhealthyNodes[0].Remediations[0].TimedOut
-				}, firstTimeout.Duration+20*time.Second, 5*time.Second).ShouldNot(BeNil(), "1st remediation should have timed out")
+				}, "20s", "500ms").ShouldNot(BeNil(), "1st remediation should have timed out")
 
 				By("ensuring 2nd remediation CR exists")
 				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 5*time.Second).
+					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, "500ms").
 					Should(Succeed())
 
 				By("ensuring status is set")
@@ -287,7 +292,7 @@ var _ = Describe("e2e", func() {
 					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
 					g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(2))
 					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
-				}, "10s", "2s").Should(Succeed())
+				}, "10s", "500ms").Should(Succeed())
 
 				By("waiting for healthy node")
 				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
@@ -306,7 +311,7 @@ var _ = Describe("e2e", func() {
 
 				By("ensuring remediation CR exists")
 				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, 5*time.Second).
+					fetchRemediationResourceByName(nodeUnderTest.Name, remediationTemplateGVR, remediationGVR), remediationStartedTimeout, "500ms").
 					Should(Succeed())
 
 				By("ensuring status is set")
@@ -316,7 +321,7 @@ var _ = Describe("e2e", func() {
 					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
 					g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
 					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
-				}, "10s", "2s").Should(Succeed())
+				}, "10s", "500ms").Should(Succeed())
 
 				// let's do some NHC validation tests here
 				// wrap 1st webhook test in eventually in order to wait until webhook is up and running
