@@ -228,6 +228,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
 		}
 		// stop reconciling
+		// TODO either requeue here, or trigger reconcile in mhc.Checker.UpdateStatus() for quicker NHC status updates
 		return result, nil
 	}
 

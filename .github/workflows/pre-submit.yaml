@@ -10,7 +10,7 @@ on:
       - release-*
 jobs:
   build-and-unit-test:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -35,16 +35,16 @@ jobs:
       run: make test-mutation-ci
 
   e2e-k8s:
-    runs-on: ubuntu-20.04
-    timeout-minutes: 120
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
     env:
       IMAGE_REGISTRY: kind-registry:5000
       VERSION: 9.9.9-ci
       DEPLOY_NAMESPACE: k8s-test
       # see https://github.com/kubernetes-sigs/kind/tags
-      KIND_VERSION: v0.17.0
+      KIND_VERSION: v0.18.0
       # see https://hub.docker.com/r/kindest/node/tags for available versions!
-      K8S_VERSION: v1.26.0
+      K8S_VERSION: v1.26.3
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -144,7 +144,7 @@ jobs:
     - name: Run NHC e2e
       run: |
         echo "running e2e test"
-        OPERATOR_NS=${DEPLOY_NAMESPACE} SKIP_FOR_K8S=true make test-e2e
+        OPERATOR_NS=${DEPLOY_NAMESPACE} TEST_OPTS='-ginkgo.label-filter="!OCP-ONLY"' make test-e2e
         echo "finished e2e test"
 
     - name: Debug
