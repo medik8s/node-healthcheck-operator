@@ -130,15 +130,13 @@ The `order` field determines the order in which the remediations are invoked
 next remediation is invoked.
 
 There are optional features available when using escalating remediations:
-- when running into a timeout, NHC signals this to the remediator by adding
+- When running into a timeout, NHC signals this to the remediator by adding
 a "remediation.medik8s.io/nhc-timed-out" annotation to the remediation CR. The
 remediator can use this to cancel its efforts.
-- The other way around, when the remediator can't remediate the node for whatever
-reason, or thinks it is done with everything, it can set a status condition of
-type "Processing" with status "False" and a current "LastTransitionTime" on the
-remediation CR. When the node doesn't get healthy within a short period of time
-afterwards, NHC will try the next remediator without waiting for the configured
-timeout to occur.
+- The other way around, when the remediator fails to remediate the node, it can
+set a status condition of type "Succeeded" with status "False" on the
+remediation CR. NHC will try the next remediator without waiting for the
+configured timeout to occur.
 
 > **Note**
 > 

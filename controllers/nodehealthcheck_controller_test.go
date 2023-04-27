@@ -572,7 +572,7 @@ var _ = Describe("Node Health Check CR", func() {
 				By("letting the remediation stop progressing")
 				conditions := []interface{}{
 					map[string]interface{}{
-						"type":               "Processing",
+						"type":               "Succeeded",
 						"status":             "False",
 						"lastTransitionTime": time.Now().Format(time.RFC3339),
 					},
@@ -581,7 +581,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(k8sClient.Status().Update(context.Background(), cr))
 
 				// Wait for hardcoded timeout to expire
-				time.Sleep(remediationNotProcessingTimeout + 5*time.Second)
+				time.Sleep(5 * time.Second)
 
 				// get updated CR
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
