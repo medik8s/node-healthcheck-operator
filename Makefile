@@ -3,13 +3,16 @@ SHELL := /bin/bash
 
 OPERATOR_SDK_VERSION = v1.26.1
 OPM_VERSION = v1.26.3
-CONTROLLER_GEN_VERSION = v0.11.3
+CONTROLLER_GEN_VERSION = v0.12.0
 KUSTOMIZE_VERSION = v5.0.0
 # update for major version updates to KUSTOMIZE_VERSION!
 KUSTOMIZE_API_VERSION = v5
-ENVTEST_VERSION = v0.0.0-20230208013708-22718275bffe # no tagged versions :/
-GOIMPORTS_VERSION = v0.5.0
-SORT_IMPORTS_VERSION = v0.1.0
+ENVTEST_VERSION = v0.0.0-20230519160631-e7b94074ad38 # no tagged versions :/
+GOIMPORTS_VERSION = v0.9.1
+SORT_IMPORTS_VERSION = v0.2.1
+
+# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+ENVTEST_K8S_VERSION = 1.26
 
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
@@ -77,8 +80,6 @@ INDEX_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-index:$(IMAGE_TAG)
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator:$(IMAGE_TAG)
 
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.23
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -166,7 +167,7 @@ test-imports: sort-imports
 
 # Sort imports
 fix-imports: sort-imports
-	$(SORT_IMPORTS) . -w
+	$(SORT_IMPORTS) -w .
 
 # Run go mod tidy
 tidy:
