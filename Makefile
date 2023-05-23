@@ -94,6 +94,7 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
+.PHONY: all
 all: container-build container-push
 
 # CI uses a non-writable home dir, make sure .cache is writable
@@ -107,102 +108,108 @@ test:
 test-no-verify:
 	@echo "skipping test-no-verify target!"
 else
-# Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
-test: test-no-verify
+
+.PHONY: test
+test: test-no-verify ## Generate and format code, run tests, generate manifests and bundle, and verify no uncommitted changes
 	$(MAKE) bundle-reset verify
 
-# Generate and format code, and run tests
-test-no-verify: vendor generate test-imports fmt vet envtest
+.PHONY: test-no-verify
+test-no-verify: vendor generate test-imports fmt vet envtest ## Generate and format code, and run tests
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... -coverprofile cover.out -v -ginkgo.v
 endif
 
+.PHONY: test-mutation
 test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
 	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
 	./hack/test-mutation.sh
 
-# Build manager binary
-manager: generate fmt vet
+.PHONY: manager
+manager: generate fmt vet ## Build manager binary
 	./hack/build.sh
 
-# Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate fmt vet manifests
+.PHONY: run
+run: generate fmt vet manifests ## Run against the configured Kubernetes cluster in ~/.kube/config
 	go run ./main.go -leader-elect=false
 
+.PHONY: debug
 debug: manager
 	dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec bin/manager -- -leader-elect=false
 
-# Install CRDs into a cluster
-install: manifests kustomize
+.PHONY: install
+install: manifests kustomize ## Install CRDs into a cluster
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
-# Uninstall CRDs from a cluster
-uninstall: manifests kustomize
+.PHONY: uninstall
+uninstall: manifests kustomize ## Uninstall CRDs from a cluster
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -f -
 
-# Deploy controller in the configured Kubernetes cluster in ~/.kube/config
-deploy: manifests kustomize
+.PHONY: deploy
+deploy: manifests kustomize ## Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	cd config/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build $${KUSTOMIZE_OVERLAY-config/default} | $(KUBECTL) apply -f -
 
-# UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
-undeploy:
+.PHONY: undeploy
+undeploy: ## UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -f -
 
-# Generate manifests e.g. CRD, RBAC etc.
-manifests: controller-gen
+.PHONY: manifests
+manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
-# Run go fmt against code (skip vendor)
-fmt: goimports
+.PHONY: fmt
+fmt: goimports ## Run go fmt against code (skip vendor)
 	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e
 
-# Run go vet against code
-vet:
+.PHONY: vet
+vet: ## Run go vet against code
 	go vet ./...
 
-# Check for sorted imports
-test-imports: sort-imports
+.PHONY: test-imports
+test-imports: sort-imports ## Check for sorted imports
 	$(SORT_IMPORTS) .
 
-# Sort imports
-fix-imports: sort-imports
+.PHONY: fix-imports
+fix-imports: sort-imports ## Sort imports
 	$(SORT_IMPORTS) -w .
 
-# Run go mod tidy
-tidy:
+
+.PHONY: tidy
+tidy: ## Run go mod tidy
 	go mod tidy
 
-# Run go mod vendor
-vendor: tidy
+.PHONY: vendor
+vendor: tidy ## Run go mod vendor
 	go mod vendor
 
+.PHONY: verify
 verify: bundle-reset ## verify there are no un-committed changes
 	./hack/verify-diff.sh
 
+.PHONY: fetch-mutation
 fetch-mutation: ## fetch mutation package.
 	GO111MODULE=off go get -t -v github.com/mshitrit/go-mutesting/...
 
-# Generate code
-generate: controller-gen
+.PHONY: generate
+generate: controller-gen ## Generate code
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-# Build the docker image; skip linters and verification to not break CI
-docker-build: test-no-verify
+.PHONY: docker-build
+docker-build: test-no-verify ## Build the docker image; skip linters and verification to not break CI
 	podman build -t ${IMG} .
 
-# Push the docker image
-docker-push:
+.PHONY: docker-push
+docker-push: ## Push the docker image
 	podman push ${IMG}
 
-# Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen:
+.PHONY: controller-gen
+controller-gen: ## Download controller-gen locally if necessary
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION))
 
-# Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize:
+.PHONY: kustomize
+kustomize: ## Download kustomize locally if necessary
 	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/$(KUSTOMIZE_API_VERSION)@$(KUSTOMIZE_VERSION))
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
@@ -242,6 +249,7 @@ ifeq (,$(wildcard $(OPM)))
 endif
 
 GOIMPORTS = $(shell pwd)/bin/goimports
+.PHONY: goimports
 goimports: ## Download goimports locally if necessary.
 	$(call go-install-tool,$(GOIMPORTS),golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION))
 
@@ -259,9 +267,8 @@ rm -rf $$TMP_DIR ;\
 }
 endef
 
-# Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle-base
-bundle-base: manifests kustomize operator-sdk
+bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests
 	$(OPERATOR_SDK) generate --verbose kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
@@ -271,15 +278,13 @@ bundle-base: manifests kustomize operator-sdk
 
 export CSV="./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml"
 
-# Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle
-bundle: bundle-base
+bundle: bundle-base ## Generate bundle manifests and metadata, then validate generated files.
 	$(KUSTOMIZE) build config/manifests-ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
-# Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle-k8s
-bundle-k8s: bundle-base
+bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
 	$(KUSTOMIZE) build config/manifests-k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
 	sed -r -i "/displayName: Node Health Check Operator/ i\    " ${CSV}
@@ -299,8 +304,7 @@ bundle-k8s: bundle-base
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-update
-bundle-update:
-    # update container image in the metadata
+bundle-update: ## update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 	# set skipRange
 	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ${CSV}
@@ -312,31 +316,26 @@ bundle-update:
 bundle-validate: operator-sdk ## Validate the bundle directory with additional validators (suite=operatorframework), such as Kubernetes deprecated APIs (https://kubernetes.io/docs/reference/using-api/deprecation-guide/) based on bundle.CSV.Spec.MinKubeVersion
 	$(OPERATOR_SDK) bundle validate ./bundle --select-optional suite=operatorframework
 	
-# Revert all version or build date related changes
 .PHONY: bundle-reset
-bundle-reset:
+bundle-reset: ## Revert all version or build date related changes
 	VERSION=0.0.1 $(MAKE) manifests bundle
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
 
-# Build the bundle image.
 .PHONY: bundle-build
-bundle-build: bundle bundle-update
+bundle-build: bundle bundle-update ## Build the bundle image.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
-# Build the bundle image for k8s.
 .PHONY: bundle-build-k8s
-bundle-build-k8s: bundle-k8s bundle-update
+bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
-# Push the bundle image
 .PHONY: bundle-push
-bundle-push:
+bundle-push: ## Push the bundle image
 	podman push ${BUNDLE_IMG}
 
-# Run bundle image
 .PHONY: bundle-run
-bundle-run: operator-sdk
+bundle-run: operator-sdk ## Run bundle image
 	$(OPERATOR_SDK) -n openshift-operators run bundle $(BUNDLE_IMG)
 
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
@@ -351,16 +350,15 @@ index-build: opm ## Build a catalog image.
 index-push: ## Push a catalog image.
 	podman push $(INDEX_IMG)
 
-# Run end to end tests
 .PHONY: test-e2e
 export OPERATOR_NS ?= openshift-operators
-test-e2e:
+test-e2e: ## Run end to end tests
 	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
 	echo "Running e2e tests"
 	go test ./e2e -coverprofile cover.out -timeout 60m -test.v -ginkgo.vv $(TEST_OPTS)
 
-# Deploy self node remediation to a running cluster
-.PHONY: deploy-snr
+
+.PHONY: deploy-snr ## Deploy self node remediation to a running cluster
 SNR_DIR = $(shell pwd)/testdata/.remediators/snr
 SNR_GIT_REF ?= main
 SNR_VERSION ?= 0.0.1
