@@ -340,7 +340,7 @@ bundle-validate: operator-sdk ## Validate the bundle directory with additional v
 bundle-reset: ## Revert all version or build date related changes
 	VERSION=0.0.1 $(MAKE) manifests bundle
 	# empty creation date
-	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml
+	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
 
 .PHONY: bundle-build
 bundle-build: bundle bundle-update ## Build the bundle image.
