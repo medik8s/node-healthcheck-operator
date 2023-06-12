@@ -129,7 +129,9 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
 		return false
 	}
-	return conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
+	needsReconcile := conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
+	//ctrl.Log.Info("NODE UPDATE", "node", newNode.GetName(), "needs reconcile", needsReconcile)
+	return needsReconcile
 }
 
 func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bool {
@@ -179,7 +181,7 @@ func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bo
 // move the current state of the cluster closer to the desired state.
 func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, returnErr error) {
 	log := r.Log.WithValues("NodeHealthCheck name", req.Name)
-
+	log.Info("reconciling")
 	// get nhc
 	nhc := &remediationv1alpha1.NodeHealthCheck{}
 	err := r.Get(ctx, req.NamespacedName, nhc)
@@ -207,6 +209,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				returnErr = patchErr
 			}
 		}
+		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeuAfter", result.RequeueAfter)
 	}()
 
 	// set counters to zero for disabled NHC
@@ -295,6 +298,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// delete remediation CRs for healthy nodes
 	for _, node := range healthyNodes {
+		log.Info("handling healthy node", "node", node.GetName())
 		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
 			return cr.GetName() == node.GetName()
 		})
@@ -335,6 +339,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// remediate unhealthy nodes
 	for _, node := range unhealthyNodes {
+		log.Info("handling unhealthy node", "node", node.GetName())
 		nextReconcile, err := r.remediate(&node, nhc, resourceManager)
 		if err != nil {
 			// don't try to remediate other nodes
