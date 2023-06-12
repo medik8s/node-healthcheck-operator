@@ -48,6 +48,7 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 			}
 
 			if selector.Matches(labels.Set(node.GetLabels())) {
+				logger.Info("adding NHC to reconcile queue for handling node", "node", node.GetName(), "NHC", nhc.GetName())
 				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
 			}
 		}
