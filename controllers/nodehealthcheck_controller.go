@@ -198,7 +198,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// always check if we need to patch status before we exit Reconcile
 	nhcOrig := nhc.DeepCopy()
+	var finalRequeueAfter *time.Duration
 	defer func() {
+		if finalRequeueAfter != nil {
+			result.RequeueAfter = *finalRequeueAfter
+		}
 		patchErr := r.patchStatus(nhc, nhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
@@ -276,7 +280,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nhc.Status.ObservedNodes = pointer.Int(len(nodes))
 
 	// check nodes health
-	healthyNodes, unhealthyNodes := r.checkNodesHealth(nodes, nhc)
+	healthyNodes, unhealthyNodes, requeueAfter := r.checkNodesHealth(nodes, nhc)
+	finalRequeueAfter = utils.MinDuration(finalRequeueAfter, requeueAfter)
 	nhc.Status.HealthyNodes = pointer.Int(len(healthyNodes))
 
 	// TODO consider setting Disabled condition?
@@ -340,28 +345,24 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// remediate unhealthy nodes
 	for _, node := range unhealthyNodes {
 		log.Info("handling unhealthy node", "node", node.GetName())
-		nextReconcile, err := r.remediate(&node, nhc, resourceManager)
+		requeueAfter, err := r.remediate(&node, nhc, resourceManager)
 		if err != nil {
 			// don't try to remediate other nodes
 			log.Error(err, "failed to start remediation")
 			return result, err
 		}
-		if nextReconcile != nil {
-			updateResultNextReconcile(&result, *nextReconcile)
-		}
+		finalRequeueAfter = utils.MinDuration(finalRequeueAfter, requeueAfter)
 
 		// check if we need to alert about a very old remediation CR
 		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
 			return cr.GetName() == node.GetName()
 		})
 		for _, remediationCR := range remediationCRs {
-			isAlert, nextReconcile := r.alertOldRemediationCR(&remediationCR)
+			isAlert, requeueAfter := r.alertOldRemediationCR(&remediationCR)
 			if isAlert {
 				metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
 			}
-			if nextReconcile != nil {
-				updateResultNextReconcile(&result, *nextReconcile)
-			}
+			finalRequeueAfter = utils.MinDuration(finalRequeueAfter, requeueAfter)
 		}
 	}
 
@@ -378,10 +379,11 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 	return clusterUpgrading
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy []v1.Node, unhealthy []v1.Node) {
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy []v1.Node, unhealthy []v1.Node, requeueAfter *time.Duration) {
 	for _, node := range nodes {
-		if r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions) {
+		if isHealthy, thisRequeueAfter := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
 			healthy = append(healthy, node)
+			requeueAfter = utils.MinDuration(requeueAfter, thisRequeueAfter)
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
 			// consider terminating nodes being handled by MHC as healthy, from NHC point of view
 			healthy = append(healthy, node)
@@ -392,7 +394,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	return
 }
 
-func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) bool {
+func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) (bool, *time.Duration) {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
@@ -403,11 +405,19 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 		if !exists {
 			continue
 		}
-		if n.Status == c.Status && currentTime().After(n.LastTransitionTime.Add(c.Duration.Duration)) {
-			return false
+		if n.Status == c.Status {
+			now := currentTime()
+			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
+				// unhealthy condition duration expired, node is unhealthy
+				return false, nil
+			} else {
+				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
+				expiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
+				return true, &expiresAfter
+			}
 		}
 	}
-	return true
+	return true, nil
 }
 
 func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
@@ -617,12 +627,6 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 	}
 	return isSendAlert, nextReconcile
 
-}
-
-func updateResultNextReconcile(result *ctrl.Result, updatedRequeueAfter time.Duration) {
-	if result.RequeueAfter == 0 || updatedRequeueAfter < result.RequeueAfter {
-		result.RequeueAfter = updatedRequeueAfter
-	}
 }
 
 func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstructured) error {
