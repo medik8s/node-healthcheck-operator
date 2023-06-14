@@ -26,6 +26,11 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
+const (
+	unhealthyConditionDuration = 10 * time.Second
+	nodeUnhealthyIn            = 5 * time.Second
+)
+
 var _ = Describe("Node Health Check CR", func() {
 
 	Context("Defaults", func() {
@@ -159,8 +164,8 @@ var _ = Describe("Node Health Check CR", func() {
 			objects   []client.Object
 		)
 
-		setupObjects := func(unhealthy int, healthy int) {
-			objects = newNodes(unhealthy, healthy, false)
+		setupObjects := func(unhealthy int, healthy int, unhealthyNow bool) {
+			objects = newNodes(unhealthy, healthy, false, unhealthyNow)
 			objects = append(objects, underTest)
 		}
 
@@ -204,7 +209,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("Nodes are candidates for remediation but remediation template is broken", func() {
 				BeforeEach(func() {
-					setupObjects(1, 2)
+					setupObjects(1, 2, true)
 
 					if underTest.Spec.RemediationTemplate != nil {
 						underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
@@ -233,7 +238,7 @@ var _ = Describe("Node Health Check CR", func() {
 				When("Metal3RemediationTemplate is in wrong namespace", func() {
 
 					BeforeEach(func() {
-						setupObjects(1, 2)
+						setupObjects(1, 2, true)
 
 						// set metal3 template
 						if underTest.Spec.RemediationTemplate != nil {
@@ -264,13 +269,17 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("few nodes are unhealthy and healthy nodes meet min healthy", func() {
 				BeforeEach(func() {
-					setupObjects(1, 2)
+					setupObjects(1, 2, false)
 				})
 
 				It("create a remediation CR for each unhealthy node and updates status", func() {
 					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					// first call should fail, because the node gets unready in a few seconds only
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-					Expect(err).NotTo(HaveOccurred())
+					Expect(errors.IsNotFound(err)).To(BeTrue())
+					// wait until nodes are unhealthy
+					time.Sleep(nodeUnhealthyIn)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 					Expect(cr.Object).To(ContainElement(map[string]interface{}{"size": "foo"}))
 					Expect(cr.GetOwnerReferences()).
 						To(ContainElement(
@@ -283,6 +292,7 @@ var _ = Describe("Node Health Check CR", func() {
 						))
 					Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
 
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 					Expect(*underTest.Status.HealthyNodes).To(Equal(2))
 					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
@@ -310,7 +320,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("few nodes are unhealthy and healthy nodes below min healthy", func() {
 				BeforeEach(func() {
-					setupObjects(4, 3)
+					setupObjects(4, 3, true)
 				})
 
 				It("skips remediation - CR is not created, status updated correctly", func() {
@@ -330,7 +340,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("few nodes become healthy", func() {
 				BeforeEach(func() {
-					setupObjects(1, 2)
+					setupObjects(1, 2, true)
 					remediationCR := newRemediationCR("healthy-worker-node-2", underTest)
 					remediationCROther := newRemediationCR("healthy-worker-node-1", underTest)
 					refs := remediationCROther.GetOwnerReferences()
@@ -372,7 +382,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("an old remediation cr exists", func() {
 				BeforeEach(func() {
-					setupObjects(1, 2)
+					setupObjects(1, 2, true)
 				})
 
 				AfterEach(func() {
@@ -406,7 +416,7 @@ var _ = Describe("Node Health Check CR", func() {
 					owners[0].Name = "not-me"
 					cr.SetOwnerReferences(owners)
 					Expect(k8sClient.Create(context.Background(), cr)).To(Succeed())
-					setupObjects(1, 2)
+					setupObjects(1, 2, true)
 				})
 
 				It("remediation cr should not be processed", func() {
@@ -457,18 +467,24 @@ var _ = Describe("Node Health Check CR", func() {
 					{
 						RemediationTemplate: *templateRef2,
 						Order:               5,
-						Timeout:             metav1.Duration{Duration: 5 * time.Second},
+						Timeout:             metav1.Duration{Duration: 15 * time.Second},
 					},
 				}
 
-				setupObjects(1, 2)
+				setupObjects(1, 2, false)
 
 			})
 
 			It("it should try one remediation after another", func() {
 				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				// first call should fail, because the node gets unready in a few seconds only
+				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+				// wait until nodes are unhealthy
+				time.Sleep(nodeUnhealthyIn)
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 				Expect(*underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(*underTest.Status.ObservedNodes).To(Equal(3))
 				Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
@@ -514,7 +530,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).To(BeNil())
 
 				// Wait for 2nd remediation to time out
-				time.Sleep(7 * time.Second)
+				time.Sleep(17 * time.Second)
 
 				// get updated CR
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
@@ -558,7 +574,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Timeout:             metav1.Duration{Duration: 5 * time.Minute},
 					},
 				}
-				setupObjects(1, 2)
+				setupObjects(1, 2, true)
 			})
 
 			It("it should timeout early", func() {
@@ -597,8 +613,8 @@ var _ = Describe("Node Health Check CR", func() {
 		Context("control plane nodes", func() {
 			When("two control plane nodes are unhealthy, just one should be remediated", func() {
 				BeforeEach(func() {
-					objects = newNodes(2, 1, true)
-					objects = append(objects, newNodes(1, 5, false)...)
+					objects = newNodes(2, 1, true, true)
+					objects = append(objects, newNodes(1, 5, false, true)...)
 					underTest = newNodeHealthCheck()
 					objects = append(objects, underTest)
 				})
@@ -647,7 +663,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("remediation is needed but pauseRequests exists", func() {
 			BeforeEach(func() {
-				setupObjects(1, 2)
+				setupObjects(1, 2, true)
 				underTest.Spec.PauseRequests = []string{"I'm an admin, asking you to stop remediating this group of nodes"}
 			})
 
@@ -669,7 +685,7 @@ var _ = Describe("Node Health Check CR", func() {
 			BeforeEach(func() {
 				clusterUpgradeRequeueAfter = 5 * time.Second
 				upgradeChecker.Upgrading = true
-				setupObjects(1, 2)
+				setupObjects(1, 2, true)
 			})
 
 			AfterEach(func() {
@@ -709,7 +725,7 @@ var _ = Describe("Node Health Check CR", func() {
 				var machine *machinev1beta1.Machine
 
 				BeforeEach(func() {
-					setupObjects(1, 2)
+					setupObjects(1, 2, true)
 
 					// create machine
 					machine = &machinev1beta1.Machine{
@@ -777,7 +793,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("a node changes status and is selectable by one NHC selector", func() {
 			BeforeEach(func() {
-				objects = newNodes(3, 10, false)
+				objects = newNodes(3, 10, false, true)
 				underTest1 = newNodeHealthCheck()
 				underTest2 = newNodeHealthCheck()
 				underTest2.Name = "test-2"
@@ -799,7 +815,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		When("a node changes status and is selectable by the more 2 NHC selector", func() {
 			BeforeEach(func() {
-				objects = newNodes(3, 10, false)
+				objects = newNodes(3, 10, false, true)
 				underTest1 = newNodeHealthCheck()
 				underTest2 = newNodeHealthCheck()
 				underTest2.Name = "test-2"
@@ -819,7 +835,7 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 		When("a node changes status and there are no NHC objects", func() {
 			BeforeEach(func() {
-				objects = newNodes(3, 10, false)
+				objects = newNodes(3, 10, false, true)
 			})
 
 			It("doesn't create reconcile requests", func() {
@@ -1028,7 +1044,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 				{
 					Type:     v1.NodeReady,
 					Status:   v1.ConditionFalse,
-					Duration: metav1.Duration{Duration: time.Second * 300},
+					Duration: metav1.Duration{Duration: unhealthyConditionDuration},
 				},
 			},
 			RemediationTemplate: &v1.ObjectReference{
@@ -1041,28 +1057,34 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	}
 }
 
-func newNodes(unhealthy int, healthy int, isControlPlane bool) []client.Object {
+func newNodes(unhealthy int, healthy int, isControlPlane bool, unhealthyNow bool) []client.Object {
 	o := make([]client.Object, 0, healthy+unhealthy)
 	roleName := "-worker"
 	if isControlPlane {
 		roleName = "-control-plane"
 	}
 	for i := unhealthy; i > 0; i-- {
-		node := newNode(fmt.Sprintf("unhealthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionFalse, time.Minute*10, isControlPlane)
+		node := newNode(fmt.Sprintf("unhealthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionFalse, isControlPlane, unhealthyNow)
 		o = append(o, node)
 	}
 	for i := healthy; i > 0; i-- {
-		o = append(o, newNode(fmt.Sprintf("healthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionTrue, time.Minute*10, isControlPlane))
+		o = append(o, newNode(fmt.Sprintf("healthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionTrue, isControlPlane, unhealthyNow))
 	}
 	return o
 }
 
-func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.Duration, isControlPlane bool) client.Object {
+func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, isControlPlane bool, unhealthyNow bool) client.Object {
 	labels := make(map[string]string, 1)
 	if isControlPlane {
 		labels[utils.ControlPlaneRoleLabel] = ""
 	} else {
 		labels[utils.WorkerRoleLabel] = ""
+	}
+	// let the node get unhealthy in a few seconds
+	transitionTime := time.Now().Add(-(unhealthyConditionDuration - nodeUnhealthyIn + 2*time.Second))
+	// unless requested otherwise
+	if unhealthyNow {
+		transitionTime = time.Now().Add(-(unhealthyConditionDuration + 2*time.Second))
 	}
 	return &v1.Node{
 		TypeMeta: metav1.TypeMeta{Kind: "Node"},
@@ -1075,7 +1097,7 @@ func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, d time.D
 				{
 					Type:               t,
 					Status:             s,
-					LastTransitionTime: metav1.Time{Time: time.Now().Add(-d)},
+					LastTransitionTime: metav1.Time{Time: transitionTime},
 				},
 			},
 		},
