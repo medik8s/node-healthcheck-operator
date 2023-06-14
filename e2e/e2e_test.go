@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -41,6 +42,7 @@ var (
 var _ = Describe("e2e", func() {
 	var nodeUnderTest *v1.Node
 	var node2 *v1.Node
+	var node3 *v1.Node
 	var nhc *v1alpha1.NodeHealthCheck
 
 	BeforeEach(func() {
@@ -95,8 +97,9 @@ var _ = Describe("e2e", func() {
 			selector = selector.Add(*reqCpRole, *reqMRole)
 			Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
 			Expect(len(workers.Items)).To(BeNumerically(">=", 3))
-			nodeUnderTest = &workers.Items[1]
-			node2 = &workers.Items[2]
+			nodeUnderTest = &workers.Items[0]
+			node2 = &workers.Items[1]
+			node3 = &workers.Items[2]
 		}
 	})
 
@@ -112,7 +115,11 @@ var _ = Describe("e2e", func() {
 		// in order to not start unwanted remediation when e.g. the Terminating condition is removed!
 		// DeferCleanup() runs after ALL AfterEach blocks.
 		Eventually(func() error {
-			return k8sClient.Delete(context.Background(), nhc)
+			err := k8sClient.Delete(context.Background(), nhc)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
 		}, "1m", "5s").Should(Succeed())
 	})
 
@@ -329,6 +336,7 @@ var _ = Describe("e2e", func() {
 		Context("with terminating node", labelOcpOnly, func() {
 
 			BeforeEach(func() {
+				nodeUnderTest = node3
 				Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
 				conditions := nodeUnderTest.Status.Conditions
 				conditions = append(conditions, v1.NodeCondition{
