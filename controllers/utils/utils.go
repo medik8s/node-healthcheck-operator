@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -48,4 +49,15 @@ func IsOnOpenshift(config *rest.Config) (bool, error) {
 // GetLogWithNHC return a logger with NHC namespace and name
 func GetLogWithNHC(log logr.Logger, nhc *v1alpha1.NodeHealthCheck) logr.Logger {
 	return log.WithValues("NodeHealthCheck name", nhc.Name)
+}
+
+// MinDuration returns the minimal duration
+func MinDuration(old, new *time.Duration) *time.Duration {
+	if new == nil {
+		return old
+	}
+	if old == nil || *new < *old {
+		return new
+	}
+	return old
 }
