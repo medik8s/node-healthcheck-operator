@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 
 	"go.uber.org/zap/zapcore"
 
@@ -52,9 +51,8 @@ import (
 )
 
 var (
-	scheme     = pkgruntime.NewScheme()
-	setupLog   = ctrl.Log.WithName("setup")
-	syncPeriod = time.Second * 60
+	scheme   = pkgruntime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func init() {
@@ -97,7 +95,6 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
-		SyncPeriod:             &syncPeriod,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
