@@ -165,15 +165,12 @@ var _ = Describe("e2e", func() {
 			}
 			Expect(k8sClient.Create(context.Background(), mhc)).To(Succeed(), "failed to create MHC")
 
-			// status is only updated when something triggers reconcile, so we need to wait a long time...
-			// see TODO after NHC controller "r.MHCChecker.NeedDisableNHC()" call
-
 			By("waiting for NHC to be disabled")
 			Eventually(func(g Gomega) {
 				nhc = getConfig()
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeTrue(), "disabled condition should be true")
 				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseDisabled), "phase should be Disabled")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
+			}, 3*time.Second, 1*time.Second).Should(Succeed(), "NHC should be disabled because of custom MHC")
 
 			By("deleting the MHC")
 			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed(), "failed to delete MHC")
@@ -183,7 +180,7 @@ var _ = Describe("e2e", func() {
 				nhc = getConfig()
 				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
 				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed(), "NHC should be enabled after MHC deletion")
+			}, 3*time.Second, 1*time.Second).Should(Succeed(), "NHC should be enabled after MHC deletion")
 		})
 	})
 

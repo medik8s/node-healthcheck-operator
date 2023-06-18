@@ -7,6 +7,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/api/machine/v1beta1"
@@ -24,7 +25,7 @@ type Checker interface {
 }
 
 // NewMHCChecker creates a new Checker
-func NewMHCChecker(mgr manager.Manager, onOpenshift bool) (Checker, error) {
+func NewMHCChecker(mgr manager.Manager, onOpenshift bool, mhcEvents chan<- event.GenericEvent) (Checker, error) {
 
 	if !onOpenshift {
 		return DummyChecker{}, nil
@@ -34,6 +35,7 @@ func NewMHCChecker(mgr manager.Manager, onOpenshift bool) (Checker, error) {
 		client:    mgr.GetClient(),
 		logger:    mgr.GetLogger().WithName("MHCChecker"),
 		mhcStatus: unknown,
+		mhcEvents: mhcEvents,
 	}
 	return c, nil
 }
@@ -52,6 +54,7 @@ type checker struct {
 	logger     logr.Logger
 	mhcStatus  mhcStatus
 	mhcRunning bool
+	mhcEvents  chan<- event.GenericEvent
 }
 
 var _ Checker = &checker{}
@@ -74,6 +77,16 @@ func (c *checker) UpdateStatus() error {
 		c.logger.Error(err, "failed to list MHC")
 		return err
 	}
+
+	// send event for NHC reconciler in case status changes
+	oldStatus := c.mhcStatus
+	defer func() {
+		if c.mhcStatus == oldStatus {
+			return
+		}
+		c.logger.Info("MHC Checker status changed, notifying NHC controller")
+		c.mhcEvents <- event.GenericEvent{}
+	}()
 
 	if len(mhcList.Items) == 0 {
 		// no MHC found, we are fine
