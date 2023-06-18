@@ -189,7 +189,7 @@ var _ = Describe("e2e", func() {
 
 	When("Node conditions meets the unhealthy criteria", func() {
 
-		Context("with escalating remediation config", func() {
+		Context("with escalating remediation config", labelOcpOnly, func() {
 
 			firstTimeout := metav1.Duration{Duration: 1 * time.Minute}
 			var nodeUnhealthyTime time.Time
