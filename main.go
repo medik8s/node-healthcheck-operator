@@ -32,6 +32,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -113,7 +114,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	mhcChecker, err := mhc.NewMHCChecker(mgr, onOpenshift)
+	mhcEvents := make(chan event.GenericEvent)
+	mhcChecker, err := mhc.NewMHCChecker(mgr, onOpenshift, mhcEvents)
 	if err != nil {
 		setupLog.Error(err, "unable initialize MHC checker")
 		os.Exit(1)
@@ -131,6 +133,7 @@ func main() {
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
 		OnOpenShift:                 onOpenshift,
+		MHCEvents:                   mhcEvents,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)

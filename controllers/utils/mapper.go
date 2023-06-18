@@ -57,6 +57,24 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	return delegate
 }
 
+// NHCByMHCEventMapperFunc return the MHC-event-to-NHC mapper function
+func NHCByMHCEventMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+	delegate := func(o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+		nhcList := &remediationv1alpha1.NodeHealthCheckList{}
+		if err := c.List(context.Background(), nhcList, &client.ListOptions{}); err != nil {
+			logger.Error(err, "mapper: failed to list NHCs")
+			return requests
+		}
+		logger.Info("adding all NHCs to reconcile queue for handling MHC event")
+		for _, nhc := range nhcList.Items {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
+		}
+		return requests
+	}
+	return delegate
+}
+
 // NHCByRemediationCRMapperFunc return the RemediationCR-to-NHC mapper function
 func NHCByRemediationCRMapperFunc(logger logr.Logger) handler.MapFunc {
 	// This closure is meant to get the NHC for the given remediation CR

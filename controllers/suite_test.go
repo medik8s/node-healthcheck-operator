@@ -41,6 +41,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -143,7 +144,7 @@ var _ = BeforeSuite(func() {
 		Upgrading: false,
 	}
 
-	mhcChecker, err := mhc.NewMHCChecker(k8sManager, false)
+	mhcChecker, err := mhc.NewMHCChecker(k8sManager, false, nil)
 	Expect(err).NotTo(HaveOccurred())
 
 	os.Setenv("DEPLOYMENT_NAMESPACE", DeploymentNamespace)
@@ -156,6 +157,7 @@ var _ = BeforeSuite(func() {
 		return time.Now()
 	}
 
+	mhcEvents := make(chan event.GenericEvent)
 	err = (&NodeHealthCheckReconciler{
 		Client:                      k8sManager.GetClient(),
 		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
@@ -163,6 +165,7 @@ var _ = BeforeSuite(func() {
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
+		MHCEvents:                   mhcEvents,
 		OnOpenShift:                 true,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
