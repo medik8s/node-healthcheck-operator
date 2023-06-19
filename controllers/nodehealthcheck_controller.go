@@ -87,6 +87,7 @@ type NodeHealthCheckReconciler struct {
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
 	OnOpenShift                 bool
+	MHCEvents                   chan event.GenericEvent
 	ctrl                        controller.Controller
 	watches                     map[string]struct{}
 	watchesLock                 sync.Mutex
@@ -109,6 +110,10 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					GenericFunc: func(_ event.GenericEvent) bool { return false },
 				},
 			),
+		).
+		Watches(
+			&source.Channel{Source: r.MHCEvents},
+			handler.EnqueueRequestsFromMapFunc(utils.NHCByMHCEventMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 		).
 		Build(r)
 
@@ -235,7 +240,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
 		}
 		// stop reconciling
-		// TODO either requeue here, or trigger reconcile in mhc.Checker.UpdateStatus() for quicker NHC status updates
 		return result, nil
 	}
 
