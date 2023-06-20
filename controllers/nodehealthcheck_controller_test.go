@@ -453,7 +453,7 @@ var _ = Describe("Node Health Check CR", func() {
 				BeforeEach(func() {
 					setupObjects(1, 2, true)
 				})
-				When("un unhealthy node becomes healthy", func() {
+				When("an unhealthy node becomes healthy", func() {
 					It("node lease is removed", func() {
 						cr := newRemediationCR(unhealthyNodeName, underTest)
 						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
@@ -500,7 +500,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(err).NotTo(HaveOccurred())
 					})
 
-					It("a remediation CR isn't created", func() {
+					It("a remediation CR isn't created until lease is obtained", func() {
 						cr := newRemediationCR(unhealthyNodeName, underTest)
 						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 						Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -520,7 +520,6 @@ var _ = Describe("Node Health Check CR", func() {
 								HaveField("Status", metav1.ConditionFalse),
 								HaveField("Reason", v1alpha1.ConditionReasonEnabled),
 							)))
-						//debugDelay()
 						//expecting NHC to acquire the lease now and create the CR - checking CR first
 						Eventually(
 							func() error {

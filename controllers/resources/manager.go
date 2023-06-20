@@ -175,10 +175,9 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 			m.log.Error(err, "failed to create an external remediation object")
 			return false, nil, err
 		}
-		return true, requeue, nil
-	} else {
-		return false, requeue, nil
 	}
+
+	return isLeaseObtained, requeue, nil
 
 }
 

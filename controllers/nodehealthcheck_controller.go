@@ -482,7 +482,9 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	} else {
 		isLeaseObtained := leaseRequeueTimeout != nil && created
 		isCrAlreadyExist := !created && leaseRequeueTimeout == nil
-		if !isLeaseObtained && !isCrAlreadyExist {
+		isUnhealthyWithoutRemediation := !isLeaseObtained && !isCrAlreadyExist
+		//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
+		if isUnhealthyWithoutRemediation {
 			resources.UpdateStatusNodeUnhealthy(node, nhc)
 			return leaseRequeueTimeout, nil
 		}

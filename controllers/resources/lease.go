@@ -24,12 +24,13 @@ import (
 var (
 	templateSuffix = "Template"
 	holderIdentity = "NHC"
-	//LeaseBuffer is used to make sure we have a bit of buffer before extending the lease so it won't be taken by another component
-	LeaseBuffer          = time.Minute
-	RequeueIfLeaseTaken  = time.Minute
+	//LeaseBuffer is used to make sure we have a bit of buffer before extending the lease, so it won't be taken by another component
+	LeaseBuffer         = time.Minute
+	RequeueIfLeaseTaken = time.Minute
+	//DefaultLeaseDuration is the default time lease would be held before it would need extending assuming escalation timeout does not exist (i.e. without escalation)
 	DefaultLeaseDuration = 10 * time.Minute
-	//multiple of the lease duration
-	maxDurationFactorToHoldLease = 3
+	//max times lease would be extended - this is a conceptual variable used to calculate max time lease can be held
+	maxTimesToExtendLease = 2
 )
 
 type LeaseManager interface {
@@ -212,7 +213,7 @@ func (m *nhcLeaseManager) isLeaseOverdue(ctx context.Context, node *v1.Node, l *
 	if err != nil {
 		return false, err
 	}
-	isLeaseOverdue := time.Now().After(l.Spec.AcquireTime.Add(time.Duration(maxDurationFactorToHoldLease) * leaseDuration))
+	isLeaseOverdue := time.Now().After(l.Spec.AcquireTime.Add(time.Duration(maxTimesToExtendLease+1 /*1 is offsetting the lease creation*/) * leaseDuration))
 	return isLeaseOverdue, nil
 }
 
