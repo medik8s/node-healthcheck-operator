@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	templateSuffix    = "Template"
 	machineAnnotation = "machine.openshift.io/machine"
 )
 
@@ -33,7 +32,7 @@ type Manager interface {
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
-	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
+	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
@@ -46,19 +45,21 @@ func (r RemediationCRNotOwned) Error() string { return r.msg }
 
 type manager struct {
 	client.Client
-	ctx         context.Context
-	log         logr.Logger
-	onOpenshift bool
+	ctx          context.Context
+	log          logr.Logger
+	onOpenshift  bool
+	leaseManager LeaseManager
 }
 
 var _ Manager = &manager{}
 
-func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshift bool) Manager {
+func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshift bool, leaseManager LeaseManager) Manager {
 	return &manager{
-		Client:      c,
-		ctx:         ctx,
-		log:         log.WithName("resource manager"),
-		onOpenshift: onOpenshift,
+		Client:       c,
+		ctx:          ctx,
+		log:          log.WithName("resource manager"),
+		onOpenshift:  onOpenshift,
+		leaseManager: leaseManager,
 	}
 }
 
@@ -127,6 +128,10 @@ func (m *manager) GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, na
 }
 
 func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured {
+	return generateRemediationCRBase(gvk)
+}
+
+func generateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured {
 	remediationCRBase := &unstructured.Unstructured{}
 	remediationCRBase.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   gvk.Group,
@@ -136,31 +141,45 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 	return remediationCRBase
 }
 
-func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error) {
+// CreateRemediationCR creates a remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease and an error
+func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
 	// check if CR already exists
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
 		if !isOwner(remediationCR, nhc) {
 			m.log.Info("external remediation CR already exists, but it's not owned by us", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace(), "owners", remediationCR.GetOwnerReferences())
-			return false, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
+			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
-		return false, nil
+		return false, nil, nil
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
-		return false, err
+		return false, nil, err
 	}
 
-	// create CR
-	m.log.Info("Creating a remediation CR",
-		"CR name", remediationCR.GetName(),
-		"CR kind", remediationCR.GetKind(),
-		"namespace", remediationCR.GetNamespace())
+	m.log.Info("Attempting to obtain Node Lease",
+		"Node name", remediationCR.GetName())
 
-	if err := m.Create(m.ctx, remediationCR); err != nil {
-		m.log.Error(err, "failed to create an external remediation object")
-		return false, err
+	isLeaseObtained, requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, nhc)
+	if err != nil {
+		return false, nil, err
 	}
-	return true, nil
+
+	if isLeaseObtained {
+		// create CR
+		m.log.Info("Creating a remediation CR",
+			"CR name", remediationCR.GetName(),
+			"CR kind", remediationCR.GetKind(),
+			"namespace", remediationCR.GetNamespace())
+
+		if err := m.Create(m.ctx, remediationCR); err != nil {
+			m.log.Error(err, "failed to create an external remediation object")
+			return false, nil, err
+		}
+		return true, requeue, nil
+	} else {
+		return false, requeue, nil
+	}
+
 }
 
 func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error) {
@@ -192,6 +211,10 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 }
 
 func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
+	return listRemediationCRs(m.ctx, m.Client, nhc, remediationCRFilter)
+}
+
+func listRemediationCRs(ctx context.Context, c client.Client, nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
 	// gather all GVKs
 	gvks := make([]schema.GroupVersionKind, 0)
 	if nhc.Spec.RemediationTemplate != nil {
@@ -207,9 +230,9 @@ func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, r
 	// get CRs
 	remediationCRs := make([]unstructured.Unstructured, 0)
 	for _, gvk := range gvks {
-		baseRemediationCR := m.GenerateRemediationCRBase(gvk)
+		baseRemediationCR := generateRemediationCRBase(gvk)
 		crList := &unstructured.UnstructuredList{Object: baseRemediationCR.Object}
-		err := m.List(m.ctx, crList)
+		err := c.List(ctx, crList)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, errors.Wrapf(err,
 				"failed to get all remediation objects with kind %s and apiVersion %s",
