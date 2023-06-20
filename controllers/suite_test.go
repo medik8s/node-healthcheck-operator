@@ -59,6 +59,7 @@ import (
 const (
 	DeploymentNamespace = "testns"
 	MachineNamespace    = "openshift-machine-api"
+	leaseNs             = "medik8s-leases"
 )
 
 var cfg *rest.Config
@@ -147,6 +148,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	os.Setenv("DEPLOYMENT_NAMESPACE", DeploymentNamespace)
+	depNs := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DeploymentNamespace,
+		},
+		Spec: v1.NamespaceSpec{},
+	}
+	Expect(k8sClient.Create(context.Background(), depNs)).To(Succeed())
 
 	// to be able faking the current time for tests
 	currentTime = func() time.Time {

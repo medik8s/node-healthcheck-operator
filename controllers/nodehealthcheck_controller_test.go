@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	coordv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +24,7 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
@@ -159,9 +161,18 @@ var _ = Describe("Node Health Check CR", func() {
 	}
 
 	Context("Reconciliation", func() {
+		const (
+			unhealthyNodeName = "unhealthy-worker-node-1"
+		)
 		var (
 			underTest *v1alpha1.NodeHealthCheck
 			objects   []client.Object
+			//Lease params
+			leaseName                             = fmt.Sprintf("%s-%s", "node", unhealthyNodeName)
+			mockRequeueDurationIfLeaseTaken       = time.Second * 2
+			mockDefaultLeaseDuration              = time.Second * 2
+			mockLeaseBuffer                       = time.Second
+			otherLeaseDurationInSeconds     int32 = 3
 		)
 
 		setupObjects := func(unhealthy int, healthy int, unhealthyNow bool) {
@@ -199,6 +210,14 @@ var _ = Describe("Node Health Check CR", func() {
 				for _, item := range crList.Items {
 					Expect(k8sClient.Delete(context.Background(), &item)).To(Succeed())
 				}
+			}
+
+			//cleanup lease
+			lease := &coordv1.Lease{}
+			err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: leaseNs, Name: leaseName}, lease)
+			if err == nil {
+				err = k8sClient.Delete(context.Background(), lease)
+				Expect(err).NotTo(HaveOccurred())
 			}
 
 			// let thing settle a bit
@@ -273,7 +292,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("create a remediation CR for each unhealthy node and updates status", func() {
-					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr := newRemediationCR(unhealthyNodeName, underTest)
 					// first call should fail, because the node gets unready in a few seconds only
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -324,7 +343,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("skips remediation - CR is not created, status updated correctly", func() {
-					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr := newRemediationCR(unhealthyNodeName, underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -359,7 +378,7 @@ var _ = Describe("Node Health Check CR", func() {
 					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 
-					cr = newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr = newRemediationCR(unhealthyNodeName, underTest)
 					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 
@@ -402,7 +421,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
 					time.Sleep(2 * time.Second)
 
-					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr := newRemediationCR(unhealthyNodeName, underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
@@ -411,7 +430,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("a remediation cr not owned by current NHC exists", func() {
 				BeforeEach(func() {
-					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr := newRemediationCR(unhealthyNodeName, underTest)
 					owners := cr.GetOwnerReferences()
 					owners[0].Name = "not-me"
 					cr.SetOwnerReferences(owners)
@@ -428,6 +447,120 @@ var _ = Describe("Node Health Check CR", func() {
 
 		Context("with spec.remediationTemplate", func() {
 			testReconcile()
+
+			Context("Node Lease", func() {
+
+				BeforeEach(func() {
+					setupObjects(1, 2, true)
+				})
+				When("un unhealthy node becomes healthy", func() {
+					It("node lease is removed", func() {
+						cr := newRemediationCR(unhealthyNodeName, underTest)
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						Expect(err).ToNot(HaveOccurred())
+						//Verify lease exist
+						lease := &coordv1.Lease{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						Expect(err).ToNot(HaveOccurred())
+
+						//Mock node becoming healthy
+						node := &v1.Node{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)
+						Expect(err).ToNot(HaveOccurred())
+						for i, c := range node.Status.Conditions {
+							if c.Type == v1.NodeReady {
+								node.Status.Conditions[i].Status = v1.ConditionTrue
+							}
+						}
+						err = k8sClient.Status().Update(context.Background(), node)
+						Expect(err).ToNot(HaveOccurred())
+
+						//Remediation should be removed
+						Eventually(
+							func() bool {
+								err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+								return errors.IsNotFound(err)
+							},
+							time.Second, time.Millisecond*100).Should(BeTrue())
+
+						//Verify NHC removed the lease
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						Expect(errors.IsNotFound(err)).To(BeTrue())
+					})
+				})
+
+				When("an unhealthy node lease is already taken", func() {
+					BeforeEach(func() {
+						mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
+
+						//Create a mock lease that is already taken
+						now := metav1.NowMicro()
+						lease := &coordv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: leaseNs}, Spec: coordv1.LeaseSpec{HolderIdentity: pointer.String("notNHC"), LeaseDurationSeconds: &otherLeaseDurationInSeconds, RenewTime: &now, AcquireTime: &now}}
+						err := k8sClient.Create(context.Background(), lease)
+						Expect(err).NotTo(HaveOccurred())
+					})
+
+					It("a remediation CR isn't created", func() {
+						cr := newRemediationCR(unhealthyNodeName, underTest)
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						Expect(errors.IsNotFound(err)).To(BeTrue())
+
+						Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+						Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+						Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
+						Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+						Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(cr.GetName()))
+						Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(0))
+
+						Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
+						Expect(underTest.Status.Reason).ToNot(BeEmpty())
+						Expect(underTest.Status.Conditions).To(ContainElement(
+							And(
+								HaveField("Type", v1alpha1.ConditionTypeDisabled),
+								HaveField("Status", metav1.ConditionFalse),
+								HaveField("Reason", v1alpha1.ConditionReasonEnabled),
+							)))
+						//debugDelay()
+						//expecting NHC to acquire the lease now and create the CR - checking CR first
+						Eventually(
+							func() error {
+								return k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+							},
+							mockRequeueDurationIfLeaseTaken+time.Millisecond*100, time.Millisecond*100).ShouldNot(HaveOccurred())
+
+						//Verifying lease is created
+						lease := &coordv1.Lease{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(*lease.Spec.HolderIdentity).To(Equal("NHC"))
+						Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(2 + 1 /*2 seconds is DefaultLeaseDuration (mocked) + 1 second buffer (mocked)  */)))
+						Expect(lease.Spec.AcquireTime).ToNot(BeNil())
+						Expect(*lease.Spec.AcquireTime).To(Equal(*lease.Spec.RenewTime))
+
+						leaseExpireTime := lease.Spec.AcquireTime.Time.Add(mockRequeueDurationIfLeaseTaken*3 + mockLeaseBuffer)
+						timeLeftForLease := leaseExpireTime.Sub(time.Now())
+						//debugDelay()
+						//Wait for lease to be extended
+						time.Sleep(timeLeftForLease * 3 / 4)
+						lease = &coordv1.Lease{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						//Verify NHC extended the lease
+						Expect(err).ToNot(HaveOccurred())
+						Expect(*lease.Spec.AcquireTime).ToNot(Equal(*lease.Spec.RenewTime))
+						Expect(lease.Spec.RenewTime.Sub(lease.Spec.AcquireTime.Time) > 0).To(BeTrue())
+
+						//Wait for lease to expire
+						time.Sleep(timeLeftForLease/4 + time.Millisecond*100)
+						lease = &coordv1.Lease{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						//Verify NHC removed the lease
+						Expect(errors.IsNotFound(err)).To(BeTrue())
+
+					})
+
+				})
+			})
+
 		})
 
 		Context("with a single escalating remediation", func() {
@@ -448,8 +581,11 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		Context("with multiple escalating remediations", func() {
-
+			firstRemediationTimeout := 5 * time.Second
+			secondRemediationTimeout := 15 * time.Second
 			BeforeEach(func() {
+				mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
+
 				templateRef1 := underTest.Spec.RemediationTemplate
 				underTest.Spec.RemediationTemplate = nil
 
@@ -462,12 +598,12 @@ var _ = Describe("Node Health Check CR", func() {
 					{
 						RemediationTemplate: *templateRef1,
 						Order:               0,
-						Timeout:             metav1.Duration{Duration: 5 * time.Second},
+						Timeout:             metav1.Duration{Duration: firstRemediationTimeout},
 					},
 					{
 						RemediationTemplate: *templateRef2,
 						Order:               5,
-						Timeout:             metav1.Duration{Duration: 15 * time.Second},
+						Timeout:             metav1.Duration{Duration: secondRemediationTimeout},
 					},
 				}
 
@@ -476,7 +612,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("it should try one remediation after another", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				cr := newRemediationCR(unhealthyNodeName, underTest)
 				// first call should fail, because the node gets unready in a few seconds only
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -499,8 +635,16 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).To(BeNil())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 
+				//Verify lease is created
+				lease := &coordv1.Lease{}
+				err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(5 + mockLeaseBuffer.Seconds()) /*First escalation timeout (5) + buffer (1) */))
+				Expect(lease.Spec.AcquireTime).ToNot(BeNil())
+				Expect(*lease.Spec.AcquireTime).To(Equal(*lease.Spec.RenewTime))
+
 				// Wait for 1st remediation to time out and 2nd to start
-				time.Sleep(7 * time.Second)
+				time.Sleep(5 * time.Second)
 
 				// get updated CR
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
@@ -513,7 +657,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 
 				// get new CR
-				cr = newRemediationCRForSecondRemediation("unhealthy-worker-node-1", underTest)
+				cr = newRemediationCRForSecondRemediation(unhealthyNodeName, underTest)
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 
 				Expect(*underTest.Status.HealthyNodes).To(Equal(2))
@@ -529,6 +673,13 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Started).ToNot(BeNil())
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).To(BeNil())
 
+				//Verify lease was extended
+				err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(secondRemediationTimeout.Seconds() + mockLeaseBuffer.Seconds())))
+				Expect(lease.Spec.AcquireTime).ToNot(BeNil())
+				Expect(lease.Spec.RenewTime.Sub(lease.Spec.AcquireTime.Time) > 0).To(BeTrue())
+
 				// Wait for 2nd remediation to time out
 				time.Sleep(17 * time.Second)
 
@@ -542,14 +693,33 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).ToNot(BeNil())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 
+				//Incorrect lease expire time calculated with short remediation timeout instead of long one
+				leaseWrongExpireTimeShort := lease.Spec.AcquireTime.Time.Add(firstRemediationTimeout*3 + mockLeaseBuffer /*longest remediation timeout (5) multiply by tries (3) and added buffer*/)
+
+				wrongDurationUntilLeaseExpires := leaseWrongExpireTimeShort.Sub(time.Now())
+				time.Sleep(wrongDurationUntilLeaseExpires + time.Second)
+				//Verify lease still exist (since long expire time wasn't reached)
+				err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(secondRemediationTimeout.Seconds() + mockLeaseBuffer.Seconds())))
+				Expect(lease.Spec.AcquireTime).ToNot(BeNil())
+
 				// make node healthy
-				node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "unhealthy-worker-node-1"}}
+				node := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: unhealthyNodeName}}
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(node), node)).To(Succeed())
 				node.Status.Conditions[0].Status = v1.ConditionTrue
 				Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
 
+				//calculating time left for lease
+				timeLeftOnLease := time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second - time.Now().Sub(lease.Spec.RenewTime.Time)
 				// wait a bit
 				time.Sleep(2 * time.Second)
+				timeLeftOnLease = timeLeftOnLease - time.Second*2
+				//Verify lease has time left before it should expire
+				Expect(timeLeftOnLease > time.Millisecond*500).To(BeTrue()) // a bit over 1 second at this stage
+				//Verify lease was removed because the CR was deleted (even though there was some time left)
+				err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
 
 				// get updated NHC
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
@@ -578,7 +748,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("it should timeout early", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				cr := newRemediationCR(unhealthyNodeName, underTest)
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
@@ -627,7 +797,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(len(crList.Items)).To(BeNumerically("==", 2), "expected 2 remediations, one for control plane, one for worker")
 					Expect(crList.Items).To(ContainElements(
 						// the unhealthy worker
-						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", "unhealthy-worker-node-1"))),
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", unhealthyNodeName))),
 						// one of the unhealthy control plane nodes
 						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", ContainSubstring("unhealthy-control-plane-node")))),
 					))
@@ -637,10 +807,10 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(2))
 					Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
 						And(
-							HaveField("Name", "unhealthy-worker-node-1"),
+							HaveField("Name", unhealthyNodeName),
 							HaveField("Remediations", ContainElement(
 								And(
-									HaveField("Resource.Name", "unhealthy-worker-node-1"),
+									HaveField("Resource.Name", unhealthyNodeName),
 									HaveField("Started", Not(BeNil())),
 									HaveField("TimedOut", BeNil()),
 								),
@@ -668,7 +838,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				cr := newRemediationCR(unhealthyNodeName, underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -693,7 +863,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("doesn't not remediate but requeues reconciliation and updates status", func() {
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				cr := newRemediationCR(unhealthyNodeName, underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -739,7 +909,7 @@ var _ = Describe("Node Health Check CR", func() {
 					// set machine annotation to unhealthy node
 					for _, o := range objects {
 						o := o
-						if o.GetName() == "unhealthy-worker-node-1" {
+						if o.GetName() == unhealthyNodeName {
 							ann := make(map[string]string)
 							ann["machine.openshift.io/machine"] = fmt.Sprintf("%s/%s", machine.Namespace, machine.Name)
 							o.SetAnnotations(ann)
@@ -754,7 +924,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("should set owner ref to the machine", func() {
-					cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+					cr := newRemediationCR(unhealthyNodeName, underTest)
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 					Expect(cr.GetOwnerReferences()).To(
 						ContainElement(
@@ -983,6 +1153,32 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 	})
 })
+
+func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer time.Duration) {
+	orgRequeueIfLeaseTaken := resources.RequeueIfLeaseTaken
+	orgDefaultLeaseDuration := resources.DefaultLeaseDuration
+	orgLeaseBuffer := resources.LeaseBuffer
+	//set up mock values so tests can run in a reasonable time
+	resources.RequeueIfLeaseTaken = mockRequeueDurationIfLeaseTaken
+	resources.DefaultLeaseDuration = mockDefaultLeaseDuration
+	resources.LeaseBuffer = mockLeaseBuffer
+
+	ns := &v1.Namespace{}
+	if err := k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseNs}, ns); err != nil {
+		if errors.IsNotFound(err) {
+			ns.Name = leaseNs
+			err := k8sClient.Create(context.Background(), ns)
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+	}
+
+	DeferCleanup(func() {
+		resources.RequeueIfLeaseTaken = orgRequeueIfLeaseTaken
+		resources.DefaultLeaseDuration = orgDefaultLeaseDuration
+		resources.LeaseBuffer = orgLeaseBuffer
+	})
+}
 
 func newRemediationCR(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
 	return newRemediationCRImpl(nodeName, nhc, false)
