@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"time"
 
+	// +kubebuilder:scaffold:imports
 	"go.uber.org/zap/zapcore"
 
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -48,7 +49,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
-	// +kubebuilder:scaffold:imports
 )
 
 var (
@@ -126,8 +126,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	client := mgr.GetClient()
 	if err := (&controllers.NodeHealthCheckReconciler{
-		Client:                      mgr.GetClient(),
+		Client:                      client,
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
