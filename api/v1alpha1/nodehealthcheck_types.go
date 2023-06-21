@@ -72,8 +72,9 @@ type NodeHealthCheckSpec struct {
 	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
 	//
 	//+optional
-	//+patchStrategy=merge
-	//+patchMergeKey=type
+	//+listType=map
+	//+listMapKey=type
+	//+listMapKey=status
 	//+kubebuilder:default:={{type:Ready,status:False,duration:"300s"},{type:Ready,status:Unknown,duration:"300s"}}
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
@@ -201,8 +202,8 @@ type NodeHealthCheckStatus struct {
 
 	// UnhealthyNodes tracks currently unhealthy nodes and their remediations.
 	//
-	//+patchStrategy=merge
-	//+patchMergeKey=type
+	//+listType=map
+	//+listMapKey=name
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	UnhealthyNodes []*UnhealthyNode `json:"unhealthyNodes,omitempty"`
@@ -217,8 +218,8 @@ type NodeHealthCheckStatus struct {
 	// Represents the observations of a NodeHealthCheck's current state.
 	// Known .status.conditions.type are: "Disabled"
 	//
-	//+patchStrategy=merge
-	//+patchMergeKey=type
+	//+listType=map
+	//+listMapKey=type
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.conditions"
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -249,8 +250,6 @@ type UnhealthyNode struct {
 
 	// Remediations tracks the remediations created for this node
 	//
-	//+patchStrategy=merge
-	//+patchMergeKey=type
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	Remediations []*Remediation `json:"remediations,omitempty"`
