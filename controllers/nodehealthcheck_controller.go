@@ -322,6 +322,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			} else if deleted {
 				log.Info("deleted remediation CR", "name", remediationCR.GetName())
 				r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
+				metrics.ObserveNodeHealthCheckRemediationDeleted(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 			}
 
 			// always update status, in case patching it failed during last reconcile
@@ -474,6 +475,9 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 
 	// always update status, in case patching it failed during last reconcile
 	resources.UpdateStatusRemediationStarted(node, nhc, remediationCR)
+
+	// ensure to provide correct metrics in case the CR existed already after a pod restart
+	metrics.ObserveNodeHealthCheckRemediationCreated(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 
 	if created {
 		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))

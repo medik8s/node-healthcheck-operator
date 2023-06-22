@@ -32,15 +32,42 @@ var (
 	)
 )
 
+var (
+	// NodeHealthCheckOngoingRemediation is a Prometheus metric, which reports an ongoing remediation of a node
+	NodeHealthCheckOngoingRemediation = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "nodehealthcheck_ongoing_remediation",
+			Help: "Indication of an ongoing remediation of an unhealthy node",
+		}, []string{"name", "namespace", "remediation"},
+	)
+)
+
 func InitializeNodeHealthCheckMetrics() {
 	metrics.Registry.MustRegister(
 		NodeHealthCheckOldRemediationCR,
+		NodeHealthCheckOngoingRemediation,
 	)
 }
 
-func ObserveNodeHealthCheckOldRemediationCR(name string, namespace string) {
+func ObserveNodeHealthCheckOldRemediationCR(name, namespace string) {
 	NodeHealthCheckOldRemediationCR.With(prometheus.Labels{
 		"name":      name,
 		"namespace": namespace,
 	}).Inc()
+}
+
+func ObserveNodeHealthCheckRemediationCreated(name, namespace, remediation string) {
+	NodeHealthCheckOngoingRemediation.With(prometheus.Labels{
+		"name":        name,
+		"namespace":   namespace,
+		"remediation": remediation,
+	}).Set(1)
+}
+
+func ObserveNodeHealthCheckRemediationDeleted(name, namespace, remediation string) {
+	NodeHealthCheckOngoingRemediation.With(prometheus.Labels{
+		"name":        name,
+		"namespace":   namespace,
+		"remediation": remediation,
+	}).Set(0)
 }
