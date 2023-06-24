@@ -8,7 +8,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,7 +29,6 @@ import (
 type MachineHealthCheckReconciler struct {
 	client.Client
 	Log                         logr.Logger
-	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
@@ -120,7 +118,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// always check if we need to patch status before we exit Reconcile
 	mhcOrig := mhc.DeepCopy()
 	defer func() {
-		patchErr := r.patchStatus(mhc, mhcOrig)
+		patchErr := patchStatus(ctx, *r, log, mhc, mhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
 			// check if we have an error from the rest of the code already
@@ -133,23 +131,4 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}()
 
 	return result, nil
-}
-
-func (r *MachineHealthCheckReconciler) patchStatus(mhc, mhcOrig *v1beta1.MachineHealthCheck) error {
-
-	mergeFrom := client.MergeFrom(mhcOrig)
-
-	// check if there are any changes.
-	// reflect.DeepEqual does not work, it has many false positives!
-	if patchBytes, err := mergeFrom.Data(mhc); err != nil {
-		r.Log.Error(err, "failed to create patch")
-		return err
-	} else if string(patchBytes) == "{}" {
-		// no change
-		return nil
-	} else {
-		r.Log.Info("Patching MHC status", "new status", mhc.Status, "patch", string(patchBytes))
-	}
-
-	return r.Client.Status().Patch(context.Background(), mhc, mergeFrom)
 }

@@ -35,7 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -84,7 +83,6 @@ var (
 type NodeHealthCheckReconciler struct {
 	client.Client
 	Log                         logr.Logger
-	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
@@ -92,7 +90,7 @@ type NodeHealthCheckReconciler struct {
 	MHCEvents                   chan event.GenericEvent
 	controller                  controller.Controller
 	watches                     map[string]struct{}
-	watchesLock                 sync.Mutex
+	watchesLock                 *sync.Mutex
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -125,6 +123,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.controller = controller
 	r.watches = make(map[string]struct{})
+	r.watchesLock = &sync.Mutex{}
 	return nil
 }
 
@@ -169,7 +168,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if finalRequeueAfter != nil {
 			result.RequeueAfter = *finalRequeueAfter
 		}
-		patchErr := r.patchStatus(nhc, nhcOrig, ctx)
+		patchErr := r.patchStatus(ctx, log, nhc, nhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
 			// check if we have an error from the rest of the code already
@@ -706,9 +705,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 	return false, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck, ctx context.Context) error {
-
-	log := utils.GetLogWithNHC(r.Log, nhc)
+func (r *NodeHealthCheckReconciler) patchStatus(ctx context.Context, log logr.Logger, nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
 
 	// calculate phase and reason
 	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)

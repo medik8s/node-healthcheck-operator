@@ -171,7 +171,6 @@ var _ = BeforeSuite(func() {
 	err = (&NodeHealthCheckReconciler{
 		Client:                      k8sManager.GetClient(),
 		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
-		Scheme:                      k8sManager.GetScheme(),
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
@@ -183,7 +182,6 @@ var _ = BeforeSuite(func() {
 	err = (&MachineHealthCheckReconciler{
 		Client:                      k8sManager.GetClient(),
 		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
-		Scheme:                      k8sManager.GetScheme(),
 		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,

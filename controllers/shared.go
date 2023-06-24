@@ -1,7 +1,14 @@
 package controllers
 
 import (
+	"context"
+
+	"github.com/go-logr/logr"
+
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
@@ -51,4 +58,42 @@ func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bo
 		}
 	}
 	return false
+}
+
+type ObjectWithStatus interface {
+	GetStatus() interface{}
+}
+
+func patchStatus(ctx context.Context, cl client.Client, log logr.Logger, actual, orig client.Object) error {
+	mergeFrom := client.MergeFrom(orig)
+
+	// check if there are any changes.
+	// reflect.DeepEqual does not work, it has many false positives!
+	if patchBytes, err := mergeFrom.Data(actual); err != nil {
+		log.Error(err, "failed to create patch")
+		return err
+	} else if string(patchBytes) == "{}" {
+		// no change
+		return nil
+	} else {
+		status, err := getStatus(actual)
+		if err != nil {
+			return err
+		}
+		log.Info("Patching status", "new status", status, "patch", string(patchBytes))
+	}
+
+	return cl.Status().Patch(context.Background(), actual, mergeFrom)
+}
+
+func getStatus(obj client.Object) (map[string]interface{}, error) {
+	u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return nil, err
+	}
+	status, found, err := unstructured.NestedMap(u, "status")
+	if err != nil || !found {
+		return nil, err
+	}
+	return status, nil
 }

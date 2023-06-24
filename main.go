@@ -146,7 +146,6 @@ func main() {
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
-		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
@@ -161,7 +160,6 @@ func main() {
 		if err := (&controllers.MachineHealthCheckReconciler{
 			Client:                      mgr.GetClient(),
 			Log:                         ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
-			Scheme:                      mgr.GetScheme(),
 			Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
 			ClusterUpgradeStatusChecker: upgradeChecker,
 			MHCChecker:                  mhcChecker,
