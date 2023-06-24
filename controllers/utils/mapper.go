@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 
@@ -14,7 +15,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+)
+
+const (
+	MachineNodeNameIndex = "machineNodeNameIndex"
 )
 
 // NHCByNodeMapperFunc return the Node-to-NHC mapper function
@@ -94,4 +101,98 @@ func NHCByRemediationCRMapperFunc(logger logr.Logger) handler.MapFunc {
 		return requests
 	}
 	return delegate
+}
+
+// MHCByNodeMapperFunc return the Node-to-MHC mapper function
+func MHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+	delegate := func(o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		node := &v1.Node{}
+		if err := c.Get(context.Background(), client.ObjectKey{Name: o.GetName()}, node); err != nil {
+			if !errors.IsNotFound(err) {
+				node.Name = o.GetName()
+				logger.Info("mapping deleted node", "node name", o.GetName())
+			} else {
+				logger.Error(err, "failed to get node", "node name", o.GetName())
+				return requests
+			}
+		}
+
+		machine, err := getMachineFromNode(c, node.Name)
+		if machine == nil || err != nil {
+			logger.Info("No-op: Unable to retrieve machine from node %q: %v", node.Name, err)
+			return requests
+		}
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(context.Background(), mhcList); err != nil {
+			logger.Error(err, "No-op: Unable to list mhc")
+			return requests
+		}
+
+		for _, mhc := range mhcList.Items {
+			selector, err := metav1.LabelSelectorAsSelector(&mhc.Spec.Selector)
+			if err != nil {
+				logger.Error(err, "mapper: invalid machine selector", "MHC name", mhc.GetName())
+				continue
+			}
+
+			// If the selector is empty, all machines are considered to match
+			if selector.Empty() || selector.Matches(labels.Set(machine.GetLabels())) {
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: mhc.GetName()}})
+			}
+		}
+		return requests
+	}
+	return delegate
+}
+
+// MHCByMachineMapperFunc return the Machine-to-MHC mapper function
+func MHCByMachineMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+	delegate := func(o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		machine := &machinev1beta1.Machine{}
+		if err := c.Get(context.Background(), client.ObjectKey{Namespace: o.GetNamespace(), Name: o.GetName()}, machine); err != nil {
+			logger.Error(err, "failed to get machine", "namespace", o.GetNamespace(), "name", o.GetName())
+			return requests
+		}
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(context.Background(), mhcList); err != nil {
+			logger.Error(err, "No-op: Unable to list mhc")
+			return requests
+		}
+
+		for _, mhc := range mhcList.Items {
+			selector, err := metav1.LabelSelectorAsSelector(&mhc.Spec.Selector)
+			if err != nil {
+				logger.Error(err, "mapper: invalid machine selector", "MHC name", mhc.GetName())
+				continue
+			}
+
+			// If the selector is empty, all machines are considered to match
+			if selector.Empty() || selector.Matches(labels.Set(machine.GetLabels())) {
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: mhc.GetName()}})
+			}
+		}
+		return requests
+	}
+	return delegate
+}
+
+func getMachineFromNode(c client.Client, nodeName string) (*machinev1beta1.Machine, error) {
+	machineList := &machinev1beta1.MachineList{}
+	if err := c.List(
+		context.TODO(),
+		machineList,
+		client.MatchingFields{MachineNodeNameIndex: nodeName},
+	); err != nil {
+		return nil, fmt.Errorf("failed getting machine list: %v", err)
+	}
+	if len(machineList.Items) != 1 {
+		return nil, fmt.Errorf("expecting one machine for node %v, got: %v", nodeName, machineList.Items)
+	}
+	return &machineList.Items[0], nil
 }

@@ -80,12 +80,16 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var enableMachineHealthChecks bool
 	var enableHTTP2 bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableMachineHealthChecks, "enable-machine-health-checks", false,
+		"Enable MachineHealthCheck controller. "+
+			"Enabling this will activate the MachineHealthCheck controller. Works on OKD / OCP only. Do not do this when OKD / OCP's default MHC controller is running as well!")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If HTTP/2 should be enabled for the metrics and webhook servers.")
 
 	opts := zap.Options{
@@ -161,6 +165,7 @@ func main() {
 			Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
 			ClusterUpgradeStatusChecker: upgradeChecker,
 			MHCChecker:                  mhcChecker,
+			ReconcileMHC:                enableMachineHealthChecks,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
 			os.Exit(1)

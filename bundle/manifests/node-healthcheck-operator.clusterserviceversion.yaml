@@ -300,6 +300,8 @@ spec:
           verbs:
           - get
           - list
+          - patch
+          - update
           - watch
         - apiGroups:
           - machine.openshift.io
