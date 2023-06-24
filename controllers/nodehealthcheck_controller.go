@@ -128,56 +128,6 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return nil
 }
 
-func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
-	var oldNode *v1.Node
-	var newNode *v1.Node
-	var ok bool
-	if oldNode, ok = ev.ObjectOld.(*v1.Node); !ok {
-		return false
-	}
-	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
-		return false
-	}
-	needsReconcile := conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
-	//ctrl.Log.Info("NODE UPDATE", "node", newNode.GetName(), "needs reconcile", needsReconcile)
-	return needsReconcile
-}
-
-func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bool {
-	// Check if the Ready condition exists on the new node.
-	// If not, the node was just created and hasn't updated its status yet
-	readyConditionFound := false
-	for _, cond := range newConditions {
-		if cond.Type == v1.NodeReady {
-			readyConditionFound = true
-			break
-		}
-	}
-	if !readyConditionFound {
-		return false
-	}
-
-	// Check if conditions changed
-	if len(oldConditions) != len(newConditions) {
-		return true
-	}
-	for _, condOld := range oldConditions {
-		conditionFound := false
-		for _, condNew := range newConditions {
-			if condOld.Type == condNew.Type {
-				if condOld.Status != condNew.Status {
-					return true
-				}
-				conditionFound = true
-			}
-		}
-		if !conditionFound {
-			return true
-		}
-	}
-	return false
-}
-
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/status,verbs=get;update;patch
