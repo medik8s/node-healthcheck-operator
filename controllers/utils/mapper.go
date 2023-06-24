@@ -140,7 +140,10 @@ func MHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 
 			// If the selector is empty, all machines are considered to match
 			if selector.Empty() || selector.Matches(labels.Set(machine.GetLabels())) {
-				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: mhc.GetName()}})
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+					Namespace: mhc.GetNamespace(),
+					Name:      mhc.GetName(),
+				}})
 			}
 		}
 		return requests
@@ -174,7 +177,10 @@ func MHCByMachineMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc
 
 			// If the selector is empty, all machines are considered to match
 			if selector.Empty() || selector.Matches(labels.Set(machine.GetLabels())) {
-				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: mhc.GetName()}})
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+					Namespace: mhc.GetNamespace(),
+					Name:      mhc.GetName(),
+				}})
 			}
 		}
 		return requests

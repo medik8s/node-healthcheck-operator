@@ -29,6 +29,7 @@ const (
 
 type Manager interface {
 	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *time.Duration, error)
+	GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstructured.Unstructured, error)
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
@@ -39,6 +40,7 @@ type Manager interface {
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
+	GetMHCTargets(mhc *machinev1beta1.MachineHealthCheck) ([]Target, error)
 	HandleHealthyNode(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) error
 }
 
