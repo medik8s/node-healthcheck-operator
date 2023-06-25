@@ -477,15 +477,14 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
-	} else {
-		isLeaseObtained := leaseRequeueTimeout != nil && created
-		isCrAlreadyExist := !created && leaseRequeueTimeout == nil
-		isUnhealthyWithoutRemediation := !isLeaseObtained && !isCrAlreadyExist
-		//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
-		if isUnhealthyWithoutRemediation {
-			resources.UpdateStatusNodeUnhealthy(node, nhc)
-			return leaseRequeueTimeout, nil
-		}
+	}
+	isLeaseObtained := leaseRequeueTimeout != nil && created
+	isCrAlreadyExist := !created && leaseRequeueTimeout == nil
+	isUnhealthyWithoutRemediation := !isLeaseObtained && !isCrAlreadyExist
+	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
+	if isUnhealthyWithoutRemediation {
+		resources.UpdateStatusNodeUnhealthy(node, nhc)
+		return leaseRequeueTimeout, nil
 	}
 
 	// always update status, in case patching it failed during last reconcile
