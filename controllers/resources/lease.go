@@ -60,15 +60,8 @@ func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error
 	}, nil
 }
 
+
 func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
-	return m.obtainNodeLease(remediationCR, nhc)
-}
-
-func (m *nhcLeaseManager) UpdateReconcileResults(ctx context.Context, nhc *remediationv1alpha1.NodeHealthCheck, initialRequeue time.Duration, initialErr error) (time.Duration, error) {
-	return m.updateReconcileResults(ctx, nhc, initialRequeue, initialErr)
-}
-
-func (m *nhcLeaseManager) obtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
 	nodeName := remediationCR.GetName()
 	leaseDuration := m.calculateLeaseDurationBySingleRemediation(remediationCR, nhc)
 	leaseDurationWithBuffer := leaseDuration + LeaseBuffer
@@ -93,6 +86,24 @@ func (m *nhcLeaseManager) obtainNodeLease(remediationCR *unstructured.Unstructur
 	//all good lease created with wanted duration
 	return true, &leaseDuration, nil
 
+}
+
+func (m *nhcLeaseManager) UpdateReconcileResults(ctx context.Context, nhc *remediationv1alpha1.NodeHealthCheck, initialRequeue time.Duration, initialErr error) (time.Duration, error) {
+	originalRequeue, originalErr := initialRequeue, initialErr
+	updatedRequeue, updatedErr := initialRequeue, initialErr
+	if requeue, err := m.manageLeases(ctx, nhc); err != nil {
+		if initialErr == nil {
+			updatedErr = err
+		} else {
+			updatedErr = pkgerrors.Wrap(initialErr, err.Error())
+		}
+		//requeue returned from lease manager is lower than the original request requeue
+	} else if requeue > 0 && (initialRequeue == 0 || requeue < initialRequeue) {
+		updatedRequeue = requeue
+	}
+	//Log
+	m.logManageLeaseChanges(originalRequeue, updatedRequeue, originalErr, updatedErr)
+	return updatedRequeue, updatedErr
 }
 
 func (m *nhcLeaseManager) calculateLeaseDurationBySingleRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
@@ -228,24 +239,6 @@ func (m *nhcLeaseManager) isRemediationsExist(ctx context.Context, node *v1.Node
 	}
 
 	return len(remediationCrs) > 0, nil
-}
-
-func (m *nhcLeaseManager) updateReconcileResults(ctx context.Context, nhc *remediationv1alpha1.NodeHealthCheck, initialRequeue time.Duration, initialErr error) (time.Duration, error) {
-	originalRequeue, originalErr := initialRequeue, initialErr
-	updatedRequeue, updatedErr := initialRequeue, initialErr
-	if requeue, err := m.manageLeases(ctx, nhc); err != nil {
-		if initialErr == nil {
-			updatedErr = err
-		} else {
-			updatedErr = pkgerrors.Wrap(initialErr, err.Error())
-		}
-		//requeue returned from lease manager is lower than the original request requeue
-	} else if requeue > 0 && (initialRequeue == 0 || requeue < initialRequeue) {
-		updatedRequeue = requeue
-	}
-	//Log
-	m.logManageLeaseChanges(originalRequeue, updatedRequeue, originalErr, updatedErr)
-	return updatedRequeue, updatedErr
 }
 
 func (m *nhcLeaseManager) logManageLeaseChanges(originalRequeue time.Duration, updatedRequeue time.Duration, originalErr error, updatedErr error) {
