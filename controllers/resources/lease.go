@@ -23,7 +23,7 @@ import (
 
 var (
 	templateSuffix = "Template"
-	holderIdentity = "NHC"
+	holderIdentity = "Node-Healthcheck"
 	//LeaseBuffer is used to make sure we have a bit of buffer before extending the lease, so it won't be taken by another component
 	LeaseBuffer         = time.Minute
 	RequeueIfLeaseTaken = time.Minute
@@ -59,7 +59,6 @@ func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error
 		log:                log.WithName("nhc lease manager"),
 	}, nil
 }
-
 
 func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
 	nodeName := remediationCR.GetName()
