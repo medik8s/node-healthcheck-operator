@@ -206,6 +206,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nhcOrig := nhc.DeepCopy()
 	var finalRequeueAfter *time.Duration
 	defer func() {
+		var leaseRequeue time.Duration
+		leaseRequeue, returnErr = leaseManager.UpdateReconcileResults(ctx, nhc, result.RequeueAfter, returnErr)
+		finalRequeueAfter = utils.MinRequeueDuration(&leaseRequeue, finalRequeueAfter)
+		//making sure we don't override a lower value of result.RequeueAfter which might have been set anywhere
 		finalRequeueAfter = utils.MinRequeueDuration(&result.RequeueAfter, finalRequeueAfter)
 		if finalRequeueAfter != nil {
 			result.RequeueAfter = *finalRequeueAfter
@@ -221,12 +225,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 		}
 		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeuAfter", result.RequeueAfter)
-	}()
-
-	defer func() {
-		var leaseRequeue time.Duration
-		leaseRequeue, returnErr = leaseManager.UpdateReconcileResults(ctx, nhc, result.RequeueAfter, returnErr)
-		finalRequeueAfter = utils.MinRequeueDuration(&leaseRequeue, finalRequeueAfter)
 	}()
 
 	// set counters to zero for disabled NHC
