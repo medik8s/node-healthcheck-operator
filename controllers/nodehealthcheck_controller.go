@@ -470,7 +470,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 
 	// create remediation CR
-	created, leaseRequeueTimeout, err := rm.CreateRemediationCR(remediationCR, nhc)
+	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do
@@ -478,13 +478,13 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		}
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
 	}
-	isLeaseObtained := leaseRequeueTimeout != nil && created
-	isCrAlreadyExist := !created && leaseRequeueTimeout == nil
+	isLeaseObtained := leaseRequeueIn != nil && created
+	isCrAlreadyExist := !created && leaseRequeueIn == nil
 	isUnhealthyWithoutRemediation := !isLeaseObtained && !isCrAlreadyExist
 	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
 	if isUnhealthyWithoutRemediation {
 		resources.UpdateStatusNodeUnhealthy(node, nhc)
-		return leaseRequeueTimeout, nil
+		return leaseRequeueIn, nil
 	}
 
 	// always update status, in case patching it failed during last reconcile
@@ -497,13 +497,13 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 			// come back when timeout expires
 			requeueIn = pointer.Duration(*timeout + 1*time.Second)
 		}
-		return utils.MinRequeueDuration(leaseRequeueTimeout, requeueIn), nil
+		return utils.MinRequeueDuration(leaseRequeueIn, requeueIn), nil
 	}
 	// CR already exists, check for timeout in case we need to
 	if timeout == nil {
 		// no timeout set for classic remediation
 		// nothing to do anymore here
-		return leaseRequeueTimeout, nil
+		return leaseRequeueIn, nil
 	}
 
 	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Succeeded"
@@ -536,7 +536,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 
 	if !timedOut && !failed {
 		// not timed out yet, come back when we do so
-		return utils.MinRequeueDuration(leaseRequeueTimeout, pointer.Duration(timeoutAt.Sub(now.Time))), nil
+		return utils.MinRequeueDuration(leaseRequeueIn, pointer.Duration(timeoutAt.Sub(now.Time))), nil
 	}
 
 	// handle timeout and failure
