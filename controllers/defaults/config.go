@@ -80,7 +80,7 @@ func UpdateDefaultNHC(cl client.Client, namespace string, log logr.Logger) error
 
 		// We need to check if we still have a default config with the deprecated Poison Pill remediator,
 		// and update it to the new Self Node Remediation.
-		if nhc.Spec.RemediationTemplate.Name == deprecatedTemplateName {
+		if nhc.Spec.RemediationTemplate != nil && nhc.Spec.RemediationTemplate.Name == deprecatedTemplateName {
 			log.Info("updating config from old Poison Pill to new Self Node Remediation", "NHC name", nhc.Name)
 			nhc.Spec.RemediationTemplate = DefaultTemplateRef
 			updated = true
