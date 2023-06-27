@@ -32,7 +32,8 @@ type Manager interface {
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
-	GenerateRemediationCR(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
+	GenerateRemediationCRForNode(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
+	GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
@@ -65,7 +66,54 @@ func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshi
 	}
 }
 
-func (m *manager) GenerateRemediationCR(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+func (m *manager) GenerateRemediationCRForNode(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+
+	nhcOwnerRef := createOwnerRef(owner)
+
+	// also set the node's machine as owner ref if possible
+	// TODO also handle CAPI clusters / machines
+	var machineOwnerRef *metav1.OwnerReference
+	if m.onOpenshift {
+		ref, machineNamespace, err := m.getOwningMachineWithNamespace(node)
+		if err != nil {
+			return nil, err
+		}
+		if ref != nil && machineNamespace != "" {
+			// Owners must be cluster scoped, or in the same namespace as their dependent.
+			// Machines are always namespaced.
+			// So setting the machine as owner only works when the machine is in the same template as the remediation CR
+			if template.GetNamespace() == machineNamespace {
+				machineOwnerRef = ref
+			} else {
+				// What to do if namespaces don't match?
+				// So far this is a known issue for Metal3 remediation only, and that case was checked already
+				// in the Reconciler. So ignore, logging it is too verbose.
+			}
+		}
+	}
+
+	return m.generateRemediationCR(node.GetName(), nhcOwnerRef, machineOwnerRef, template)
+}
+
+func (m *manager) GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+
+	mhcOwnerRef := createOwnerRef(owner)
+
+	// Owners must be cluster scoped, or in the same namespace as their dependent.
+	// Machines are always namespaced.
+	// So setting the machine as owner only works when the machine is in the same template as the remediation CR
+	var machineOwnerRef *metav1.OwnerReference
+	if machine.GetNamespace() == template.GetNamespace() {
+		machineOwnerRef = createOwnerRef(machine)
+	} else {
+		// TODO This should be catched in the Reconciler, similar as NHC already does for Metal3Remediation!
+		// So it can be ignored here.
+	}
+
+	return m.generateRemediationCR(machine.GetName(), mhcOwnerRef, machineOwnerRef, template)
+}
+
+func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1.OwnerReference, machineOwnerRef *metav1.OwnerReference, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 
 	remediationCR := m.GenerateRemediationCRBase(template.GroupVersionKind())
 
@@ -73,7 +121,7 @@ func (m *manager) GenerateRemediationCR(node *corev1.Node, owner client.Object, 
 	templateSpec, _, _ := unstructured.NestedMap(template.Object, "spec", "template", "spec")
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
 
-	remediationCR.SetName(node.Name)
+	remediationCR.SetName(name)
 	remediationCR.SetNamespace(template.GetNamespace())
 	remediationCR.SetResourceVersion("")
 	remediationCR.SetFinalizers(nil)
@@ -82,38 +130,14 @@ func (m *manager) GenerateRemediationCR(node *corev1.Node, owner client.Object, 
 	remediationCR.SetCreationTimestamp(metav1.Now())
 
 	owners := make([]metav1.OwnerReference, 0)
-	if owner != nil {
-		apiVersion, kind := owner.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
-		owners = append(owners, metav1.OwnerReference{
-			APIVersion:         apiVersion,
-			Kind:               kind,
-			Name:               owner.GetName(),
-			UID:                owner.GetUID(),
-			Controller:         pointer.Bool(false),
-			BlockOwnerDeletion: nil,
-		})
+	if healthCheckOwnerRef != nil {
+		owners = append(owners, *healthCheckOwnerRef)
 		remediationCR.SetLabels(map[string]string{
 			"app.kubernetes.io/part-of": "node-healthcheck-controller",
 		})
 	}
-
-	// TODO also handle CAPI clusters / machines
-	if m.onOpenshift {
-		machineRef, machineNamespace, err := m.getOwningMachineWithNamespace(node)
-		if err != nil {
-			return nil, err
-		}
-		if machineRef != nil && machineNamespace != "" {
-			// Owners must be cluster scoped, or in the same namespace as their dependent
-			// Machines are always namespaced
-			if remediationCR.GetNamespace() == machineNamespace {
-				owners = append(owners, *machineRef)
-			} else {
-				// What to do if namespaces don't match?
-				// So far this is a known issue for Metal3 remediation only, and that case was checked already
-				// in the Reconciler. So ignore, logging it is too verbose.
-			}
-		}
+	if machineOwnerRef != nil {
+		owners = append(owners, *machineOwnerRef)
 	}
 
 	if len(owners) > 0 {
@@ -286,12 +310,18 @@ func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.Owne
 	if err := m.Get(m.ctx, client.ObjectKey{Namespace: ns, Name: name}, machine); err != nil {
 		return nil, "", errors.Wrapf(err, "failed to get machine. namespace %v, name: %v", ns, name)
 	}
+	return createOwnerRef(machine), ns, nil
+}
+
+func createOwnerRef(obj client.Object) *metav1.OwnerReference {
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	apiVersion, kind := gvk.ToAPIVersionAndKind()
 	return &metav1.OwnerReference{
-		APIVersion:         machine.APIVersion,
-		Kind:               machine.Kind,
-		Name:               name,
-		UID:                machine.UID,
+		APIVersion:         apiVersion,
+		Kind:               kind,
+		Name:               obj.GetName(),
+		UID:                obj.GetUID(),
 		Controller:         pointer.Bool(false),
-		BlockOwnerDeletion: pointer.Bool(false),
-	}, ns, nil
+		BlockOwnerDeletion: nil,
+	}
 }

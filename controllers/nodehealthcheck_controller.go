@@ -538,7 +538,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		}
 		return nil, errors.Wrapf(err, "failed to get current template")
 	}
-	remediationCR, err := rm.GenerateRemediationCR(node, nhc, currentTemplate)
+	remediationCR, err := rm.GenerateRemediationCRForNode(node, nhc, currentTemplate)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to generate remediation CR")
 	}
