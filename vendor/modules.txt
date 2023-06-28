@@ -93,7 +93,9 @@ github.com/mailru/easyjson/jwriter
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/medik8s/common v1.2.0
 ## explicit; go 1.20
+github.com/medik8s/common/pkg/labels
 github.com/medik8s/common/pkg/lease
+github.com/medik8s/common/pkg/nodes
 # github.com/moby/spdystream v0.2.0
 ## explicit; go 1.13
 github.com/moby/spdystream

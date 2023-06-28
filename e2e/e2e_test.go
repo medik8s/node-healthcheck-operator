@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	commonlabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -26,7 +27,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
-	nhcUtils "github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
 )
 
@@ -59,11 +59,11 @@ var _ = Describe("e2e", func() {
 				Selector: metav1.LabelSelector{
 					MatchExpressions: []metav1.LabelSelectorRequirement{
 						{
-							Key:      nhcUtils.ControlPlaneRoleLabel,
+							Key:      commonlabels.ControlPlaneRole,
 							Operator: metav1.LabelSelectorOpDoesNotExist,
 						},
 						{
-							Key:      nhcUtils.MasterRoleLabel,
+							Key:      commonlabels.MasterRole,
 							Operator: metav1.LabelSelectorOpDoesNotExist,
 						},
 					},

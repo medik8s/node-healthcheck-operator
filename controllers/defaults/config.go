@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/medik8s/common/pkg/labels"
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 const (
@@ -33,11 +33,11 @@ var DefaultTemplateRef = &corev1.ObjectReference{
 var DefaultSelector = metav1.LabelSelector{
 	MatchExpressions: []metav1.LabelSelectorRequirement{
 		{
-			Key:      utils.ControlPlaneRoleLabel,
+			Key:      labels.ControlPlaneRole,
 			Operator: metav1.LabelSelectorOpDoesNotExist,
 		},
 		{
-			Key:      utils.MasterRoleLabel,
+			Key:      labels.MasterRole,
 			Operator: metav1.LabelSelectorOpDoesNotExist,
 		},
 	},
@@ -88,7 +88,7 @@ func UpdateDefaultNHC(cl client.Client, namespace string, log logr.Logger) error
 
 		// Update node selector from worker to !control-plane AND !master, in order to prevent unwanted remediation of control
 		// plane nodes in case they also are workers
-		if nhc.Name == DefaultCRName && nhc.Spec.Selector.MatchExpressions[0].Key == utils.WorkerRoleLabel {
+		if nhc.Name == DefaultCRName && nhc.Spec.Selector.MatchExpressions[0].Key == labels.WorkerRole {
 			log.Info("updating default config from selecting worker role to selecting !control-plane && !master role", "NHC name", nhc.Name)
 			nhc.Spec.Selector = DefaultSelector
 			updated = true

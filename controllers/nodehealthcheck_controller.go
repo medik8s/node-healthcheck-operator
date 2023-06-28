@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/medik8s/common/pkg/lease"
+	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
@@ -437,7 +438,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
 	// prevent remediation of more than 1 control plane node at a time!
-	isControlPlaneNode := utils.IsControlPlane(node)
+	isControlPlaneNode := nodes.IsControlPlane(node)
 	if isControlPlaneNode {
 		if isAllowed, err := r.isControlPlaneRemediationAllowed(node, nhc, rm); err != nil {
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
@@ -566,7 +567,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 }
 
 func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (bool, error) {
-	if !utils.IsControlPlane(node) {
+	if !nodes.IsControlPlane(node) {
 		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
 	}
 

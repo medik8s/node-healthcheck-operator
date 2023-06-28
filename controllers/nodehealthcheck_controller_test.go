@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	commonLabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -1271,9 +1272,9 @@ func newNodes(unhealthy int, healthy int, isControlPlane bool, unhealthyNow bool
 func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, isControlPlane bool, unhealthyNow bool) client.Object {
 	labels := make(map[string]string, 1)
 	if isControlPlane {
-		labels[utils.ControlPlaneRoleLabel] = ""
+		labels[commonLabels.ControlPlaneRole] = ""
 	} else {
-		labels[utils.WorkerRoleLabel] = ""
+		labels[commonLabels.WorkerRole] = ""
 	}
 	// let the node get unhealthy in a few seconds
 	transitionTime := time.Now().Add(-(unhealthyConditionDuration - nodeUnhealthyIn + 2*time.Second))
