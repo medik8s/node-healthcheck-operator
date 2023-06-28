@@ -72,10 +72,9 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 	}
 
 	if err := m.commonLeaseManager.RequestLease(context.Background(), node, leaseDurationWithBuffer); err != nil {
-		l, _ := m.commonLeaseManager.GetLease(context.Background(), node)
-		if l != nil && l.Spec.HolderIdentity != nil && *l.Spec.HolderIdentity != holderIdentity {
-			m.log.Info("can't acquire node lease, it is already owned by another owner", "current owner", *l.Spec.HolderIdentity)
-			return false, &RequeueIfLeaseTaken, nil
+		if _, ok := err.(*lease.AlreadyHeldError); ok {
+			m.log.Info("can't acquire node lease, it is already owned by another owner", "already held error", err)
+			return false, &RequeueIfLeaseTaken, err
 		}
 
 		m.log.Error(err, "couldn't obtain lease for node", "node name", nodeName)

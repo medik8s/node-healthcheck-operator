@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/medik8s/common/pkg/lease"
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
@@ -471,20 +472,20 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 
 	// create remediation CR
 	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
+
+	_, isLeaseAlreadyTaken := err.(*lease.AlreadyHeldError)
+	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
+	if !!isLeaseAlreadyTaken {
+		resources.UpdateStatusNodeUnhealthy(node, nhc)
+		return leaseRequeueIn, nil
+	}
+
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do
 			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "failed to create remediation CR")
-	}
-	isLeaseObtained := leaseRequeueIn != nil && created
-	isCrAlreadyExist := !created && leaseRequeueIn == nil
-	isUnhealthyWithoutRemediation := !isLeaseObtained && !isCrAlreadyExist
-	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
-	if isUnhealthyWithoutRemediation {
-		resources.UpdateStatusNodeUnhealthy(node, nhc)
-		return leaseRequeueIn, nil
 	}
 
 	// always update status, in case patching it failed during last reconcile
