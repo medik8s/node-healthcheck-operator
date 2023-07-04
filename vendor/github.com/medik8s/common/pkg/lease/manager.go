@@ -186,7 +186,7 @@ func (l *manager) requestLease(ctx context.Context, obj client.Object, leaseDura
 			if lease.Spec.HolderIdentity != nil {
 				identity = *lease.Spec.HolderIdentity
 			}
-			return &AlreadyHeldError{holderIdentity: identity}
+			return AlreadyHeldError{holderIdentity: identity}
 		}
 		needUpdateLease = true
 

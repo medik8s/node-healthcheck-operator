@@ -526,7 +526,7 @@ var _ = Describe("Node Health Check CR", func() {
 							func() error {
 								return k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 							},
-							mockRequeueDurationIfLeaseTaken+time.Millisecond*100, time.Millisecond*100).ShouldNot(HaveOccurred())
+							mockRequeueDurationIfLeaseTaken*2+time.Millisecond*100, time.Millisecond*100).ShouldNot(HaveOccurred())
 
 						//Verifying lease is created
 						lease := &coordv1.Lease{}
@@ -539,7 +539,6 @@ var _ = Describe("Node Health Check CR", func() {
 
 						leaseExpireTime := lease.Spec.AcquireTime.Time.Add(mockRequeueDurationIfLeaseTaken*3 + mockLeaseBuffer)
 						timeLeftForLease := leaseExpireTime.Sub(time.Now())
-						//debugDelay()
 						//Wait for lease to be extended
 						time.Sleep(timeLeftForLease * 3 / 4)
 						lease = &coordv1.Lease{}

@@ -2,18 +2,16 @@ package resources
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/medik8s/common/pkg/lease"
-	pkgerrors "github.com/pkg/errors"
 
 	coordv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,8 +35,8 @@ type LeaseManager interface {
 	// ObtainNodeLease will attempt to get a node lease with the correct duration, the duration is affected by whether escalation is used and the remediation timeOut.
 	//The first return value (bool) is an indicator whether the lease was obtained, and the second return value (*time.Duration) is an indicator on when a new reconcile should be scheduled (mainly in order to extend the lease)
 	ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
-	//UpdateReconcileResults extends leases which needs to be extended and release those that needs to be releases, it is called at the end of reconcile and returns an updated  timeout and error to be returned by reconcile method (which are used for the next iteration of lease management)
-	UpdateReconcileResults(ctx context.Context, nhc *remediationv1alpha1.NodeHealthCheck, initialRequeue time.Duration, initialErr error) (time.Duration, error)
+	//ManageLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
+	ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error)
 }
 
 type nhcLeaseManager struct {
@@ -72,7 +70,7 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 	}
 
 	if err := m.commonLeaseManager.RequestLease(context.Background(), node, leaseDurationWithBuffer); err != nil {
-		if _, ok := err.(*lease.AlreadyHeldError); ok {
+		if _, ok := err.(lease.AlreadyHeldError); ok {
 			m.log.Info("can't acquire node lease, it is already owned by another owner", "already held error", err)
 			return false, &RequeueIfLeaseTaken, err
 		}
@@ -84,24 +82,6 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 	//all good lease created with wanted duration
 	return true, &leaseDuration, nil
 
-}
-
-func (m *nhcLeaseManager) UpdateReconcileResults(ctx context.Context, nhc *remediationv1alpha1.NodeHealthCheck, initialRequeue time.Duration, initialErr error) (time.Duration, error) {
-	originalRequeue, originalErr := initialRequeue, initialErr
-	updatedRequeue, updatedErr := initialRequeue, initialErr
-	if requeue, err := m.manageLeases(ctx, nhc); err != nil {
-		if initialErr == nil {
-			updatedErr = err
-		} else {
-			updatedErr = pkgerrors.Wrap(initialErr, err.Error())
-		}
-		//requeue returned from lease manager is lower than the original request requeue
-	} else if requeue > 0 && (initialRequeue == 0 || requeue < initialRequeue) {
-		updatedRequeue = requeue
-	}
-	//Log
-	m.logManageLeaseChanges(originalRequeue, updatedRequeue, originalErr, updatedErr)
-	return updatedRequeue, updatedErr
 }
 
 func (m *nhcLeaseManager) getTimeoutForRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
@@ -142,43 +122,21 @@ func (m *nhcLeaseManager) getTimeoutForRemediations(ctx context.Context, node *v
 	return highestRemediationLeaseDuration, nil
 }
 
-// needs to release leases that needs to be released and extend those that needs extending return minimum timeout for next check
-func (m *nhcLeaseManager) manageLeases(ctx context.Context, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
-	nodes := &v1.NodeList{}
-	if err := m.client.List(ctx, nodes); err != nil {
-		m.log.Error(err, "couldn't fetch nodes in order to manage leases")
+func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
+	node := &v1.Node{}
+	if err := m.client.Get(ctx, client.ObjectKey{Name: remediationCR.GetName()}, node); err != nil {
+		m.log.Error(err, "managing lease - couldn't fetch node", "node name", remediationCR.GetName())
 		return 0, err
 	}
-	var minRequeue time.Duration
-	var allErrors []error
-	for _, node := range nodes.Items {
-		nodeLease, err := m.commonLeaseManager.GetLease(ctx, &node)
-		if err != nil && apierrors.IsNotFound(err) {
-			continue
-		} else if err != nil {
-			allErrors = append(allErrors, err)
-		} else {
-			requeue, err := m.manageLease(ctx, nodeLease, &node, nhc)
-			if err != nil {
-				allErrors = append(allErrors, err)
-			} else if minRequeue == 0 { //update minRequeue if not initialized or new requeue is lower
-				minRequeue = requeue
-			} else if minRequeue > requeue && requeue > 0 {
-				minRequeue = requeue
-			}
-
+	l, err := m.commonLeaseManager.GetLease(ctx, node)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil
 		}
+		m.log.Error(err, "managing lease - couldn't fetch lease", "node name", remediationCR.GetName())
+		return 0, err
 	}
 
-	var resultError error
-	if len(allErrors) != 0 {
-		resultError = errors.Join(allErrors...)
-	}
-
-	return minRequeue, resultError
-}
-
-func (m *nhcLeaseManager) manageLease(ctx context.Context, l *coordv1.Lease, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
 	if ok, err := m.isLeaseOverdue(ctx, node, l, nhc); err != nil {
 		return 0, err
 	} else if ok { //release the lease - lease is overdue

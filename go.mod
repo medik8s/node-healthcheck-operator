@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/go-logr/logr v1.2.4
-	github.com/medik8s/common v1.3.0
+	github.com/medik8s/common v1.4.0
 	github.com/onsi/ginkgo/v2 v2.9.5
 	github.com/onsi/gomega v1.27.7
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979 // release-4.11
