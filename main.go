@@ -126,9 +126,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	client := mgr.GetClient()
 	if err := (&controllers.NodeHealthCheckReconciler{
-		Client:                      client,
+		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
