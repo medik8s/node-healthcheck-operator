@@ -50,7 +50,7 @@ type AlreadyHeldError struct {
 	holderIdentity string
 }
 
-func (e *AlreadyHeldError) Error() string {
+func (e AlreadyHeldError) Error() string {
 	return fmt.Sprintf("can't update valid lease held by different owner: %s", e.holderIdentity)
 }
 
