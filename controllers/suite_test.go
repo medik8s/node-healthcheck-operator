@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,23 @@ const (
 	DeploymentNamespace = "testns"
 	MachineNamespace    = "openshift-machine-api"
 	leaseNs             = "medik8s-leases"
+
+	InfraRemediationGroup        = "test.medik8s.io"
+	InfraRemediationVersion      = "v1alpha1"
+	InfraRemediationKind         = "InfrastructureRemediation"
+	InfraRemediationTemplateKind = "InfrastructureRemediationTemplate"
+	InfraRemediationTemplateName = "infra-remediation-template"
+)
+
+var (
+	InfraRemediationAPIVersion = fmt.Sprintf("%s/%s", InfraRemediationGroup, InfraRemediationVersion)
+
+	infraRemediationTemplateRef = &v1.ObjectReference{
+		APIVersion: InfraRemediationAPIVersion,
+		Kind:       InfraRemediationTemplateKind,
+		Namespace:  MachineNamespace,
+		Name:       InfraRemediationTemplateName,
+	}
 )
 
 var cfg *rest.Config
@@ -122,23 +140,23 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	// Deploy test remediation CRDs and CR
-	testKind := "InfrastructureRemediation"
-	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
-	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(testKind))).To(Succeed())
-	time.Sleep(time.Second)
-	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, "default", "template"))).To(Succeed())
-
-	testKind = "Metal3Remediation"
-	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
-	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(testKind))).To(Succeed())
-	time.Sleep(time.Second)
 	ns := &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "openshift-machine-api",
+			Name: MachineNamespace,
 		},
 		Spec: v1.NamespaceSpec{},
 	}
 	Expect(k8sClient.Create(context.Background(), ns)).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(InfraRemediationKind))).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(InfraRemediationKind))).To(Succeed())
+	time.Sleep(time.Second)
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraRemediationTemplateName))).To(Succeed())
+
+	testKind := "Metal3Remediation"
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(testKind))).To(Succeed())
+	time.Sleep(time.Second)
+
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, MachineNamespace, "ok"))).To(Succeed())
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, "default", "nok"))).To(Succeed())
 
@@ -223,10 +241,10 @@ func newTestRemediationTemplateCRD(kind string) *apiextensionsv1.CustomResourceD
 			Kind:       "CustomResourceDefinition",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: strings.ToLower(kind) + "templates.test.medik8s.io",
+			Name: fmt.Sprintf("%stemplates.%s", strings.ToLower(kind), InfraRemediationGroup),
 		},
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "test.medik8s.io",
+			Group: InfraRemediationGroup,
 			Scope: apiextensionsv1.NamespaceScoped,
 			Names: apiextensionsv1.CustomResourceDefinitionNames{
 				Kind:   kind + "Template",
@@ -234,7 +252,7 @@ func newTestRemediationTemplateCRD(kind string) *apiextensionsv1.CustomResourceD
 			},
 			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
 				{
-					Name:    "v1alpha1",
+					Name:    InfraRemediationVersion,
 					Served:  true,
 					Storage: true,
 					Subresources: &apiextensionsv1.CustomResourceSubresources{
@@ -268,10 +286,10 @@ func newTestRemediationCRD(kind string) *apiextensionsv1.CustomResourceDefinitio
 			Kind:       "CustomResourceDefinition",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: strings.ToLower(kind) + "s.test.medik8s.io",
+			Name: fmt.Sprintf("%ss.%s", strings.ToLower(kind), InfraRemediationGroup),
 		},
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "test.medik8s.io",
+			Group: InfraRemediationGroup,
 			Scope: apiextensionsv1.NamespaceScoped,
 			Names: apiextensionsv1.CustomResourceDefinitionNames{
 				Kind:   kind,
@@ -279,7 +297,7 @@ func newTestRemediationCRD(kind string) *apiextensionsv1.CustomResourceDefinitio
 			},
 			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
 				{
-					Name:    "v1alpha1",
+					Name:    InfraRemediationVersion,
 					Served:  true,
 					Storage: true,
 					Subresources: &apiextensionsv1.CustomResourceSubresources{
@@ -306,7 +324,7 @@ func newTestRemediationCRD(kind string) *apiextensionsv1.CustomResourceDefinitio
 	}
 }
 
-func newTestRemediationTemplateCR(kind, namespace, name string) client.Object {
+func newTestRemediationTemplateCR(kind, namespace, name string) *unstructured.Unstructured {
 	template := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"spec": map[string]interface{}{
@@ -319,11 +337,27 @@ func newTestRemediationTemplateCR(kind, namespace, name string) client.Object {
 		},
 	}
 	template.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "test.medik8s.io",
-		Version: "v1alpha1",
+		Group:   InfraRemediationGroup,
+		Version: InfraRemediationVersion,
 		Kind:    kind + "Template",
 	})
 	template.SetNamespace(namespace)
 	template.SetName(name)
 	return template
+}
+
+func newRemediationCR(nodeName string, templateRef v1.ObjectReference, owner metav1.OwnerReference) *unstructured.Unstructured {
+	cr := unstructured.Unstructured{}
+	cr.SetName(nodeName)
+	cr.SetNamespace(templateRef.Namespace)
+	kind := templateRef.GroupVersionKind().Kind
+	// remove trailing template
+	kind = kind[:len(kind)-len("template")]
+	cr.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   templateRef.GroupVersionKind().Group,
+		Version: templateRef.GroupVersionKind().Version,
+		Kind:    kind,
+	})
+	cr.SetOwnerReferences([]metav1.OwnerReference{owner})
+	return &cr
 }

@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -47,12 +46,8 @@ var _ = Describe("Node Health Check CR", func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
-					Selector: metav1.LabelSelector{},
-					RemediationTemplate: &v1.ObjectReference{
-						Kind:      "InfrastructureRemediationTemplate",
-						Namespace: "default",
-						Name:      "template",
-					},
+					Selector:            metav1.LabelSelector{},
+					RemediationTemplate: infraRemediationTemplateRef.DeepCopy(),
 				},
 			}
 			err := k8sClient.Create(context.Background(), underTest)
@@ -104,11 +99,7 @@ var _ = Describe("Node Health Check CR", func() {
 			underTest = &v1alpha1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.NodeHealthCheckSpec{
-					RemediationTemplate: &v1.ObjectReference{
-						Kind:      "InfrastructureRemediationTemplate",
-						Namespace: "default",
-						Name:      "template",
-					},
+					RemediationTemplate: infraRemediationTemplateRef.DeepCopy(),
 				},
 			}
 		})
@@ -209,7 +200,7 @@ var _ = Describe("Node Health Check CR", func() {
 				remediationKind = underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind
 			}
 			if remediationKind != "dummyTemplate" {
-				cr := newRemediationCR("", underTest)
+				cr := newRemediationCRForNHC("", underTest)
 				crList := &unstructured.UnstructuredList{Object: cr.Object}
 				Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
 				for _, item := range crList.Items {
@@ -1082,7 +1073,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("creates a one remediation CR for control plane node and updates status", func() {
-					cr := newRemediationCR("", underTest)
+					cr := newRemediationCRForNHC("", underTest)
 					crList := &unstructured.UnstructuredList{Object: cr.Object}
 					Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
 
@@ -1722,46 +1713,31 @@ func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, 
 	})
 }
 
-func newRemediationCR(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
-	return newRemediationCRImpl(nodeName, nhc, false)
-}
-
-func newRemediationCRForSecondRemediation(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
-	return newRemediationCRImpl(nodeName, nhc, true)
-}
-
-func newRemediationCRImpl(nodeName string, nhc *v1alpha1.NodeHealthCheck, use2ndEscRem bool) *unstructured.Unstructured {
-
+func newRemediationCRForNHC(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
 	var templateRef v1.ObjectReference
 	if nhc.Spec.RemediationTemplate != nil {
 		templateRef = *nhc.Spec.RemediationTemplate
 	} else {
 		templateRef = nhc.Spec.EscalatingRemediations[0].RemediationTemplate
-		if use2ndEscRem {
-			templateRef = nhc.Spec.EscalatingRemediations[1].RemediationTemplate
-		}
 	}
+	owner := metav1.OwnerReference{
+		APIVersion: nhc.APIVersion,
+		Kind:       nhc.Kind,
+		Name:       nhc.Name,
+		UID:        nhc.UID,
+	}
+	return newRemediationCR(nodeName, templateRef, owner)
+}
 
-	cr := unstructured.Unstructured{}
-	cr.SetName(nodeName)
-	cr.SetNamespace(templateRef.Namespace)
-	kind := templateRef.GroupVersionKind().Kind
-	// remove trailing template
-	kind = kind[:len(kind)-len("template")]
-	cr.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   templateRef.GroupVersionKind().Group,
-		Version: templateRef.GroupVersionKind().Version,
-		Kind:    kind,
-	})
-	cr.SetOwnerReferences([]metav1.OwnerReference{
-		{
-			APIVersion: nhc.APIVersion,
-			Kind:       nhc.Kind,
-			Name:       nhc.Name,
-			UID:        nhc.UID,
-		},
-	})
-	return &cr
+func newRemediationCRForNHCSecondRemediation(nodeName string, nhc *v1alpha1.NodeHealthCheck) *unstructured.Unstructured {
+	templateRef := nhc.Spec.EscalatingRemediations[1].RemediationTemplate
+	owner := metav1.OwnerReference{
+		APIVersion: nhc.APIVersion,
+		Kind:       nhc.Kind,
+		Name:       nhc.Name,
+		UID:        nhc.UID,
+	}
+	return newRemediationCR(nodeName, templateRef, owner)
 }
 
 func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
@@ -1785,12 +1761,7 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 					Duration: metav1.Duration{Duration: unhealthyConditionDuration},
 				},
 			},
-			RemediationTemplate: &v1.ObjectReference{
-				Kind:       "InfrastructureRemediationTemplate",
-				APIVersion: "test.medik8s.io/v1alpha1",
-				Namespace:  "default",
-				Name:       "template",
-			},
+			RemediationTemplate: infraRemediationTemplateRef.DeepCopy(),
 		},
 	}
 }
