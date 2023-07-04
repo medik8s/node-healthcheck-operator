@@ -151,7 +151,15 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
-		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc)
+		remediationCrs, err := m.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+			return cr.GetName() == remediationCR.GetName()
+		})
+		if err != nil {
+			m.log.Error(err, "couldn't fetch remediations for node", "node name", remediationCR.GetName())
+			return false, nil, err
+		}
+
+		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc, remediationCrs)
 		return false, &duration, err
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
@@ -186,7 +194,15 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (isDeleted bool, leaseRequeueIn *time.Duration, errResult error) {
 
 	defer func() {
-		duration, leaseErr := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc)
+		remediationCrs, err := m.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+			return cr.GetName() == remediationCR.GetName()
+		})
+		if err != nil {
+			m.log.Error(err, "couldn't fetch remediations for node", "node name", remediationCR.GetName())
+			errResult = utilerrors.NewAggregate([]error{err, errResult})
+			return
+		}
+		duration, leaseErr := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc, remediationCrs)
 		leaseRequeueIn = &duration
 		errResult = utilerrors.NewAggregate([]error{leaseErr, errResult})
 	}()
@@ -218,10 +234,6 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 }
 
 func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
-	return listRemediationCRs(m.ctx, m.Client, nhc, remediationCRFilter)
-}
-
-func listRemediationCRs(ctx context.Context, c client.Client, nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
 	// gather all GVKs
 	gvks := make([]schema.GroupVersionKind, 0)
 	if nhc.Spec.RemediationTemplate != nil {
@@ -239,7 +251,7 @@ func listRemediationCRs(ctx context.Context, c client.Client, nhc *remediationv1
 	for _, gvk := range gvks {
 		baseRemediationCR := generateRemediationCRBase(gvk)
 		crList := &unstructured.UnstructuredList{Object: baseRemediationCR.Object}
-		err := c.List(ctx, crList)
+		err := m.List(m.ctx, crList)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, errors.Wrapf(err,
 				"failed to get all remediation objects with kind %s and apiVersion %s",
