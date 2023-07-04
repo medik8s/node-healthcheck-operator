@@ -476,7 +476,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 
 	_, isLeaseAlreadyTaken := err.(*lease.AlreadyHeldError)
 	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
-	if !!isLeaseAlreadyTaken {
+	if isLeaseAlreadyTaken {
 		resources.UpdateStatusNodeUnhealthy(node, nhc)
 		return leaseRequeueIn, nil
 	}
