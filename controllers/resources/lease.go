@@ -62,7 +62,7 @@ func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error
 
 func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
 	nodeName := remediationCR.GetName()
-	leaseDuration := m.calculateLeaseDurationBySingleRemediation(remediationCR, nhc)
+	leaseDuration := m.getTimeoutForRemediation(remediationCR, nhc)
 	leaseDurationWithBuffer := leaseDuration + LeaseBuffer
 
 	node := &v1.Node{}
@@ -104,23 +104,22 @@ func (m *nhcLeaseManager) UpdateReconcileResults(ctx context.Context, nhc *remed
 	return updatedRequeue, updatedErr
 }
 
-func (m *nhcLeaseManager) calculateLeaseDurationBySingleRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
+func (m *nhcLeaseManager) getTimeoutForRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
 	leaseDuration := DefaultLeaseDuration
 	if len(nhc.Spec.EscalatingRemediations) == 0 {
 		return DefaultLeaseDuration
-	} else {
-		remediationKind := remediationCR.GetKind()
-		for _, esRemediation := range nhc.Spec.EscalatingRemediations {
-			if strings.TrimSuffix(esRemediation.RemediationTemplate.Kind, "Template") == remediationKind {
-				leaseDuration = esRemediation.Timeout.Duration
-				break
-			}
+	}
+	remediationKind := remediationCR.GetKind()
+	for _, esRemediation := range nhc.Spec.EscalatingRemediations {
+		if strings.TrimSuffix(esRemediation.RemediationTemplate.Kind, "Template") == remediationKind {
+			leaseDuration = esRemediation.Timeout.Duration
+			break
 		}
 	}
 	return leaseDuration
 }
 
-func (m *nhcLeaseManager) calculateLeaseDurationByAllRemediations(ctx context.Context, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
+func (m *nhcLeaseManager) getTimeoutForRemediations(ctx context.Context, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
 	highestRemediationLeaseDuration := DefaultLeaseDuration
 	if len(nhc.Spec.EscalatingRemediations) > 0 {
 
@@ -134,7 +133,7 @@ func (m *nhcLeaseManager) calculateLeaseDurationByAllRemediations(ctx context.Co
 
 		highestRemediationLeaseDuration = 0
 		for _, remediationCr := range remediationCrs {
-			if currentLeaseDuration := m.calculateLeaseDurationBySingleRemediation(&remediationCr, nhc); currentLeaseDuration > highestRemediationLeaseDuration {
+			if currentLeaseDuration := m.getTimeoutForRemediation(&remediationCr, nhc); currentLeaseDuration > highestRemediationLeaseDuration {
 				highestRemediationLeaseDuration = currentLeaseDuration
 			}
 		}
@@ -193,7 +192,7 @@ func (m *nhcLeaseManager) manageLease(ctx context.Context, l *coordv1.Lease, nod
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
 	} else {
 		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l))
-		leaseExpectedDuration, err := m.calculateLeaseDurationByAllRemediations(ctx, node, nhc)
+		leaseExpectedDuration, err := m.getTimeoutForRemediations(ctx, node, nhc)
 		if err != nil {
 			return 0, err
 		}
@@ -218,7 +217,7 @@ func (m *nhcLeaseManager) isLeaseOverdue(ctx context.Context, node *v1.Node, l *
 		return false, err
 	}
 
-	leaseDuration, err := m.calculateLeaseDurationByAllRemediations(ctx, node, nhc)
+	leaseDuration, err := m.getTimeoutForRemediations(ctx, node, nhc)
 	if err != nil {
 		return false, err
 	}
