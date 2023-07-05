@@ -60,7 +60,7 @@ func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error
 
 func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
 	nodeName := remediationCR.GetName()
-	leaseDuration := m.getTimeoutForRemediation(remediationCR, nhc)
+	leaseDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
 	leaseDurationWithBuffer := leaseDuration + LeaseBuffer
 
 	node := &v1.Node{}
@@ -109,7 +109,7 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", l.Name)
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
 	} else {
-		leaseExpectedDuration := m.getTimeoutForRemediations(nhc, remediationCrs)
+		leaseExpectedDuration := m.getLeaseDurationForRemediations(nhc, remediationCrs)
 		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, leaseExpectedDuration))
 		now := time.Now()
 		expectedExpiry := now.Add(leaseExpectedDuration)
@@ -125,11 +125,15 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 	}
 }
 
-func (m *nhcLeaseManager) getTimeoutForRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
-	leaseDuration := DefaultLeaseDuration
-	if len(nhc.Spec.EscalatingRemediations) == 0 {
-		return DefaultLeaseDuration
+func (m *nhcLeaseManager) getLeaseDurationForRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
+	if timeout := m.getTimeoutForRemediation(remediationCR, nhc); timeout != 0 {
+		return timeout
 	}
+	return DefaultLeaseDuration
+}
+
+func (m *nhcLeaseManager) getTimeoutForRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
+	var leaseDuration time.Duration
 	remediationKind := remediationCR.GetKind()
 	for _, esRemediation := range nhc.Spec.EscalatingRemediations {
 		if strings.TrimSuffix(esRemediation.RemediationTemplate.Kind, "Template") == remediationKind {
@@ -140,12 +144,12 @@ func (m *nhcLeaseManager) getTimeoutForRemediation(remediationCR *unstructured.U
 	return leaseDuration
 }
 
-func (m *nhcLeaseManager) getTimeoutForRemediations(nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) time.Duration {
+func (m *nhcLeaseManager) getLeaseDurationForRemediations(nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) time.Duration {
 	highestRemediationLeaseDuration := DefaultLeaseDuration
 	if len(nhc.Spec.EscalatingRemediations) > 0 {
 		highestRemediationLeaseDuration = 0
 		for _, remediationCr := range remediationCrs {
-			if currentLeaseDuration := m.getTimeoutForRemediation(&remediationCr, nhc); currentLeaseDuration > highestRemediationLeaseDuration {
+			if currentLeaseDuration := m.getLeaseDurationForRemediation(&remediationCr, nhc); currentLeaseDuration > highestRemediationLeaseDuration {
 				highestRemediationLeaseDuration = currentLeaseDuration
 			}
 		}
@@ -160,7 +164,7 @@ func (m *nhcLeaseManager) isLeaseOverdue(l *coordv1.Lease, nhc *remediationv1alp
 		return false, err
 	}
 
-	leaseDuration := m.getTimeoutForRemediations(nhc, remediationCrs)
+	leaseDuration := m.getLeaseDurationForRemediations(nhc, remediationCrs)
 
 	isLeaseOverdue := time.Now().After(m.calcLeaseExpiration(l, leaseDuration))
 	return isLeaseOverdue, nil
