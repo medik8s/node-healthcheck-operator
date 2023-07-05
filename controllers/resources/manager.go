@@ -34,7 +34,7 @@ type Manager interface {
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
-	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
+	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (bool, *time.Duration, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
@@ -191,16 +191,12 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 
 }
 
-func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (isDeleted bool, leaseRequeueIn *time.Duration, errResult error) {
+func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (isDeleted bool, leaseRequeueIn *time.Duration, errResult error) {
 
 	defer func() {
-		remediationCrs, err := m.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == remediationCR.GetName()
-		})
-		if err != nil {
-			m.log.Error(err, "couldn't fetch remediations for node", "node name", remediationCR.GetName())
-			errResult = utilerrors.NewAggregate([]error{err, errResult})
-			return
+		if isDeleted {
+			//make sure lease will be deleted
+			remediationCrs = nil
 		}
 		duration, leaseErr := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc, remediationCrs)
 		leaseRequeueIn = &duration

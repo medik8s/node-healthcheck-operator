@@ -99,18 +99,18 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		return 0, err
 	}
 
-	if ok, err := m.isLeaseOverdue(l, nhc, remediationCrs); err != nil {
+	if exist := m.isRemediationsExist(remediationCrs); !exist && m.isLeaseOwner(l) {
+		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", l.Name)
+		//release the lease - no remediations
+		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
+	} else if ok, err := m.isLeaseOverdue(l, nhc, remediationCrs); err != nil {
 		return 0, err
 	} else if ok { //release the lease - lease is overdue
 		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", l.Name)
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
-	} else if exist := m.isRemediationsExist(remediationCrs); !exist && m.isLeaseOwner(l) {
-		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", l.Name)
-		//release the lease - no remediations
-		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
 	} else {
-		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l))
 		leaseExpectedDuration := m.getTimeoutForRemediations(nhc, remediationCrs)
+		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, leaseExpectedDuration))
 		now := time.Now()
 		expectedExpiry := now.Add(leaseExpectedDuration)
 		actualExpiry := l.Spec.RenewTime.Add(time.Second * time.Duration(int(*l.Spec.LeaseDurationSeconds)))
@@ -162,8 +162,12 @@ func (m *nhcLeaseManager) isLeaseOverdue(l *coordv1.Lease, nhc *remediationv1alp
 
 	leaseDuration := m.getTimeoutForRemediations(nhc, remediationCrs)
 
-	isLeaseOverdue := time.Now().After(l.Spec.AcquireTime.Add(time.Duration(maxTimesToExtendLease+1 /*1 is offsetting the lease creation*/) * leaseDuration))
+	isLeaseOverdue := time.Now().After(m.calcLeaseExpiration(l, leaseDuration))
 	return isLeaseOverdue, nil
+}
+
+func (m *nhcLeaseManager) calcLeaseExpiration(l *coordv1.Lease, leaseDuration time.Duration) time.Time {
+	return l.Spec.AcquireTime.Add(time.Duration(maxTimesToExtendLease+1 /*1 is offsetting the lease creation*/) * leaseDuration)
 }
 
 func (m *nhcLeaseManager) isRemediationsExist(remediationCrs []unstructured.Unstructured) bool {
