@@ -358,6 +358,10 @@ bundle-push: ## Push the bundle image
 bundle-run: operator-sdk ## Run bundle image
 	$(OPERATOR_SDK) -n openshift-operators run bundle $(BUNDLE_IMG)
 
+.PHONY: bundle-cleanup
+bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
+	$(OPERATOR_SDK) -n openshift-operators cleanup node-healthcheck-operator
+
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
