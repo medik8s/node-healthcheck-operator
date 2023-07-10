@@ -178,8 +178,8 @@ func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bo
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch
-// +kubebuilder:rbac:groups="coordination.k8s.io",resources=leases,verbs=get;list;update;patch;watch;create;delete
-// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;create
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;update;patch;watch;create;delete
+// +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

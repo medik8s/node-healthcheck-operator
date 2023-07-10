@@ -229,13 +229,6 @@ spec:
       clusterPermissions:
       - rules:
         - apiGroups:
-          - ""
-          resources:
-          - namespaces
-          verbs:
-          - create
-          - get
-        - apiGroups:
           - apps
           resources:
           - deployments
@@ -275,6 +268,13 @@ spec:
           - patch
           - update
           - watch
+        - apiGroups:
+          - ""
+          resources:
+          - namespaces
+          verbs:
+          - create
+          - get
         - apiGroups:
           - ""
           resources:
