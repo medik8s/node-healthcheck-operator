@@ -129,10 +129,6 @@ func (m *manager) GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, na
 }
 
 func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured {
-	return generateRemediationCRBase(gvk)
-}
-
-func generateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured {
 	remediationCRBase := &unstructured.Unstructured{}
 	remediationCRBase.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   gvk.Group,
@@ -245,7 +241,7 @@ func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, r
 	// get CRs
 	remediationCRs := make([]unstructured.Unstructured, 0)
 	for _, gvk := range gvks {
-		baseRemediationCR := generateRemediationCRBase(gvk)
+		baseRemediationCR := m.GenerateRemediationCRBase(gvk)
 		crList := &unstructured.UnstructuredList{Object: baseRemediationCR.Object}
 		err := m.List(m.ctx, crList)
 		if err != nil && !apierrors.IsNotFound(err) {
