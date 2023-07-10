@@ -321,7 +321,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return result, err
 		}
 		for _, remediationCR := range remediationCRs {
-			deleted, leaseRequeueIn, err := resourceManager.DeleteRemediationCR(&remediationCR, nhc, remediationCRs)
+			deleted, leaseRequeueIn, err := resourceManager.DeleteRemediationCR(&remediationCR, nhc)
 			finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, leaseRequeueIn)
 			if err != nil {
 				log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)

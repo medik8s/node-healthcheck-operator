@@ -34,7 +34,7 @@ type Manager interface {
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
-	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (bool, *time.Duration, error)
+	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
@@ -147,15 +147,12 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
-		remediationCrs, err := m.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == remediationCR.GetName()
-		})
 		if err != nil {
 			m.log.Error(err, "couldn't fetch remediations for node", "node name", remediationCR.GetName())
 			return false, nil, err
 		}
 
-		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc, remediationCrs)
+		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc)
 		return false, &duration, err
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
@@ -187,14 +184,16 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 
 }
 
-func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (isDeleted bool, leaseRequeueIn *time.Duration, errResult error) {
+func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (isDeleted bool, leaseRequeueIn *time.Duration, errResult error) {
 
 	defer func() {
+		remediationCRForManager := remediationCR
 		if isDeleted {
 			//make sure lease will be deleted
-			remediationCrs = nil
+			remediationCRForManager = remediationCR.DeepCopy()
+			remediationCRForManager.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
 		}
-		duration, leaseErr := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc, remediationCrs)
+		duration, leaseErr := m.leaseManager.ManageLease(m.ctx, remediationCRForManager, nhc)
 		leaseRequeueIn = &duration
 		errResult = utilerrors.NewAggregate([]error{leaseErr, errResult})
 	}()

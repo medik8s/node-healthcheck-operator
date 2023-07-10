@@ -36,7 +36,7 @@ type LeaseManager interface {
 	//The first return value (bool) is an indicator whether the lease was obtained, and the second return value (*time.Duration) is an indicator on when a new reconcile should be scheduled (mainly in order to extend the lease)
 	ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
 	//ManageLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
-	ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (time.Duration, error)
+	ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error)
 }
 
 type nhcLeaseManager struct {
@@ -84,7 +84,7 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 
 }
 
-func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (time.Duration, error) {
+func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
 	node := &v1.Node{}
 	if err := m.client.Get(ctx, client.ObjectKey{Name: remediationCR.GetName()}, node); err != nil {
 		m.log.Error(err, "managing lease - couldn't fetch node", "node name", remediationCR.GetName())
@@ -99,17 +99,17 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		return 0, err
 	}
 
-	if exist := m.isRemediationsExist(remediationCrs); !exist && m.isLeaseOwner(l) {
+	if exist := remediationCR.GetDeletionTimestamp() == nil; !exist && m.isLeaseOwner(l) {
 		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", l.Name)
 		//release the lease - no remediations
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
-	} else if ok, err := m.isLeaseOverdue(l, nhc, remediationCrs); err != nil {
+	} else if ok, err := m.isLeaseOverdue(l, nhc, remediationCR); err != nil {
 		return 0, err
 	} else if ok { //release the lease - lease is overdue
 		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", l.Name)
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
 	} else {
-		leaseExpectedDuration := m.getLeaseDurationForRemediations(nhc, remediationCrs)
+		leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
 		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, leaseExpectedDuration))
 		now := time.Now()
 		expectedExpiry := now.Add(leaseExpectedDuration)
@@ -144,27 +144,14 @@ func (m *nhcLeaseManager) getTimeoutForRemediation(remediationCR *unstructured.U
 	return leaseDuration
 }
 
-func (m *nhcLeaseManager) getLeaseDurationForRemediations(nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) time.Duration {
-	highestRemediationLeaseDuration := DefaultLeaseDuration
-	if len(nhc.Spec.EscalatingRemediations) > 0 {
-		highestRemediationLeaseDuration = 0
-		for _, remediationCr := range remediationCrs {
-			if currentLeaseDuration := m.getLeaseDurationForRemediation(&remediationCr, nhc); currentLeaseDuration > highestRemediationLeaseDuration {
-				highestRemediationLeaseDuration = currentLeaseDuration
-			}
-		}
-	}
-	return highestRemediationLeaseDuration
-}
-
-func (m *nhcLeaseManager) isLeaseOverdue(l *coordv1.Lease, nhc *remediationv1alpha1.NodeHealthCheck, remediationCrs []unstructured.Unstructured) (bool, error) {
+func (m *nhcLeaseManager) isLeaseOverdue(l *coordv1.Lease, nhc *remediationv1alpha1.NodeHealthCheck, remediationCR *unstructured.Unstructured) (bool, error) {
 	if l.Spec.AcquireTime == nil {
 		err := fmt.Errorf("lease Spec.AcquireTime is nil")
 		m.log.Error(err, "lease Spec.AcquireTime is nil", "lease name", l.Name)
 		return false, err
 	}
 
-	leaseDuration := m.getLeaseDurationForRemediations(nhc, remediationCrs)
+	leaseDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
 
 	isLeaseOverdue := time.Now().After(m.calcLeaseExpiration(l, leaseDuration))
 	return isLeaseOverdue, nil
