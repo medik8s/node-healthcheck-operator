@@ -323,6 +323,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				log.Info("deleted remediation CR", "name", remediationCR.GetName())
 				r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
 				metrics.ObserveNodeHealthCheckRemediationDeleted(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
+
+				duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
+				metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), duration)
 			}
 
 			// always update status, in case patching it failed during last reconcile
