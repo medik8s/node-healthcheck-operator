@@ -13,7 +13,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -185,18 +184,6 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 }
 
 func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (isDeleted bool, errResult error) {
-
-	defer func() {
-		remediationCRForManager := remediationCR
-		if isDeleted {
-			//make sure lease will be deleted
-			remediationCRForManager = remediationCR.DeepCopy()
-			remediationCRForManager.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
-		}
-		_, leaseErr := m.leaseManager.ManageLease(m.ctx, remediationCRForManager, nhc)
-		errResult = utilerrors.NewAggregate([]error{leaseErr, errResult})
-	}()
-
 	err := m.Get(context.Background(), client.ObjectKeyFromObject(remediationCR), remediationCR)
 	if err != nil && !apierrors.IsNotFound(err) {
 		// something went wrong
@@ -216,6 +203,11 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
+
+	if err = m.leaseManager.InvalidateLease(m.ctx, remediationCR); err != nil {
+		return true, err
+	}
+
 	return true, nil
 }
 

@@ -37,6 +37,8 @@ type LeaseManager interface {
 	ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
 	//ManageLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
 	ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error)
+	// InvalidateLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
+	InvalidateLease(ctx context.Context, remediationCR *unstructured.Unstructured) error
 }
 
 type nhcLeaseManager struct {
@@ -123,6 +125,21 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		}
 		return leaseExpectedDuration, nil
 	}
+}
+
+func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, remediationCR *unstructured.Unstructured) error {
+	node := &v1.Node{}
+	if err := m.client.Get(ctx, client.ObjectKey{Name: remediationCR.GetName()}, node); err != nil {
+		m.log.Error(err, "failed to get node", "node name", remediationCR.GetName())
+		return err
+	}
+
+	err := m.commonLeaseManager.InvalidateLease(ctx, node)
+	if err != nil {
+		m.log.Error(err, "failed to invalidate lease", "node name", remediationCR.GetName())
+		return err
+	}
+	return nil
 }
 
 func (m *nhcLeaseManager) getLeaseDurationForRemediation(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
