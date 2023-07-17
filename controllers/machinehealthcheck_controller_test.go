@@ -26,10 +26,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 
+	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
@@ -142,6 +144,7 @@ func TestReconcile(t *testing.T) {
 	}
 	machineAlreadyDeleted := newMachine("machineAlreadyDeleted", nodeAlreadyDeleted.Name)
 	machineAlreadyDeleted.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
+	machineAlreadyDeleted.SetFinalizers([]string{"test"})
 
 	testCases := []testCase{
 		{
@@ -630,7 +633,8 @@ func TestMHCRequestsFromMachine(t *testing.T) {
 			}
 
 			reconciler := newFakeReconciler(objects...)
-			requests := utils.MHCByMachineMapperFunc(*reconciler, reconciler.Log)(tc.machine)
+			fg := &featuregates.FakeAccessor{IsMaoMhcDisabled: true}
+			requests := utils.MHCByMachineMapperFunc(*reconciler, reconciler.Log, fg)(context.TODO(), tc.machine)
 			if !reflect.DeepEqual(requests, tc.expectedRequests) {
 				t.Errorf("Expected: %v, got: %v", tc.expectedRequests, requests)
 			}
@@ -828,7 +832,8 @@ func TestMHCRequestsFromNode(t *testing.T) {
 			}
 
 			reconciler := newFakeReconciler(objects...)
-			requests := utils.MHCByNodeMapperFunc(*reconciler, reconciler.Log)(tc.node)
+			fg := &featuregates.FakeAccessor{IsMaoMhcDisabled: true}
+			requests := utils.MHCByNodeMapperFunc(*reconciler, reconciler.Log, fg)(context.TODO(), tc.node)
 
 			if !reflect.DeepEqual(requests, tc.expectedRequests) {
 				t.Errorf("Expected: %v, got: %v", tc.expectedRequests, requests)
@@ -2340,14 +2345,18 @@ func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObje
 	fakeClient := fake.NewClientBuilder().
 		WithIndex(&machinev1.Machine{}, utils.MachineNodeNameIndex, indexMachineByNodeName).
 		WithRuntimeObjects(initObjects...).
+		WithStatusSubresource(&machinev1.MachineHealthCheck{}).
 		Build()
 	mhcChecker, _ := mhc.NewMHCChecker(k8sManager, false, nil)
 	return &MachineHealthCheckReconciler{
-		Client:                      fakeClient,
-		Recorder:                    recorder,
-		ClusterUpgradeStatusChecker: upgradeChecker,
-		MHCChecker:                  mhcChecker,
-		ReconcileMHC:                true,
+		Client:                         fakeClient,
+		Recorder:                       recorder,
+		ClusterUpgradeStatusChecker:    upgradeChecker,
+		MHCChecker:                     mhcChecker,
+		FeatureGateMHCControllerEvents: make(chan event.GenericEvent),
+		FeatureGates: &featuregates.FakeAccessor{
+			IsMaoMhcDisabled: true,
+		},
 	}
 }
 

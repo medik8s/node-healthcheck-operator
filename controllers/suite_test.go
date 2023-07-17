@@ -52,6 +52,7 @@ import (
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	// +kubebuilder:scaffold:imports
 )
@@ -198,11 +199,15 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = (&MachineHealthCheckReconciler{
-		Client:                      k8sManager.GetClient(),
-		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
-		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
-		ClusterUpgradeStatusChecker: upgradeChecker,
-		MHCChecker:                  mhcChecker,
+		Client:                         k8sManager.GetClient(),
+		Log:                            k8sManager.GetLogger().WithName("test reconciler"),
+		Recorder:                       k8sManager.GetEventRecorderFor("NodeHealthCheck"),
+		ClusterUpgradeStatusChecker:    upgradeChecker,
+		MHCChecker:                     mhcChecker,
+		FeatureGateMHCControllerEvents: make(chan event.GenericEvent),
+		FeatureGates: &featuregates.FakeAccessor{
+			IsMaoMhcDisabled: false,
+		},
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

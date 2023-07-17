@@ -19,7 +19,7 @@ const NodeConditionTerminating = "Terminating"
 // Checker provides functions for checking for conflicts with MachineHealthCheck
 type Checker interface {
 	Start(context.Context) error
-	UpdateStatus() error
+	UpdateStatus(context.Context) error
 	NeedDisableNHC() bool
 	NeedIgnoreNode(*v1.Node) bool
 }
@@ -50,30 +50,23 @@ const (
 )
 
 type checker struct {
-	client     client.Client
-	logger     logr.Logger
-	mhcStatus  mhcStatus
-	mhcRunning bool
-	mhcEvents  chan<- event.GenericEvent
+	client    client.Client
+	logger    logr.Logger
+	mhcStatus mhcStatus
+	mhcEvents chan<- event.GenericEvent
 }
 
 var _ Checker = &checker{}
 
 // Start will start the component and update the initial status
 func (c *checker) Start(ctx context.Context) error {
-	if err := c.UpdateStatus(); err != nil {
-		return err
-	}
-
-	select {
-	case <-ctx.Done():
-	}
-	return nil
+	return c.UpdateStatus(ctx)
 }
 
-func (c *checker) UpdateStatus() error {
+func (c *checker) UpdateStatus(ctx context.Context) error {
+
 	mhcList := &v1beta1.MachineHealthCheckList{}
-	if err := c.client.List(context.Background(), mhcList); err != nil {
+	if err := c.client.List(ctx, mhcList); err != nil {
 		c.logger.Error(err, "failed to list MHC")
 		return err
 	}
@@ -92,16 +85,16 @@ func (c *checker) UpdateStatus() error {
 		// no MHC found, we are fine
 		if c.mhcStatus != noMHC {
 			c.logger.Info("no MHC found")
+			c.mhcStatus = noMHC
 		}
-		c.mhcStatus = noMHC
 		return nil
 	} else if len(mhcList.Items) > 1 {
 		// multiple MHCs found, disable NHC
 		// log once only
 		if c.mhcStatus != customMHC {
 			c.logger.Info("found custom MHC, will disable NHC")
+			c.mhcStatus = customMHC
 		}
-		c.mhcStatus = customMHC
 		return nil
 	}
 
@@ -121,8 +114,8 @@ func (c *checker) UpdateStatus() error {
 	// log once only
 	if c.mhcStatus != customMHC {
 		c.logger.Info("found custom MHC, will disable NHC")
+		c.mhcStatus = customMHC
 	}
-	c.mhcStatus = customMHC
 	return nil
 
 }
@@ -167,15 +160,12 @@ type DummyChecker struct{}
 var _ Checker = DummyChecker{}
 
 // Start will start the component, no op on non openshift clusters
-func (d DummyChecker) Start(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-	}
+func (d DummyChecker) Start(_ context.Context) error {
 	return nil
 }
 
 // UpdateStatus always return no error on non openshift clusters
-func (d DummyChecker) UpdateStatus() error {
+func (d DummyChecker) UpdateStatus(_ context.Context) error {
 	return nil
 }
 

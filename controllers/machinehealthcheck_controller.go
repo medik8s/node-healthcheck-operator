@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/api/machine/v1beta1"
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
@@ -74,11 +75,12 @@ var (
 // MachineHealthCheckReconciler reconciles a MachineHealthCheck object
 type MachineHealthCheckReconciler struct {
 	client.Client
-	Log                         logr.Logger
-	Recorder                    record.EventRecorder
-	ClusterUpgradeStatusChecker cluster.UpgradeChecker
-	MHCChecker                  mhc.Checker
-	ReconcileMHC                bool
+	Log                            logr.Logger
+	Recorder                       record.EventRecorder
+	ClusterUpgradeStatusChecker    cluster.UpgradeChecker
+	MHCChecker                     mhc.Checker
+	FeatureGateMHCControllerEvents <-chan event.GenericEvent
+	FeatureGates                   featuregates.Accessor
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -86,36 +88,38 @@ func (r *MachineHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1beta1.MachineHealthCheck{})
 
-	if r.ReconcileMHC {
-		// create machine - node name index
-		if err := mgr.GetCache().IndexField(context.TODO(),
-			&v1beta1.Machine{},
-			utils.MachineNodeNameIndex,
-			indexMachineByNodeName,
-		); err != nil {
-			return fmt.Errorf("error setting index fields: %v", err)
-		}
-
-		bldr = bldr.Watches(
-			&source.Kind{Type: &corev1.Node{}},
-			handler.EnqueueRequestsFromMapFunc(utils.MHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger())),
-			builder.WithPredicates(
-				predicate.Funcs{
-					// check for modified conditions on updates in order to prevent unneeded reconciliations
-					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
-					// MHC reconciler is interested in deleted nodes... not sure why TBH?
-					DeleteFunc: func(_ event.DeleteEvent) bool { return true },
-					// create (new nodes don't have correct conditions yet), and generic events are not interesting for now
-					CreateFunc:  func(_ event.CreateEvent) bool { return false },
-					GenericFunc: func(_ event.GenericEvent) bool { return false },
-				},
-			),
-		)
-		bldr = bldr.Watches(
-			&source.Kind{Type: &v1beta1.Machine{}},
-			handler.EnqueueRequestsFromMapFunc(utils.MHCByMachineMapperFunc(mgr.GetClient(), mgr.GetLogger())),
-		)
+	// create machine - node name index
+	if err := mgr.GetCache().IndexField(context.TODO(),
+		&v1beta1.Machine{},
+		utils.MachineNodeNameIndex,
+		indexMachineByNodeName,
+	); err != nil {
+		return fmt.Errorf("error setting index fields: %v", err)
 	}
+
+	bldr = bldr.Watches(
+		&corev1.Node{},
+		handler.EnqueueRequestsFromMapFunc(utils.MHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates)),
+		builder.WithPredicates(
+			predicate.Funcs{
+				// check for modified conditions on updates in order to prevent unneeded reconciliations
+				UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
+				// MHC reconciler is interested in deleted nodes... not sure why TBH?
+				DeleteFunc: func(_ event.DeleteEvent) bool { return true },
+				// create (new nodes don't have correct conditions yet), and generic events are not interesting for now
+				CreateFunc:  func(_ event.CreateEvent) bool { return false },
+				GenericFunc: func(_ event.GenericEvent) bool { return false },
+			},
+		),
+	)
+	bldr = bldr.Watches(
+		&v1beta1.Machine{},
+		handler.EnqueueRequestsFromMapFunc(utils.MHCByMachineMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates)),
+	)
+	bldr = bldr.WatchesRawSource(
+		&source.Channel{Source: r.FeatureGateMHCControllerEvents},
+		handler.EnqueueRequestsFromMapFunc(utils.MHCByFeatureGateEventMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates)),
+	)
 
 	return bldr.Complete(r)
 }
@@ -138,6 +142,10 @@ func indexMachineByNodeName(object client.Object) []string {
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch;patch;update
 
+// for the feature gate accessor
+// +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=config.openshift.io,resources=featuregates,verbs=get;list;watch
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, returnErr error) {
@@ -155,13 +163,14 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// update MHCChecker status
-	if err = r.MHCChecker.UpdateStatus(); err != nil {
+	if err = r.MHCChecker.UpdateStatus(ctx); err != nil {
 		return result, err
 	}
 
-	if !r.ReconcileMHC {
+	if !r.FeatureGates.IsMachineAPIOperatorMHCDisabled() {
 		return
 	}
+	log.Info("Reconciling MHC in NodeHealthCheck operator!")
 
 	resourceManager := resources.NewManager(r.Client, ctx, r.Log, true)
 

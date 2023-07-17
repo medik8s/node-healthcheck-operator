@@ -1381,7 +1381,7 @@ var _ = Describe("Node Health Check CR", func() {
 				updatedNode := v1.Node{
 					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-worker-node-1"},
 				}
-				requests := handler(&updatedNode)
+				requests := handler(context.TODO(), &updatedNode)
 				Expect(len(requests)).To(Equal(1))
 				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest1.GetName()}}))
 			})
@@ -1401,7 +1401,7 @@ var _ = Describe("Node Health Check CR", func() {
 				updatedNode := v1.Node{
 					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-worker-node-1"},
 				}
-				requests := handler(&updatedNode)
+				requests := handler(context.TODO(), &updatedNode)
 				Expect(len(requests)).To(Equal(2))
 				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest1.GetName()}}))
 				Expect(requests).To(ContainElement(reconcile.Request{NamespacedName: types.NamespacedName{Name: underTest2.GetName()}}))
@@ -1417,7 +1417,7 @@ var _ = Describe("Node Health Check CR", func() {
 				updatedNode := v1.Node{
 					ObjectMeta: controllerruntime.ObjectMeta{Name: "healthy-worker-node-1"},
 				}
-				requests := handler(&updatedNode)
+				requests := handler(context.TODO(), &updatedNode)
 				Expect(requests).To(BeEmpty())
 			})
 		})

@@ -25,6 +25,7 @@ import (
 	"runtime"
 
 	// +kubebuilder:scaffold:imports
+	"github.com/go-logr/logr"
 	"go.uber.org/zap/zapcore"
 
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/openshift/api/console/v1alpha1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
@@ -46,11 +48,18 @@ import (
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
+)
+
+const (
+	WebhookCertDir  = "/apiserver.local.config/certificates"
+	WebhookCertName = "apiserver.crt"
+	WebhookKeyName  = "apiserver.key"
 )
 
 const (
@@ -80,16 +89,12 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var enableMachineHealthChecks bool
 	var enableHTTP2 bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&enableMachineHealthChecks, "enable-machine-health-checks", false,
-		"Enable MachineHealthCheck controller. "+
-			"Enabling this will activate the MachineHealthCheck controller. Works on OKD / OCP only. Do not do this when OKD / OCP's default MHC controller is running as well!")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If HTTP/2 should be enabled for the metrics and webhook servers.")
 
 	opts := zap.Options{
@@ -108,10 +113,10 @@ func main() {
 		// HEADS UP: once controller runtime is updated and this changes to metrics.Options{},
 		// and in case you configure TLS / SecureServing, disable HTTP/2 in it for mitigating related CVEs!
 		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
+		WebhookServer:          getWebhookServer(setupLog),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -157,13 +162,21 @@ func main() {
 	}
 
 	if onOpenshift {
+		featureGateMHCControllerDisabledEvents := make(chan event.GenericEvent)
+		featureGateAccessor := featuregates.NewAccessor(mgr.GetConfig(), featureGateMHCControllerDisabledEvents)
+		if err = mgr.Add(featureGateAccessor); err != nil {
+			setupLog.Error(err, "failed to add feature gate accessor to the manager")
+			os.Exit(1)
+		}
+
 		if err := (&controllers.MachineHealthCheckReconciler{
-			Client:                      mgr.GetClient(),
-			Log:                         ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
-			Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
-			ClusterUpgradeStatusChecker: upgradeChecker,
-			MHCChecker:                  mhcChecker,
-			ReconcileMHC:                enableMachineHealthChecks,
+			Client:                         mgr.GetClient(),
+			Log:                            ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
+			Recorder:                       mgr.GetEventRecorderFor("MachineHealthCheck"),
+			ClusterUpgradeStatusChecker:    upgradeChecker,
+			MHCChecker:                     mhcChecker,
+			FeatureGateMHCControllerEvents: featureGateMHCControllerDisabledEvents,
+			FeatureGates:                   featureGateAccessor,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
 			os.Exit(1)
@@ -202,6 +215,32 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func getWebhookServer(log logr.Logger) webhook.Server {
+
+	options := webhook.Options{
+		Port: 9443,
+	}
+
+	// check if OLM injected certs
+	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
+	certsInjected := true
+	for _, fname := range certs {
+		if _, err := os.Stat(fname); err != nil {
+			certsInjected = false
+			break
+		}
+	}
+	if certsInjected {
+		options.CertDir = WebhookCertDir
+		options.CertName = WebhookCertName
+		options.KeyName = WebhookKeyName
+	} else {
+		log.Info("OLM injected certs for webhooks not found")
+	}
+
+	return webhook.NewServer(options)
 }
 
 func printVersion() {

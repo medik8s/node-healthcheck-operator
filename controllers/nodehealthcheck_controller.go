@@ -42,6 +42,7 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -91,6 +92,7 @@ type NodeHealthCheckReconciler struct {
 	controller                  controller.Controller
 	watches                     map[string]struct{}
 	watchesLock                 *sync.Mutex
+	cache                       cache.Cache
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -98,7 +100,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
-			&source.Kind{Type: &v1.Node{}},
+			&v1.Node{},
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 			builder.WithPredicates(
 				predicate.Funcs{
@@ -112,7 +114,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Watches(
+		WatchesRawSource(
 			&source.Channel{Source: r.MHCEvents},
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByMHCEventMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 		).
@@ -124,6 +126,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.controller = controller
 	r.watches = make(map[string]struct{})
 	r.watchesLock = &sync.Mutex{}
+	r.cache = mgr.GetCache()
 	return nil
 }
 
@@ -806,7 +809,7 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 		return nil
 	}
 	if err := r.controller.Watch(
-		&source.Kind{Type: remediationCR},
+		source.Kind(r.cache, remediationCR),
 		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
 		predicate.Funcs{
 			// we are just interested in update and delete events for now:
