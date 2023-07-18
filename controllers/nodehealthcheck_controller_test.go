@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	commonannotations "github.com/medik8s/common/pkg/annotations"
 	commonLabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -554,6 +555,11 @@ var _ = Describe("Node Health Check CR", func() {
 						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 						//Verify NHC removed the lease
 						Expect(errors.IsNotFound(err)).To(BeTrue())
+						//Verify NHC sets timeout annotation
+						err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						Expect(err).ToNot(HaveOccurred())
+						_, isNhcTimeOutSet := cr.GetAnnotations()[commonannotations.NhcTimedOut]
+						Expect(isNhcTimeOutSet).To(BeTrue())
 
 					})
 

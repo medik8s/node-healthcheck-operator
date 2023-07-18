@@ -480,8 +480,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	//Lease is overdue
 	if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
 		resources.UpdateStatusNodeUnhealthy(node, nhc)
-		//TODO mshitrit add out of service annotation
-		return leaseRequeueIn, nil
+		return nil, r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: currentTime()})
 	}
 
 	if err != nil {
@@ -552,21 +551,27 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 
 	// add timeout annotation to remediation CR
+	if err := r.addTimeOutAnnotation(rm, remediationCR, now); err != nil {
+		return nil, err
+	}
+	// update status (important to do this after CR update, else we won't retry that update in case of error)
+	startedRemediation.TimedOut = &now
+
+	// try next remediation asap
+	return pointer.Duration(1 * time.Second), nil
+}
+
+func (r *NodeHealthCheckReconciler) addTimeOutAnnotation(rm resources.Manager, remediationCR *unstructured.Unstructured, now metav1.Time) error {
 	annotations := remediationCR.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
 	annotations[commonannotations.NhcTimedOut] = now.Format(time.RFC3339)
 	remediationCR.SetAnnotations(annotations)
-	if err = rm.UpdateRemediationCR(remediationCR); err != nil {
-		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
+	if err := rm.UpdateRemediationCR(remediationCR); err != nil {
+		return errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
 	}
-
-	// update status (important to do this after CR update, else we won't retry that update in case of error)
-	startedRemediation.TimedOut = &now
-
-	// try next remediation asap
-	return pointer.Duration(1 * time.Second), nil
+	return nil
 }
 
 func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (bool, error) {
