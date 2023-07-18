@@ -228,7 +228,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				returnErr = patchErr
 			}
 		}
-		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeuAfter", result.RequeueAfter)
+		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeueAfter", result.RequeueAfter)
 	}()
 
 	// set counters to zero for disabled NHC
