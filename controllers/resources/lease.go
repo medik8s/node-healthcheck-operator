@@ -112,7 +112,7 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
 	} else {
 		leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
-		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, leaseExpectedDuration))
+		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, remediationCR, nhc))
 		now := time.Now()
 		expectedExpiry := now.Add(leaseExpectedDuration)
 		actualExpiry := l.Spec.RenewTime.Add(time.Second * time.Duration(int(*l.Spec.LeaseDurationSeconds)))
@@ -168,14 +168,14 @@ func (m *nhcLeaseManager) isLeaseOverdue(l *coordv1.Lease, nhc *remediationv1alp
 		return false, err
 	}
 
-	leaseDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
-
-	isLeaseOverdue := time.Now().After(m.calcLeaseExpiration(l, leaseDuration))
+	isLeaseOverdue := time.Now().After(m.calcLeaseExpiration(l, remediationCR, nhc))
 	return isLeaseOverdue, nil
 }
 
-func (m *nhcLeaseManager) calcLeaseExpiration(l *coordv1.Lease, leaseDuration time.Duration) time.Time {
-	return l.Spec.AcquireTime.Add(time.Duration(maxTimesToExtendLease+1 /*1 is offsetting the lease creation*/) * leaseDuration)
+func (m *nhcLeaseManager) calcLeaseExpiration(l *coordv1.Lease, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Time {
+	leaseDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
+	prevRemediationsDuration := m.sumPrevRemediationsDuration(remediationCR, nhc)
+	return l.Spec.AcquireTime.Add(time.Duration(maxTimesToExtendLease+1 /*1 is offsetting the lease creation*/)*leaseDuration + prevRemediationsDuration)
 }
 
 func (m *nhcLeaseManager) isRemediationsExist(remediationCrs []unstructured.Unstructured) bool {
@@ -203,4 +203,34 @@ func (m *nhcLeaseManager) isLeaseOwner(l *coordv1.Lease) bool {
 		return false
 	}
 	return *l.Spec.HolderIdentity == holderIdentity
+}
+
+func (m *nhcLeaseManager) sumPrevRemediationsDuration(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {
+	if len(nhc.Spec.EscalatingRemediations) == 0 {
+		return 0
+	}
+
+	var currentEscalatingRemediation *remediationv1alpha1.EscalatingRemediation
+	remediationKind := remediationCR.GetKind()
+	for _, esRemediation := range nhc.Spec.EscalatingRemediations {
+		if strings.TrimSuffix(esRemediation.RemediationTemplate.Kind, "Template") == remediationKind {
+			currentEscalatingRemediation = &esRemediation
+			break
+		}
+	}
+	//remediation isn't found in escalation - should not happen
+	if currentEscalatingRemediation == nil {
+		msg := fmt.Sprintf("existing remediation of kind:%s not found in escalation list: %v", remediationCR.GetKind(), nhc.Spec.EscalatingRemediations)
+		m.log.Error(fmt.Errorf("remediation not found in escalation"), msg)
+		return 0
+	}
+
+	var sumDurations time.Duration
+	for _, esRemediation := range nhc.Spec.EscalatingRemediations {
+		if currentEscalatingRemediation.Order > esRemediation.Order {
+			sumDurations += esRemediation.Timeout.Duration
+		}
+	}
+
+	return sumDurations
 }
