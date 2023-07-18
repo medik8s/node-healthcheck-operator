@@ -396,7 +396,7 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 
 func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy []v1.Node, unhealthy []v1.Node, requeueAfter *time.Duration) {
 	for _, node := range nodes {
-		if isHealthy, thisRequeueAfter := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
+		if isHealthy, thisRequeueAfter, _ := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
 			healthy = append(healthy, node)
 			requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
@@ -409,7 +409,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	return
 }
 
-func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) (bool, *time.Duration) {
+func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) (bool, *time.Duration, string) {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
@@ -424,15 +424,16 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 			now := currentTime()
 			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 				// unhealthy condition duration expired, node is unhealthy
-				return false, nil
+				reason := fmt.Sprintf("type:%s, status:%s, duration:%v", c.Type, c.Status, c.Duration.Duration)
+				return false, nil, reason
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
 				expiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
-				return true, &expiresAfter
+				return true, &expiresAfter, ""
 			}
 		}
 	}
-	return true, nil
+	return true, nil, ""
 }
 
 func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, allNodes []v1.Node, rm resources.Manager, log logr.Logger) error {
