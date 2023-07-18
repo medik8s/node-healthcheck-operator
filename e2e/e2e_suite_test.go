@@ -41,7 +41,13 @@ func TestE2e(t *testing.T) {
 	RunSpecs(t, "E2e Suite")
 }
 
+const (
+	unhealthyConditionDuration = 90 * time.Second
+)
+
 var (
+	labelOcpOnly = Label("OCP-ONLY")
+
 	dynamicClient          dynamic.Interface
 	clientSet              *kubernetes.Clientset
 	k8sClient              ctrl.Client

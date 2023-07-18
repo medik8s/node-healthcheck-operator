@@ -31,13 +31,7 @@ import (
 )
 
 const (
-	unhealthyConditionDuration = 90 * time.Second
-	nodeRebootedTimeout        = 10 * time.Minute
-	nhcName                    = "test-nhc"
-)
-
-var (
-	labelOcpOnly = Label("OCP-ONLY")
+	nhcName = "test-nhc"
 )
 
 var _ = Describe("e2e", func() {
@@ -233,7 +227,7 @@ var _ = Describe("e2e", func() {
 
 			It("Remediates a host", func() {
 				By("making node unhealthy")
-				nodeUnhealthyTime = makeNodeUnready(nodeUnderTest)
+				nodeUnhealthyTime = utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 
 				By("ensuring 1st remediation CR exists")
 				waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
@@ -284,7 +278,7 @@ var _ = Describe("e2e", func() {
 				}, "2s", "500ms").Should(Succeed())
 
 				By("waiting for healthy node")
-				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+				utils.WaitForNodeHealthyCondition(k8sClient, nodeUnderTest, v1.ConditionTrue)
 
 				By("ensuring lease is removed")
 				Eventually(
@@ -313,7 +307,7 @@ var _ = Describe("e2e", func() {
 
 			It("Remediates a host and prevents config updates", func() {
 				By("making node unhealthy")
-				nodeUnhealthyTime = makeNodeUnready(nodeUnderTest)
+				nodeUnhealthyTime = utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 
 				By("ensuring remediation CR exists")
 				waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
@@ -357,7 +351,7 @@ var _ = Describe("e2e", func() {
 				Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
 
 				By("waiting for healthy node condition")
-				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+				utils.WaitForNodeHealthyCondition(k8sClient, nodeUnderTest, v1.ConditionTrue)
 
 				By("waiting for remediation CR deletion, else cleanup fails")
 				Eventually(func(g Gomega) {
@@ -381,7 +375,7 @@ var _ = Describe("e2e", func() {
 				nodeUnderTest.Status.Conditions = conditions
 				Expect(k8sClient.Status().Update(context.Background(), nodeUnderTest)).To(Succeed())
 
-				makeNodeUnready(nodeUnderTest)
+				utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 			})
 
 			AfterEach(func() {
@@ -432,45 +426,4 @@ func getTemplateNS(templateResource schema.GroupVersionResource) string {
 	Expect(list.Items).ToNot(BeEmpty())
 	// just use the 1st template for simplicity...
 	return list.Items[0].GetNamespace()
-}
-
-func makeNodeUnready(node *v1.Node) time.Time {
-	log.Info("making node unready", "node name", node.GetName())
-	// check if node is unready already
-	Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
-	for _, cond := range node.Status.Conditions {
-		if cond.Type == v1.NodeReady && cond.Status == v1.ConditionUnknown {
-			log.Info("node is already unready", "node name", node.GetName())
-			return cond.LastTransitionTime.Time
-		}
-	}
-	Expect(modifyKubelet(node, "stop")).To(Succeed())
-	transitionTime := waitForNodeHealthyCondition(node, v1.ConditionUnknown)
-	log.Info("node is unready", "node name", node.GetName())
-	return transitionTime
-}
-
-func modifyKubelet(node *v1.Node, what string) error {
-	cmd := "microdnf install util-linux -y && /usr/bin/nsenter -m/proc/1/ns/mnt /bin/systemctl " + what + " kubelet"
-	_, err := utils.RunCommandInCluster(clientSet, node.Name, testNsName, cmd, log)
-	if err != nil && strings.Contains(err.Error(), "connection refused") {
-		log.Info("ignoring expected error when stopping kubelet", "error", err.Error())
-		return nil
-	}
-	return err
-}
-
-func waitForNodeHealthyCondition(node *v1.Node, status v1.ConditionStatus) time.Time {
-	var transitionTime time.Time
-	Eventually(func(g Gomega) v1.ConditionStatus {
-		g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
-		for _, cond := range node.Status.Conditions {
-			if cond.Type == v1.NodeReady {
-				transitionTime = cond.LastTransitionTime.Time
-				return cond.Status
-			}
-		}
-		return v1.ConditionStatus("failure")
-	}, nodeRebootedTimeout, 1*time.Second).Should(Equal(status))
-	return transitionTime
 }
