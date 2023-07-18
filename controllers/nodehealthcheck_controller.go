@@ -471,10 +471,16 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	// create remediation CR
 	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
 
-	_, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError)
 	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
-	if isLeaseAlreadyTaken {
+	if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
 		resources.UpdateStatusNodeUnhealthy(node, nhc)
+		return leaseRequeueIn, nil
+	}
+
+	//Lease is overdue
+	if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
+		resources.UpdateStatusNodeUnhealthy(node, nhc)
+		//TODO mshitrit add out of service annotation
 		return leaseRequeueIn, nil
 	}
 

@@ -31,6 +31,14 @@ var (
 	maxTimesToExtendLease = 2
 )
 
+type LeaseOverDueError struct {
+	msg string
+}
+
+func (e LeaseOverDueError) Error() string {
+	return e.msg
+}
+
 type LeaseManager interface {
 	// ObtainNodeLease will attempt to get a node lease with the correct duration, the duration is affected by whether escalation is used and the remediation timeOut.
 	//The first return value (bool) is an indicator whether the lease was obtained, and the second return value (*time.Duration) is an indicator on when a new reconcile should be scheduled (mainly in order to extend the lease)
@@ -109,7 +117,12 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		return 0, err
 	} else if ok { //release the lease - lease is overdue
 		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", l.Name)
-		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
+		if err = m.commonLeaseManager.InvalidateLease(ctx, node); err != nil {
+			m.log.Error(err, "failed to invalidate overdue lease", "node name", remediationCR.GetName())
+			return 0, err
+		}
+
+		return 0, LeaseOverDueError{msg: fmt.Sprintf("failed to extend lease, it is overdue. node name: %s", remediationCR.GetName())}
 	} else {
 		leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
 		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, remediationCR, nhc))
