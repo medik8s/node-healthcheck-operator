@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonannotations "github.com/medik8s/common/pkg/annotations"
 	"github.com/medik8s/common/pkg/lease"
 	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
@@ -56,19 +57,18 @@ import (
 )
 
 const (
-	oldRemediationCRAnnotationKey    = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
-	remediationTimedOutAnnotationkey = "remediation.medik8s.io/nhc-timed-out"
-	remediationCRAlertTimeout        = time.Hour * 48
-	eventReasonRemediationCreated    = "RemediationCreated"
-	eventReasonRemediationSkipped    = "RemediationSkipped"
-	eventReasonRemediationRemoved    = "RemediationRemoved"
-	eventReasonNoTemplateLeft        = "NoTemplateLeft"
-	eventReasonDisabled              = "Disabled"
-	eventReasonEnabled               = "Enabled"
-	eventTypeNormal                  = "Normal"
-	eventTypeWarning                 = "Warning"
-	enabledMessage                   = "No issues found, NodeHealthCheck is enabled."
-	conditionTypeSucceeded           = "Succeeded"
+	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
+	remediationCRAlertTimeout     = time.Hour * 48
+	eventReasonRemediationCreated = "RemediationCreated"
+	eventReasonRemediationSkipped = "RemediationSkipped"
+	eventReasonRemediationRemoved = "RemediationRemoved"
+	eventReasonNoTemplateLeft     = "NoTemplateLeft"
+	eventReasonDisabled           = "Disabled"
+	eventReasonEnabled            = "Enabled"
+	eventTypeNormal               = "Normal"
+	eventTypeWarning              = "Warning"
+	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
+	conditionTypeSucceeded        = "Succeeded"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -550,7 +550,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
-	annotations[remediationTimedOutAnnotationkey] = now.Format(time.RFC3339)
+	annotations[commonannotations.NhcTimedOut] = now.Format(time.RFC3339)
 	remediationCR.SetAnnotations(annotations)
 	if err = rm.UpdateRemediationCR(remediationCR); err != nil {
 		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")

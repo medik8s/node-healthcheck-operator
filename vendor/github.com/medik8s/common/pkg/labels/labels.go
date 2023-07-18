@@ -7,4 +7,8 @@ const (
 	MasterRole = "node-role.kubernetes.io/master"
 	// ControlPlaneRole is the new role label of control plane nodes
 	ControlPlaneRole = "node-role.kubernetes.io/control-plane"
+	// ProcessingConditionType is the condition type used to signal the remediation has started and it is in progress, or has finished
+	ProcessingConditionType = "Processing"
+	// SucceededConditionType is the condition type used to signal whether the remediation was successful or not
+	SucceededConditionType = "Succeeded"
 )
