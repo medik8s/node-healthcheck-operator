@@ -41,8 +41,8 @@ func (e LeaseOverDueError) Error() string {
 
 type LeaseManager interface {
 	// ObtainNodeLease will attempt to get a node lease with the correct duration, the duration is affected by whether escalation is used and the remediation timeOut.
-	//The first return value (bool) is an indicator whether the lease was obtained, and the second return value (*time.Duration) is an indicator on when a new reconcile should be scheduled (mainly in order to extend the lease)
-	ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
+	//The first return value (*time.Duration) is an indicator on when a new reconcile should be scheduled (mainly in order to extend the lease)
+	ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (*time.Duration, error)
 	//ManageLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
 	ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error)
 	// InvalidateLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
@@ -68,7 +68,7 @@ func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error
 	}, nil
 }
 
-func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
+func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (*time.Duration, error) {
 	nodeName := remediationCR.GetName()
 	leaseDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
 	leaseDurationWithBuffer := leaseDuration + LeaseBuffer
@@ -76,21 +76,21 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 	node := &v1.Node{}
 	if err := m.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, node); err != nil {
 		m.log.Error(err, "couldn't obtain node lease node error getting node", "node name", nodeName)
-		return false, nil, err
+		return nil, err
 	}
 
 	if err := m.commonLeaseManager.RequestLease(context.Background(), node, leaseDurationWithBuffer); err != nil {
 		if _, ok := err.(lease.AlreadyHeldError); ok {
 			m.log.Info("can't acquire node lease, it is already owned by another owner", "already held error", err)
-			return false, &RequeueIfLeaseTaken, err
+			return &RequeueIfLeaseTaken, err
 		}
 
 		m.log.Error(err, "couldn't obtain lease for node", "node name", nodeName)
-		return false, nil, err
+		return nil, err
 	}
 
 	//all good lease created with wanted duration
-	return true, &leaseDuration, nil
+	return &leaseDuration, nil
 
 }
 

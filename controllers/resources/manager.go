@@ -161,7 +161,8 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 	m.log.Info("Attempting to obtain Node Lease",
 		"Node name", remediationCR.GetName())
 
-	isLeaseObtained, requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, nhc)
+	requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, nhc)
+	isLeaseObtained := err == nil
 	if err != nil {
 		return false, requeue, err
 	}
