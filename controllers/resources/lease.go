@@ -108,8 +108,8 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		m.log.Error(err, "managing lease - couldn't fetch lease", "node name", remediationCR.GetName())
 		return 0, err
 	}
-	exist := remediationCR.GetDeletionTimestamp() == nil
-	if !exist && m.isLeaseOwner(nodeLease) {
+	isDeleted := remediationCR.GetDeletionTimestamp() != nil
+	if isDeleted && m.isLeaseOwner(nodeLease) {
 		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", nodeLease.Name)
 		//release the lease - no remediations
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
@@ -126,7 +126,7 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 	}
 
 	leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
-	m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", nodeLease.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(nodeLease), "lease expiration time", m.calcLeaseExpiration(nodeLease, remediationCR, nhc))
+	m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", nodeLease.Name, "lease is deleted", isDeleted, "NHC is lease owner", m.isLeaseOwner(nodeLease), "lease expiration time", m.calcLeaseExpiration(nodeLease, remediationCR, nhc))
 	now := time.Now()
 	expectedExpiry := now.Add(leaseExpectedDuration)
 	actualExpiry := nodeLease.Spec.RenewTime.Add(time.Second * time.Duration(int(*nodeLease.Spec.LeaseDurationSeconds)))
