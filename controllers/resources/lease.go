@@ -108,8 +108,12 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		m.log.Error(err, "managing lease - couldn't fetch lease", "node name", remediationCR.GetName())
 		return 0, err
 	}
+	//nothing to do with this lease
+	if !m.isLeaseOwner(nodeLease) {
+		return 0, nil
+	}
 	isDeleted := remediationCR.GetDeletionTimestamp() != nil
-	if isDeleted && m.isLeaseOwner(nodeLease) {
+	if isDeleted {
 		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", nodeLease.Name)
 		//release the lease - no remediations
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
