@@ -146,11 +146,6 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
-		if err != nil {
-			m.log.Error(err, "couldn't fetch remediations for node", "node name", remediationCR.GetName())
-			return false, nil, err
-		}
-
 		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc)
 		return false, &duration, err
 	} else if !apierrors.IsNotFound(err) {
