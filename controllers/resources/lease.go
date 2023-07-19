@@ -112,9 +112,9 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 	if !m.isLeaseOwner(nodeLease) {
 		return 0, nil
 	}
-	if ok, err := m.isLeaseOverdue(nodeLease, nhc, remediationCR); err != nil {
+	if isLeaseOverdue, err := m.isLeaseOverdue(nodeLease, nhc, remediationCR); err != nil {
 		return 0, err
-	} else if ok { //release the lease - lease is overdue
+	} else if isLeaseOverdue { //release the lease - lease is overdue
 		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", nodeLease.Name)
 		if err = m.commonLeaseManager.InvalidateLease(ctx, node); err != nil {
 			m.log.Error(err, "failed to invalidate overdue lease", "node name", remediationCR.GetName())
