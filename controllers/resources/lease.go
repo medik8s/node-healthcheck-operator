@@ -195,21 +195,6 @@ func (m *nhcLeaseManager) isRemediationsExist(remediationCrs []unstructured.Unst
 	return len(remediationCrs) > 0
 }
 
-func (m *nhcLeaseManager) logManageLeaseChanges(originalRequeue time.Duration, updatedRequeue time.Duration, originalErr error, updatedErr error) {
-	if originalRequeue != updatedRequeue && originalErr != updatedErr {
-		m.log.Info("updated requeue and err values",
-			"original requeue value", originalRequeue, "updated requeue value", updatedRequeue,
-			"original error value", originalErr, "updated error value", updatedErr)
-	} else if originalRequeue != updatedRequeue {
-		m.log.Info("updated requeue value",
-			"original requeue value", originalRequeue, "updated requeue value", updatedRequeue)
-	} else if originalErr != updatedErr {
-		m.log.Info("updated error value",
-			"original error value", originalErr, "updated error value", updatedErr)
-	} else if updatedErr == nil && updatedRequeue == 0 { //no changes were made and reconcile was successful
-		m.log.Info("successful reconcile, no changes made")
-	}
-}
 
 func (m *nhcLeaseManager) isLeaseOwner(l *coordv1.Lease) bool {
 	if l.Spec.HolderIdentity == nil {
