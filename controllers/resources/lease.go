@@ -108,8 +108,8 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		m.log.Error(err, "managing lease - couldn't fetch lease", "node name", remediationCR.GetName())
 		return 0, err
 	}
-
-	if exist := remediationCR.GetDeletionTimestamp() == nil; !exist && m.isLeaseOwner(l) {
+	exist := remediationCR.GetDeletionTimestamp() == nil
+	if !exist && m.isLeaseOwner(l) {
 		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", l.Name)
 		//release the lease - no remediations
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
@@ -123,21 +123,21 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		}
 
 		return 0, LeaseOverDueError{msg: fmt.Sprintf("failed to extend lease, it is overdue. node name: %s", remediationCR.GetName())}
-	} else {
-		leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
-		m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, remediationCR, nhc))
-		now := time.Now()
-		expectedExpiry := now.Add(leaseExpectedDuration)
-		actualExpiry := l.Spec.RenewTime.Add(time.Second * time.Duration(int(*l.Spec.LeaseDurationSeconds)))
-		if actualExpiry.Before(expectedExpiry) {
-			err := m.commonLeaseManager.RequestLease(ctx, node, leaseExpectedDuration+LeaseBuffer)
-			if err != nil {
-				m.log.Error(err, "couldn't renew lease", "lease name", l.Name)
-				return 0, err
-			}
-		}
-		return leaseExpectedDuration, nil
 	}
+
+	leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
+	m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, remediationCR, nhc))
+	now := time.Now()
+	expectedExpiry := now.Add(leaseExpectedDuration)
+	actualExpiry := l.Spec.RenewTime.Add(time.Second * time.Duration(int(*l.Spec.LeaseDurationSeconds)))
+	if actualExpiry.Before(expectedExpiry) {
+		err := m.commonLeaseManager.RequestLease(ctx, node, leaseExpectedDuration+LeaseBuffer)
+		if err != nil {
+			m.log.Error(err, "couldn't renew lease", "lease name", l.Name)
+			return 0, err
+		}
+	}
+	return leaseExpectedDuration, nil
 }
 
 func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, remediationCR *unstructured.Unstructured) error {
@@ -194,7 +194,6 @@ func (m *nhcLeaseManager) calcLeaseExpiration(l *coordv1.Lease, remediationCR *u
 func (m *nhcLeaseManager) isRemediationsExist(remediationCrs []unstructured.Unstructured) bool {
 	return len(remediationCrs) > 0
 }
-
 
 func (m *nhcLeaseManager) isLeaseOwner(l *coordv1.Lease) bool {
 	if l.Spec.HolderIdentity == nil {
