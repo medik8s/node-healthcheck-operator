@@ -100,7 +100,7 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		m.log.Error(err, "managing lease - couldn't fetch node", "node name", remediationCR.GetName())
 		return 0, err
 	}
-	l, err := m.commonLeaseManager.GetLease(ctx, node)
+	nodeLease, err := m.commonLeaseManager.GetLease(ctx, node)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
@@ -109,14 +109,14 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 		return 0, err
 	}
 	exist := remediationCR.GetDeletionTimestamp() == nil
-	if !exist && m.isLeaseOwner(l) {
-		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", l.Name)
+	if !exist && m.isLeaseOwner(nodeLease) {
+		m.log.Info("managing lease - lease has no remediations so  about to be removed", "lease name", nodeLease.Name)
 		//release the lease - no remediations
 		return 0, m.commonLeaseManager.InvalidateLease(ctx, node)
-	} else if ok, err := m.isLeaseOverdue(l, nhc, remediationCR); err != nil {
+	} else if ok, err := m.isLeaseOverdue(nodeLease, nhc, remediationCR); err != nil {
 		return 0, err
 	} else if ok { //release the lease - lease is overdue
-		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", l.Name)
+		m.log.Info("managing lease - lease is overdue about to be removed", "lease name", nodeLease.Name)
 		if err = m.commonLeaseManager.InvalidateLease(ctx, node); err != nil {
 			m.log.Error(err, "failed to invalidate overdue lease", "node name", remediationCR.GetName())
 			return 0, err
@@ -126,14 +126,14 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 	}
 
 	leaseExpectedDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
-	m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", l.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(l), "lease expiration time", m.calcLeaseExpiration(l, remediationCR, nhc))
+	m.log.Info("managing lease - about to try to acquire/extended the lease", "lease name", nodeLease.Name, "lease has remediations", exist, "NHC is lease owner", m.isLeaseOwner(nodeLease), "lease expiration time", m.calcLeaseExpiration(nodeLease, remediationCR, nhc))
 	now := time.Now()
 	expectedExpiry := now.Add(leaseExpectedDuration)
-	actualExpiry := l.Spec.RenewTime.Add(time.Second * time.Duration(int(*l.Spec.LeaseDurationSeconds)))
+	actualExpiry := nodeLease.Spec.RenewTime.Add(time.Second * time.Duration(int(*nodeLease.Spec.LeaseDurationSeconds)))
 	if actualExpiry.Before(expectedExpiry) {
 		err := m.commonLeaseManager.RequestLease(ctx, node, leaseExpectedDuration+LeaseBuffer)
 		if err != nil {
-			m.log.Error(err, "couldn't renew lease", "lease name", l.Name)
+			m.log.Error(err, "couldn't renew lease", "lease name", nodeLease.Name)
 			return 0, err
 		}
 	}
