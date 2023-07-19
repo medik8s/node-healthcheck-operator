@@ -481,7 +481,16 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		//Lease is overdue
 		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
 			resources.UpdateStatusNodeUnhealthy(node, nhc)
-			return nil, r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: currentTime()})
+
+			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: currentTime()}); timeOutErr != nil {
+				return nil, timeOutErr
+			}
+			startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
+				return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
+			})
+			// update status (important to do this after CR update, else we won't retry that update in case of error)
+			startedRemediation.TimedOut = &metav1.Time{Time: time.Now()}
+			return nil, nil
 		}
 
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
