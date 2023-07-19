@@ -471,19 +471,19 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	// create remediation CR
 	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
 
-	//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
-	if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
-		resources.UpdateStatusNodeUnhealthy(node, nhc)
-		return leaseRequeueIn, nil
-	}
-
-	//Lease is overdue
-	if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
-		resources.UpdateStatusNodeUnhealthy(node, nhc)
-		return nil, r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: currentTime()})
-	}
-
 	if err != nil {
+		//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
+		if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
+			resources.UpdateStatusNodeUnhealthy(node, nhc)
+			return leaseRequeueIn, nil
+		}
+
+		//Lease is overdue
+		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
+			resources.UpdateStatusNodeUnhealthy(node, nhc)
+			return nil, r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: currentTime()})
+		}
+
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do
 			return nil, nil
