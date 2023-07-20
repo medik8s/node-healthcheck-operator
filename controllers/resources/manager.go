@@ -157,25 +157,22 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 		"Node name", remediationCR.GetName())
 
 	requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, nhc)
-	isLeaseObtained := err == nil
 	if err != nil {
 		return false, requeue, err
 	}
 
-	if isLeaseObtained {
-		// create CR
-		m.log.Info("Creating a remediation CR",
-			"CR name", remediationCR.GetName(),
-			"CR kind", remediationCR.GetKind(),
-			"namespace", remediationCR.GetNamespace())
+	// create CR
+	m.log.Info("Creating a remediation CR",
+		"CR name", remediationCR.GetName(),
+		"CR kind", remediationCR.GetKind(),
+		"namespace", remediationCR.GetNamespace())
 
-		if err := m.Create(m.ctx, remediationCR); err != nil {
-			m.log.Error(err, "failed to create an external remediation object")
-			return false, nil, err
-		}
+	if err := m.Create(m.ctx, remediationCR); err != nil {
+		m.log.Error(err, "failed to create an external remediation object")
+		return false, nil, err
 	}
 
-	return isLeaseObtained, requeue, nil
+	return true, requeue, nil
 
 }
 
