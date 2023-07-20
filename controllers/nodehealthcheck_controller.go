@@ -482,14 +482,27 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
 			resources.UpdateStatusNodeUnhealthy(node, nhc)
 
-			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: currentTime()}); timeOutErr != nil {
+			now := currentTime()
+			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: now}); timeOutErr != nil {
 				return nil, timeOutErr
 			}
 			startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
 				return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
 			})
+
+			if startedRemediation == nil {
+				// should not have happened, seems last status update failed
+				// retry asap
+				return pointer.Duration(1 * time.Second), nil
+			}
+
+			if startedRemediation.TimedOut != nil {
+				// timeout handled already: should not have happened, but ok. Just reconcile again asap for trying the next template
+				return pointer.Duration(1 * time.Second), nil
+			}
+
 			// update status (important to do this after CR update, else we won't retry that update in case of error)
-			startedRemediation.TimedOut = &metav1.Time{Time: time.Now()}
+			startedRemediation.TimedOut = &metav1.Time{Time: now}
 			return nil, nil
 		}
 
