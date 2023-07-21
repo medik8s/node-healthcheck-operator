@@ -27,12 +27,15 @@ spec:
     spec:
       affinity:
         nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
                   - key: node-role.kubernetes.io/master
                     operator: Exists
-              - matchExpressions:
+            - weight: 1
+              preference:
+                matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: Exists
       tolerations:
