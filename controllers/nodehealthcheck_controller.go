@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	commonannotations "github.com/medik8s/common/pkg/annotations"
+	commonconditions "github.com/medik8s/common/pkg/conditions"
 	"github.com/medik8s/common/pkg/lease"
 	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
@@ -68,7 +69,6 @@ const (
 	eventTypeNormal               = "Normal"
 	eventTypeWarning              = "Warning"
 	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
-	conditionTypeSucceeded        = "Succeeded"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -105,9 +105,10 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				predicate.Funcs{
 					// check for modified conditions on updates in order to prevent unneeded reconciliations
 					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
-					// create (new nodes don't have correct conditions yet), delete and generic events are not interesting for now
+					// potentially delete orphaned remediation CRs when new node will have new name
+					DeleteFunc: func(_ event.DeleteEvent) bool { return true },
+					// create (new nodes don't have correct conditions yet), and generic events are not interesting for now
 					CreateFunc:  func(_ event.CreateEvent) bool { return false },
-					DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
 					GenericFunc: func(_ event.GenericEvent) bool { return false },
 				},
 			),
@@ -314,6 +315,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, nil
 	}
 
+	// Delete orphaned CRs: they have no node, and Succeeded and NodeNameChangeExpected conditions set to True.
+	// This happens e.g. on cloud providers with Machine Deletion remediation: the broken node will be deleted and
+	// a new node created, with a new name, and no relationship to the old node
+	if err = r.deleteOrphanedRemediationCRs(nhc, append(healthyNodes, unhealthyNodes...), resourceManager, log); err != nil {
+		return result, err
+	}
+
 	// delete remediation CRs for healthy nodes
 	for _, node := range healthyNodes {
 		log.Info("handling healthy node", "node", node.GetName())
@@ -325,21 +333,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return result, err
 		}
 		for _, remediationCR := range remediationCRs {
-			deleted, err := resourceManager.DeleteRemediationCR(&remediationCR, nhc)
-			if err != nil {
-				log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)
+			if err := r.deleteRemediationCR(&remediationCR, nhc, resourceManager, log); err != nil {
+				log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
 				return result, err
-			} else if deleted {
-				log.Info("deleted remediation CR", "name", remediationCR.GetName())
-				r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
-				metrics.ObserveNodeHealthCheckRemediationDeleted(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
-
-				duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
-				metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), duration)
 			}
-
-			// always update status, in case patching it failed during last reconcile
-			resources.UpdateStatusNodeHealthy(&node, nhc)
 		}
 	}
 
@@ -436,6 +433,65 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 		}
 	}
 	return true, nil
+}
+
+func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, allNodes []v1.Node, rm resources.Manager, log logr.Logger) error {
+	orphanedRemediationCRs, err := rm.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+
+		// check conditions
+		permanentNodeDeletionExpectedCondition := getCondition(&cr, commonconditions.PermanentNodeDeletionExpectedType, log)
+		permanentNodeDeletionExpected := permanentNodeDeletionExpectedCondition != nil && permanentNodeDeletionExpectedCondition.Status == metav1.ConditionTrue
+		succeededCondition := getCondition(&cr, commonconditions.SucceededType, log)
+		succeeded := succeededCondition != nil && succeededCondition.Status == metav1.ConditionTrue
+		if !permanentNodeDeletionExpected || !succeeded {
+			// no node name change expected, or not succeeded yet
+			return false
+		}
+
+		// check if node exists
+		for _, node := range allNodes {
+			if node.GetName() == cr.GetName() {
+				// node still exists
+				return false
+			}
+		}
+
+		return true
+	})
+	if err != nil {
+		log.Error(err, "failed to check for orphaned remediation CRs")
+		return err
+	}
+	for _, orphanedCR := range orphanedRemediationCRs {
+		if err = r.deleteRemediationCR(&orphanedCR, nhc, rm, log); err != nil {
+			log.Error(err, "failed to delete orphaned remediation CR", "name", orphanedCR.GetName())
+			return err
+		}
+		permanentNodeDeletionExpectedCondition := getCondition(&orphanedCR, commonconditions.PermanentNodeDeletionExpectedType, log)
+		log.Info("deleted orphaned remediation CR", "name", orphanedCR.GetName(),
+			"reason", permanentNodeDeletionExpectedCondition.Reason,
+			"message", permanentNodeDeletionExpectedCondition.Message)
+	}
+	return nil
+}
+
+func (r *NodeHealthCheckReconciler) deleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager, log logr.Logger) error {
+	if deleted, err := rm.DeleteRemediationCR(remediationCR, nhc); err != nil {
+		log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
+		return err
+	} else if deleted {
+		log.Info("deleted remediation CR", "name", remediationCR.GetName())
+		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
+		metrics.ObserveNodeHealthCheckRemediationDeleted(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
+
+		duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
+		metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), duration)
+	}
+
+	// always update status, in case patching it failed during last reconcile
+	resources.UpdateStatusNodeHealthy(remediationCR.GetName(), nhc)
+
+	return nil
 }
 
 func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
@@ -717,15 +773,15 @@ func getTimeoutAt(remediation *remediationv1alpha1.Remediation, configuredTimeou
 }
 
 func remediationFailed(remediationCR *unstructured.Unstructured, log logr.Logger) bool {
-	succeededCondition := getSucceededCondition(remediationCR, log)
+	succeededCondition := getCondition(remediationCR, commonconditions.SucceededType, log)
 	return succeededCondition != nil && succeededCondition.Status == metav1.ConditionFalse
 }
 
-func getSucceededCondition(remediationCR *unstructured.Unstructured, log logr.Logger) *metav1.Condition {
+func getCondition(remediationCR *unstructured.Unstructured, conditionType string, log logr.Logger) *metav1.Condition {
 	if conditions, found, _ := unstructured.NestedSlice(remediationCR.Object, "status", "conditions"); found {
 		for _, condition := range conditions {
 			if condition, ok := condition.(map[string]interface{}); ok {
-				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == conditionTypeSucceeded {
+				if condType, found, _ := unstructured.NestedString(condition, "type"); found && condType == conditionType {
 					condStatus, _, _ := unstructured.NestedString(condition, "status")
 					var condLastTransition time.Time
 					if condLastTransitionString, foundLastTransition, _ := unstructured.NestedString(condition, "lastTransitionTime"); foundLastTransition {

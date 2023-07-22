@@ -31,7 +31,7 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 			if !errors.IsNotFound(err) {
 				logger.Error(err, "mapper: failed to get node", "node name", o.GetName())
 			}
-			return requests
+			node = nil
 		}
 
 		nhcList := &remediationv1alpha1.NodeHealthCheckList{}
@@ -41,16 +41,19 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 		}
 
 		for _, nhc := range nhcList.Items {
-			selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
-			if err != nil {
-				logger.Error(err, "mapper: invalid node selector", "NHC name", nhc.GetName())
-				continue
+			// when node is nil, it was deleted, and we need to queue all NHCs
+			if node != nil {
+				selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
+				if err != nil {
+					logger.Error(err, "mapper: invalid node selector", "NHC name", nhc.GetName())
+					continue
+				}
+				if !selector.Matches(labels.Set(node.GetLabels())) {
+					continue
+				}
 			}
-
-			if selector.Matches(labels.Set(node.GetLabels())) {
-				logger.Info("adding NHC to reconcile queue for handling node", "node", node.GetName(), "NHC", nhc.GetName())
-				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
-			}
+			logger.Info("adding NHC to reconcile queue for handling node", "node", o.GetName(), "NHC", nhc.GetName())
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
 		}
 		return requests
 	}
