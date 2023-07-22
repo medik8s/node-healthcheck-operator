@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -611,7 +612,7 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		Context("control plane nodes", func() {
-			When("two control plane nodes are unhealthy, just one should be remediated", func() {
+			When("two control plane nodes are unhealthy, they should be remediated one after another", func() {
 				BeforeEach(func() {
 					objects = newNodes(2, 1, true, true)
 					objects = append(objects, newNodes(1, 5, false, true)...)
@@ -657,6 +658,103 @@ var _ = Describe("Node Health Check CR", func() {
 							)),
 						),
 					))
+
+					var unhealthyCPNodeName string
+					for _, unhealthyNode := range underTest.Status.UnhealthyNodes {
+						if strings.Contains(unhealthyNode.Name, "unhealthy-control-plane-node") {
+							unhealthyCPNodeName = unhealthyNode.Name
+							break
+						}
+					}
+					Expect(unhealthyCPNodeName).ToNot(BeEmpty())
+
+					By("simulating remediator by putting a finalizer on the cp remediation CR")
+					for _, cr := range crList.Items {
+						if cr.GetName() == unhealthyCPNodeName {
+							cr.SetFinalizers([]string{"dummy"})
+							Expect(k8sClient.Update(context.Background(), &cr)).To(Succeed())
+							break
+						}
+					}
+
+					By("make cp node healthy")
+					unhealthyCPNode := &v1.Node{}
+					unhealthyCPNode.Name = unhealthyCPNodeName
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNode), unhealthyCPNode)).To(Succeed())
+					unhealthyCPNode.Status.Conditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+					}
+					Expect(k8sClient.Status().Update(context.Background(), unhealthyCPNode))
+
+					By("waiting for remediation end of cp node")
+					Eventually(func() []*v1alpha1.UnhealthyNode {
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						return underTest.Status.UnhealthyNodes
+
+					}, "2s", "100ms").Should(HaveLen(1))
+
+					By("ensuring other cp node isn't remediated yet")
+					Consistently(func() []*v1alpha1.UnhealthyNode {
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						return underTest.Status.UnhealthyNodes
+
+					}, "5s", "1s").Should(HaveLen(1))
+
+					By("simulating remediator finished by removing finalizer on the cp remediation CR")
+					for _, cr := range crList.Items {
+						if cr.GetName() == unhealthyCPNodeName {
+							Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(&cr), &cr)).To(Succeed())
+							cr.SetFinalizers([]string{})
+							Expect(k8sClient.Update(context.Background(), &cr)).To(Succeed())
+							break
+						}
+					}
+
+					By("ensuring other cp node is remediated now")
+					Eventually(func() []*v1alpha1.UnhealthyNode {
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						return underTest.Status.UnhealthyNodes
+					}, "2s", "100ms").Should(ContainElements(
+						And(
+							HaveField("Name", "unhealthy-worker-node-1"),
+							HaveField("Remediations", ContainElement(
+								And(
+									HaveField("Resource.Name", "unhealthy-worker-node-1"),
+									HaveField("Started", Not(BeNil())),
+									HaveField("TimedOut", BeNil()),
+								),
+							)),
+						),
+						And(
+							HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
+							// ensure it's the other cp node now
+							Not(HaveField("Name", unhealthyCPNodeName)),
+							HaveField("Remediations", ContainElement(
+								And(
+									HaveField("Resource.Name", ContainSubstring("unhealthy-control-plane-node")),
+									HaveField("Started", Not(BeNil())),
+									HaveField("TimedOut", BeNil()),
+								),
+							)),
+						),
+					))
+					crList = &unstructured.UnstructuredList{Object: cr.Object}
+					Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
+					Expect(len(crList.Items)).To(BeNumerically("==", 2), "expected 2 remediations, one for control plane, one for worker")
+					Expect(crList.Items).To(ContainElements(
+						// the unhealthy worker
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", "unhealthy-worker-node-1"))),
+						// the other unhealthy control plane nodes
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", ContainSubstring("unhealthy-control-plane-node")))),
+					))
+					Expect(crList.Items).ToNot(ContainElements(
+						// the old unhealthy control plane node
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", unhealthyCPNodeName))),
+					))
+
 				})
 			})
 		})
