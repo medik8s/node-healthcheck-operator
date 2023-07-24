@@ -479,6 +479,13 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	// always update status, in case patching it failed during last reconcile
 	resources.UpdateStatusRemediationStarted(node, nhc, remediationCR)
 
+	// Adding a watch for 2 usecases:
+	// - watch for conditions (e.g. "Succeeded" for escalating remediations)
+	// - watch for removed finalizers / CR deletion, for potentially start the next control plane node remediation
+	if err = r.addWatch(remediationCR); err != nil {
+		return nil, errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
+	}
+
 	// ensure to provide correct metrics in case the CR existed already after a pod restart
 	metrics.ObserveNodeHealthCheckRemediationCreated(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 
@@ -497,13 +504,6 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		// no timeout set for classic remediation
 		// nothing to do anymore here
 		return nil, nil
-	}
-
-	// Having a timeout also means we are using escalating remediations, for which we need to look at the "Succeeded"
-	// condition, which can accelerate switching to the next remediator.
-	// So let's start watching the CRs, so we don't need to poll.
-	if err = r.addWatch(remediationCR); err != nil {
-		return nil, errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
 	}
 
 	startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
@@ -653,15 +653,17 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 		&source.Kind{Type: remediationCR},
 		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
 		predicate.Funcs{
-			// we are just interested in update events for now
+			// we are just interested in update and delete events for now:
+			// update: for conditions
+			// delete: when control plane node CRs are deleted for remediation the next control plane node
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
-			DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
 			GenericFunc: func(_ event.GenericEvent) bool { return false },
 		},
 	); err != nil {
 		return err
 	}
 	r.watches[key] = struct{}{}
+	r.Log.Info("added watch for CR", "kind", remediationCR.GetKind())
 	return nil
 }
 
