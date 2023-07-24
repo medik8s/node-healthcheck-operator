@@ -353,14 +353,17 @@ spec:
             spec:
               affinity:
                 nodeAffinity:
-                  requiredDuringSchedulingIgnoredDuringExecution:
-                    nodeSelectorTerms:
-                    - matchExpressions:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                  - preference:
+                      matchExpressions:
                       - key: node-role.kubernetes.io/master
                         operator: Exists
-                    - matchExpressions:
+                    weight: 1
+                  - preference:
+                      matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
                         operator: Exists
+                    weight: 1
               containers:
               - args:
                 - --secure-listen-address=0.0.0.0:8443
