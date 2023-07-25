@@ -24,6 +24,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonannotations "github.com/medik8s/common/pkg/annotations"
+	"github.com/medik8s/common/pkg/lease"
+	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
@@ -54,19 +57,18 @@ import (
 )
 
 const (
-	oldRemediationCRAnnotationKey    = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
-	remediationTimedOutAnnotationkey = "remediation.medik8s.io/nhc-timed-out"
-	remediationCRAlertTimeout        = time.Hour * 48
-	eventReasonRemediationCreated    = "RemediationCreated"
-	eventReasonRemediationSkipped    = "RemediationSkipped"
-	eventReasonRemediationRemoved    = "RemediationRemoved"
-	eventReasonNoTemplateLeft        = "NoTemplateLeft"
-	eventReasonDisabled              = "Disabled"
-	eventReasonEnabled               = "Enabled"
-	eventTypeNormal                  = "Normal"
-	eventTypeWarning                 = "Warning"
-	enabledMessage                   = "No issues found, NodeHealthCheck is enabled."
-	conditionTypeSucceeded           = "Succeeded"
+	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
+	remediationCRAlertTimeout     = time.Hour * 48
+	eventReasonRemediationCreated = "RemediationCreated"
+	eventReasonRemediationSkipped = "RemediationSkipped"
+	eventReasonRemediationRemoved = "RemediationRemoved"
+	eventReasonNoTemplateLeft     = "NoTemplateLeft"
+	eventReasonDisabled           = "Disabled"
+	eventReasonEnabled            = "Enabled"
+	eventTypeNormal               = "Normal"
+	eventTypeWarning              = "Warning"
+	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
+	conditionTypeSucceeded        = "Succeeded"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -181,6 +183,8 @@ func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bo
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;update;patch;watch;create;delete
+// +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -199,12 +203,17 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift)
+	leaseManager, err := resources.NewLeaseManager(r.Client, log)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager)
 
 	// always check if we need to patch status before we exit Reconcile
 	nhcOrig := nhc.DeepCopy()
 	var finalRequeueAfter *time.Duration
 	defer func() {
+		finalRequeueAfter = utils.MinRequeueDuration(&result.RequeueAfter, finalRequeueAfter)
 		if finalRequeueAfter != nil {
 			result.RequeueAfter = *finalRequeueAfter
 		}
@@ -285,7 +294,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// check nodes health
 	healthyNodes, unhealthyNodes, requeueAfter := r.checkNodesHealth(nodes, nhc)
-	finalRequeueAfter = utils.MinDuration(finalRequeueAfter, requeueAfter)
+	finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 	nhc.Status.HealthyNodes = pointer.Int(len(healthyNodes))
 
 	// TODO consider setting Disabled condition?
@@ -316,7 +325,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return result, err
 		}
 		for _, remediationCR := range remediationCRs {
-			if deleted, err := resourceManager.DeleteRemediationCR(&remediationCR, nhc); err != nil {
+			deleted, err := resourceManager.DeleteRemediationCR(&remediationCR, nhc)
+			if err != nil {
 				log.Error(err, "failed to delete remediation CR for healthy node", "node", node.Name)
 				return result, err
 			} else if deleted {
@@ -359,7 +369,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			log.Error(err, "failed to start remediation")
 			return result, err
 		}
-		finalRequeueAfter = utils.MinDuration(finalRequeueAfter, requeueAfter)
+		finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 
 		// check if we need to alert about a very old remediation CR
 		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
@@ -370,7 +380,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			if isAlert {
 				metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
 			}
-			finalRequeueAfter = utils.MinDuration(finalRequeueAfter, requeueAfter)
+			finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 		}
 	}
 
@@ -391,7 +401,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	for _, node := range nodes {
 		if isHealthy, thisRequeueAfter := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
 			healthy = append(healthy, node)
-			requeueAfter = utils.MinDuration(requeueAfter, thisRequeueAfter)
+			requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
 			// consider terminating nodes being handled by MHC as healthy, from NHC point of view
 			healthy = append(healthy, node)
@@ -433,7 +443,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
 	// prevent remediation of more than 1 control plane node at a time!
-	isControlPlaneNode := utils.IsControlPlane(node)
+	isControlPlaneNode := nodes.IsControlPlane(node)
 	if isControlPlaneNode {
 		if isAllowed, err := r.isControlPlaneRemediationAllowed(node, nhc, rm); err != nil {
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
@@ -467,8 +477,38 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 
 	// create remediation CR
-	created, err := rm.CreateRemediationCR(remediationCR, nhc)
+	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
+
 	if err != nil {
+		//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
+		if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
+			resources.UpdateStatusNodeUnhealthy(node, nhc)
+			return leaseRequeueIn, nil
+		}
+
+		//Lease is overdue
+		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
+			resources.UpdateStatusNodeUnhealthy(node, nhc)
+
+			now := currentTime()
+			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: now}); timeOutErr != nil {
+				return nil, timeOutErr
+			}
+			startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
+				return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
+			})
+
+			if startedRemediation == nil {
+				// should not have happened, seems last status update failed
+				// retry asap
+				return pointer.Duration(1 * time.Second), nil
+			}
+
+			// update status (important to do this after CR update, else we won't retry that update in case of error)
+			startedRemediation.TimedOut = &metav1.Time{Time: now}
+			return nil, nil
+		}
+
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do
 			return nil, nil
@@ -496,14 +536,13 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 			// come back when timeout expires
 			requeueIn = pointer.Duration(*timeout + 1*time.Second)
 		}
-		return requeueIn, nil
+		return utils.MinRequeueDuration(leaseRequeueIn, requeueIn), nil
 	}
-
 	// CR already exists, check for timeout in case we need to
 	if timeout == nil {
 		// no timeout set for classic remediation
 		// nothing to do anymore here
-		return nil, nil
+		return leaseRequeueIn, nil
 	}
 
 	startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
@@ -529,7 +568,7 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 
 	if !timedOut && !failed {
 		// not timed out yet, come back when we do so
-		return pointer.Duration(timeoutAt.Sub(now.Time)), nil
+		return utils.MinRequeueDuration(leaseRequeueIn, pointer.Duration(timeoutAt.Sub(now.Time))), nil
 	}
 
 	// handle timeout and failure
@@ -540,16 +579,9 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	}
 
 	// add timeout annotation to remediation CR
-	annotations := remediationCR.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string, 1)
+	if err := r.addTimeOutAnnotation(rm, remediationCR, now); err != nil {
+		return nil, err
 	}
-	annotations[remediationTimedOutAnnotationkey] = now.Format(time.RFC3339)
-	remediationCR.SetAnnotations(annotations)
-	if err = rm.UpdateRemediationCR(remediationCR); err != nil {
-		return nil, errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
-	}
-
 	// update status (important to do this after CR update, else we won't retry that update in case of error)
 	startedRemediation.TimedOut = &now
 
@@ -557,8 +589,21 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	return pointer.Duration(1 * time.Second), nil
 }
 
+func (r *NodeHealthCheckReconciler) addTimeOutAnnotation(rm resources.Manager, remediationCR *unstructured.Unstructured, now metav1.Time) error {
+	annotations := remediationCR.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 1)
+	}
+	annotations[commonannotations.NhcTimedOut] = now.Format(time.RFC3339)
+	remediationCR.SetAnnotations(annotations)
+	if err := rm.UpdateRemediationCR(remediationCR); err != nil {
+		return errors.Wrapf(err, "failed to update remediation CR with timeout annotation")
+	}
+	return nil
+}
+
 func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (bool, error) {
-	if !utils.IsControlPlane(node) {
+	if !nodes.IsControlPlane(node) {
 		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
 	}
 

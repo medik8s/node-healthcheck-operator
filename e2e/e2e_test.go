@@ -6,9 +6,11 @@ import (
 	"strings"
 	"time"
 
+	commonlabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	coordv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -25,7 +27,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
-	nhcUtils "github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
 )
 
@@ -58,11 +59,11 @@ var _ = Describe("e2e", func() {
 				Selector: metav1.LabelSelector{
 					MatchExpressions: []metav1.LabelSelectorRequirement{
 						{
-							Key:      nhcUtils.ControlPlaneRoleLabel,
+							Key:      commonlabels.ControlPlaneRole,
 							Operator: metav1.LabelSelectorOpDoesNotExist,
 						},
 						{
-							Key:      nhcUtils.MasterRoleLabel,
+							Key:      commonlabels.MasterRole,
 							Operator: metav1.LabelSelectorOpDoesNotExist,
 						},
 					},
@@ -105,7 +106,9 @@ var _ = Describe("e2e", func() {
 
 	JustBeforeEach(func() {
 		// create NHC
-		Expect(k8sClient.Create(context.Background(), nhc)).To(Succeed())
+		Eventually(func() error {
+			return k8sClient.Create(context.Background(), nhc)
+		}, "1m", "5s").Should(Succeed())
 	})
 
 	JustAfterEach(func() {
@@ -188,10 +191,20 @@ var _ = Describe("e2e", func() {
 
 		Context("with escalating remediation config", labelOcpOnly, func() {
 
-			firstTimeout := metav1.Duration{Duration: 1 * time.Minute}
-			var nodeUnhealthyTime time.Time
+			var (
+				firstTimeout      metav1.Duration
+				nodeUnhealthyTime time.Time
+				//lease params
+				leaseNs   = "medik8s-leases"
+				leaseName string
+				lease     *coordv1.Lease
+			)
 
 			BeforeEach(func() {
+				firstTimeout = metav1.Duration{Duration: 1 * time.Minute}
+				leaseName = fmt.Sprintf("%s-%s", "node", nodeUnderTest.Name)
+				lease = &coordv1.Lease{}
+
 				// modify nhc to use escalating remediations
 				nhc.Spec.RemediationTemplate = nil
 				nhc.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
@@ -239,6 +252,10 @@ var _ = Describe("e2e", func() {
 					), waitTime, 1*time.Second).
 					Should(Succeed())
 
+				By("ensuring lease exist")
+				err := k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+				Expect(err).ToNot(HaveOccurred())
+
 				// SNR is very fast on kind, so use a short poll intervals, otherwise node might already be healthy again
 
 				By("waiting and checking 1st remediation timed out")
@@ -268,6 +285,15 @@ var _ = Describe("e2e", func() {
 
 				By("waiting for healthy node")
 				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+
+				By("ensuring lease is removed")
+				Eventually(
+					func() bool {
+						err := k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						return errors.IsNotFound(err)
+					}, 5*time.Minute, 5*time.Second).
+					Should(BeTrue())
+
 			})
 		})
 

@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 
+	// +kubebuilder:scaffold:imports
 	"go.uber.org/zap/zapcore"
 
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -48,7 +49,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
-	// +kubebuilder:scaffold:imports
 )
 
 var (

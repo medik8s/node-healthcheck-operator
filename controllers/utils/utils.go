@@ -51,12 +51,12 @@ func GetLogWithNHC(log logr.Logger, nhc *v1alpha1.NodeHealthCheck) logr.Logger {
 	return log.WithValues("NodeHealthCheck name", nhc.Name)
 }
 
-// MinDuration returns the minimal duration
-func MinDuration(old, new *time.Duration) *time.Duration {
-	if new == nil {
+// MinRequeueDuration returns the minimal valid requeue duration
+func MinRequeueDuration(old, new *time.Duration) *time.Duration {
+	if new == nil || *new == 0 {
 		return old
 	}
-	if old == nil || *new < *old {
+	if old == nil || *old == 0 || *new < *old {
 		return new
 	}
 	return old
