@@ -583,7 +583,7 @@ var _ = Describe("Node Health Check CR", func() {
 						lease := &coordv1.Lease{}
 						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(*lease.Spec.HolderIdentity).To(Equal("Node-Healthcheck"))
+						Expect(*lease.Spec.HolderIdentity).To(Equal(fmt.Sprintf("%s-%s", "NodeHealthCheck", underTest.GetName())))
 						Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(2 + 1 /*2 seconds is DefaultLeaseDuration (mocked) + 1 second buffer (mocked)  */)))
 						Expect(lease.Spec.AcquireTime).ToNot(BeNil())
 						Expect(*lease.Spec.AcquireTime).To(Equal(*lease.Spec.RenewTime))
