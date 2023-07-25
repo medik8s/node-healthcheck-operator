@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	templateSuffix = "Template"
-	holderIdentity = "Node-Healthcheck"
+	templateSuffix       = "Template"
+	holderIdentityPrefix = "NodeHealthCheck"
 	//LeaseBuffer is used to make sure we have a bit of buffer before extending the lease, so it won't be taken by another component
 	LeaseBuffer         = time.Minute
 	RequeueIfLeaseTaken = time.Minute
@@ -52,10 +52,12 @@ type LeaseManager interface {
 type nhcLeaseManager struct {
 	client             client.Client
 	commonLeaseManager lease.Manager
+	holderIdentity     string
 	log                logr.Logger
 }
 
-func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error) {
+func NewLeaseManager(client client.Client, nhc *remediationv1alpha1.NodeHealthCheck, log logr.Logger) (LeaseManager, error) {
+	holderIdentity := fmt.Sprintf("%s-%s", holderIdentityPrefix, nhc.GetName())
 	newManager, err := lease.NewManager(client, holderIdentity)
 	if err != nil {
 		log.Error(err, "couldn't initialize lease manager")
@@ -64,6 +66,7 @@ func NewLeaseManager(client client.Client, log logr.Logger) (LeaseManager, error
 	return &nhcLeaseManager{
 		client:             client,
 		commonLeaseManager: newManager,
+		holderIdentity:     holderIdentity,
 		log:                log.WithName("nhc lease manager"),
 	}, nil
 }
@@ -198,7 +201,7 @@ func (m *nhcLeaseManager) isLeaseOwner(l *coordv1.Lease) bool {
 	if l.Spec.HolderIdentity == nil {
 		return false
 	}
-	return *l.Spec.HolderIdentity == holderIdentity
+	return *l.Spec.HolderIdentity == m.holderIdentity
 }
 
 func (m *nhcLeaseManager) sumPrevRemediationsDuration(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) time.Duration {

@@ -203,7 +203,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	leaseManager, err := resources.NewLeaseManager(r.Client, log)
+	leaseManager, err := resources.NewLeaseManager(r.Client, nhc, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
