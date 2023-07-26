@@ -447,6 +447,55 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 				})
 			})
+
+			When("two NHC CRs with different templates target the same unhealthy node", func() {
+
+				otherTestCRName := "other-test"
+				var otherTestCR *v1alpha1.NodeHealthCheck
+
+				BeforeEach(func() {
+					// prepare other CR but do not create yet, in order to have a predictable order of things to happen
+					otherTestCR = underTest.DeepCopy()
+					otherTestCR.SetName(otherTestCRName)
+					otherTestCR.Spec.RemediationTemplate = &v1.ObjectReference{
+						Kind:       "Metal3RemediationTemplate",
+						Namespace:  MachineNamespace,
+						Name:       "ok",
+						APIVersion: "test.medik8s.io/v1alpha1",
+					}
+
+					setupObjects(1, 2, true)
+				})
+
+				It("only one NHC should remediate that node", func() {
+
+					By("Verifying node is remediated by 1st NHC")
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+
+					By("Creating a 2nd NHC")
+					Expect(k8sClient.Create(context.Background(), otherTestCR)).To(Succeed())
+					DeferCleanup(func() {
+						Expect(k8sClient.Delete(context.Background(), otherTestCR)).To(Succeed())
+					})
+					By("Verifying node is NOT remediated by 2nd NHC")
+					// wait for unhealthy node
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(otherTestCR), otherTestCR)).To(Succeed())
+						g.Expect(otherTestCR.Status.UnhealthyNodes).To(HaveLen(1))
+					}, "5s", "1s").Should(Succeed(), "unhealthy node not detected")
+					// ensure no remediation starts
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(otherTestCR), otherTestCR)).To(Succeed())
+						g.Expect(otherTestCR.Status.InFlightRemediations).To(HaveLen(0))
+						g.Expect(otherTestCR.Status.UnhealthyNodes).To(HaveLen(1))
+						g.Expect(otherTestCR.Status.UnhealthyNodes[0].Remediations).To(HaveLen(0))
+					}, "5s", "1s").Should(Succeed(), "duplicate remediation detected!")
+				})
+			})
+
 		}
 
 		Context("with spec.remediationTemplate", func() {
@@ -535,7 +584,7 @@ var _ = Describe("Node Health Check CR", func() {
 						lease := &coordv1.Lease{}
 						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(*lease.Spec.HolderIdentity).To(Equal("Node-Healthcheck"))
+						Expect(*lease.Spec.HolderIdentity).To(Equal(fmt.Sprintf("%s-%s", "NodeHealthCheck", underTest.GetName())))
 						Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(2 + 1 /*2 seconds is DefaultLeaseDuration (mocked) + 1 second buffer (mocked)  */)))
 						Expect(lease.Spec.AcquireTime).ToNot(BeNil())
 						Expect(*lease.Spec.AcquireTime).To(Equal(*lease.Spec.RenewTime))
