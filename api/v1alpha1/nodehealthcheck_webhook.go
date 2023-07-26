@@ -44,6 +44,7 @@ const (
 	mandatoryRemediationError = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
 	mutualRemediationError    = "RemediationTemplate and EscalatingRemediations usage is mutual exclusive"
 	uniqueOrderError          = "EscalatingRemediation Order must be unique"
+	uniqueRemediatorError     = "Using multiple templates of same kind is not supported currently"
 	minimumTimeoutError       = "EscalatingRemediation Timeout must be at least one minute"
 )
 
@@ -165,6 +166,7 @@ func (nhc *NodeHealthCheck) validateEscalatingRemediations() error {
 	aggregated := errors.NewAggregate([]error{
 		nhc.validateEscalatingRemediationsUniqueOrder(),
 		nhc.validateEscalatingRemediationsTimeout(),
+		nhc.validateEscalatingRemediationsUniqueRemediator(),
 	})
 	return aggregated
 }
@@ -185,6 +187,18 @@ func (nhc *NodeHealthCheck) validateEscalatingRemediationsTimeout() error {
 		if rem.Timeout.Duration < 1*time.Minute {
 			return fmt.Errorf("%s: found timeout %v", minimumTimeoutError, rem.Timeout)
 		}
+	}
+	return nil
+}
+
+func (nhc *NodeHealthCheck) validateEscalatingRemediationsUniqueRemediator() error {
+	// this is a workaround until we designed a way to support multiple remediators of same kind
+	remediators := make(map[string]struct{}, len(nhc.Spec.EscalatingRemediations))
+	for _, rem := range nhc.Spec.EscalatingRemediations {
+		if _, exists := remediators[rem.RemediationTemplate.Kind]; exists {
+			return fmt.Errorf("%s: duplicate template kind: %v", uniqueRemediatorError, rem.RemediationTemplate.Kind)
+		}
+		remediators[rem.RemediationTemplate.Kind] = struct{}{}
 	}
 	return nil
 }
