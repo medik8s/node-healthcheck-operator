@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonannotations "github.com/medik8s/common/pkg/annotations"
+	commonconditions "github.com/medik8s/common/pkg/conditions"
 	commonLabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -783,6 +784,80 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].TimedOut).ToNot(BeNil())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+			})
+		})
+
+		Context("with expected permanent node deletion", func() {
+
+			BeforeEach(func() {
+				// TODO will work with classic remediation as well when https://github.com/medik8s/node-healthcheck-operator/pull/230 is merged
+				templateRef1 := underTest.Spec.RemediationTemplate
+				underTest.Spec.RemediationTemplate = nil
+				underTest.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
+					{
+						RemediationTemplate: *templateRef1,
+						Order:               0,
+						Timeout:             metav1.Duration{Duration: 5 * time.Minute},
+					},
+				}
+				setupObjects(1, 2, true)
+			})
+
+			deleteNode := func() {
+				By("deleting the node")
+				node := &v1.Node{}
+				node.Name = unhealthyNodeName
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(node), node)).To(Succeed())
+				Expect(k8sClient.Delete(context.Background(), node))
+			}
+
+			markCR := func() *unstructured.Unstructured {
+				By("marking CR as succeeded and permanent node deletion expected")
+				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+				conditions := []interface{}{
+					map[string]interface{}{
+						"type":               commonconditions.SucceededType,
+						"status":             "True",
+						"lastTransitionTime": time.Now().Format(time.RFC3339),
+					},
+					map[string]interface{}{
+						"type":               commonconditions.PermanentNodeDeletionExpectedType,
+						"status":             "True",
+						"lastTransitionTime": time.Now().Format(time.RFC3339),
+					},
+				}
+				unstructured.SetNestedSlice(cr.Object, conditions, "status", "conditions")
+				Expect(k8sClient.Status().Update(context.Background(), cr))
+				return cr
+			}
+
+			expectCRDeletion := func(cr *unstructured.Unstructured) {
+				By("waiting for CR to be deleted")
+				Eventually(func() bool {
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					return errors.IsNotFound(err)
+				}, "2s", "200ms").Should(BeTrue())
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
+			}
+
+			It("it should delete orphaned CR when CR was updated", func() {
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				deleteNode()
+				time.Sleep(1 * time.Second)
+				cr := markCR()
+				expectCRDeletion(cr)
+			})
+
+			It("it should delete orphaned CR when node is deleted", func() {
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				cr := markCR()
+				time.Sleep(1 * time.Second)
+				deleteNode()
+				expectCRDeletion(cr)
 			})
 		})
 

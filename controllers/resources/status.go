@@ -58,10 +58,10 @@ func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.
 
 }
 
-func UpdateStatusNodeHealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) {
-	delete(nhc.Status.InFlightRemediations, node.GetName())
+func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck) {
+	delete(nhc.Status.InFlightRemediations, nodeName)
 	for i, _ := range nhc.Status.UnhealthyNodes {
-		if nhc.Status.UnhealthyNodes[i].Name == node.GetName() {
+		if nhc.Status.UnhealthyNodes[i].Name == nodeName {
 			nhc.Status.UnhealthyNodes = append(nhc.Status.UnhealthyNodes[:i], nhc.Status.UnhealthyNodes[i+1:]...)
 			break
 		}

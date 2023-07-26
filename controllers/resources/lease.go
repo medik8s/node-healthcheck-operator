@@ -10,8 +10,9 @@ import (
 	"github.com/medik8s/common/pkg/lease"
 
 	coordv1 "k8s.io/api/coordination/v1"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,7 +74,7 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 	leaseDuration := m.getLeaseDurationForRemediation(remediationCR, nhc)
 	leaseDurationWithBuffer := leaseDuration + LeaseBuffer
 
-	node := &v1.Node{}
+	node := &corev1.Node{}
 	if err := m.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, node); err != nil {
 		m.log.Error(err, "couldn't obtain node lease node error getting node", "node name", nodeName)
 		return nil, err
@@ -95,7 +96,7 @@ func (m *nhcLeaseManager) ObtainNodeLease(remediationCR *unstructured.Unstructur
 }
 
 func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error) {
-	node := &v1.Node{}
+	node := &corev1.Node{}
 	if err := m.client.Get(ctx, client.ObjectKey{Name: remediationCR.GetName()}, node); err != nil {
 		m.log.Error(err, "managing lease - couldn't fetch node", "node name", remediationCR.GetName())
 		return 0, err
@@ -140,12 +141,16 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 }
 
 func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, remediationCR *unstructured.Unstructured) error {
-	node := &v1.Node{}
-	if err := m.client.Get(ctx, client.ObjectKey{Name: remediationCR.GetName()}, node); err != nil {
-		m.log.Error(err, "failed to get node", "node name", remediationCR.GetName())
-		return err
+	// node might be deleted already, so build it manually
+	node := &corev1.Node{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Node",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: remediationCR.GetName(),
+		},
 	}
-
 	err := m.commonLeaseManager.InvalidateLease(ctx, node)
 	if err != nil {
 		m.log.Error(err, "failed to invalidate lease", "node name", remediationCR.GetName())
