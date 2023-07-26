@@ -865,15 +865,15 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(k8sClient.Status().Update(context.Background(), unhealthyCPNode))
 
 					By("waiting for remediation end of cp node")
-					Eventually(func() []*v1alpha1.UnhealthyNode {
-						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					Eventually(func(g Gomega) []*v1alpha1.UnhealthyNode {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						return underTest.Status.UnhealthyNodes
 
 					}, "2s", "100ms").Should(HaveLen(1))
 
 					By("ensuring other cp node isn't remediated yet")
-					Consistently(func() []*v1alpha1.UnhealthyNode {
-						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					Consistently(func(g Gomega) []*v1alpha1.UnhealthyNode {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						return underTest.Status.UnhealthyNodes
 
 					}, "5s", "1s").Should(HaveLen(1))
@@ -889,8 +889,8 @@ var _ = Describe("Node Health Check CR", func() {
 					}
 
 					By("ensuring other cp node is remediated now")
-					Eventually(func() []*v1alpha1.UnhealthyNode {
-						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					Eventually(func(g Gomega) []*v1alpha1.UnhealthyNode {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						return underTest.Status.UnhealthyNodes
 					}, "2s", "100ms").Should(ContainElements(
 						And(
