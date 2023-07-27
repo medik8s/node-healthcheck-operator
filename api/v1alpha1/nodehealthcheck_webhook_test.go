@@ -144,6 +144,18 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 					Expect(nhc.validate()).To(MatchError(ContainSubstring("42s")))
 				})
 			})
+
+			Context("with duplicate remediator", func() {
+				BeforeEach(func() {
+					setEscalatingRemediations(nhc)
+					nhc.Spec.EscalatingRemediations[1].RemediationTemplate = nhc.Spec.EscalatingRemediations[0].RemediationTemplate
+					nhc.Spec.EscalatingRemediations[1].RemediationTemplate.Name = "dummy"
+				})
+				It("should be denied", func() {
+					Expect(nhc.validate()).To(MatchError(ContainSubstring(uniqueRemediatorError)))
+					Expect(nhc.validate()).To(MatchError(ContainSubstring(nhc.Spec.EscalatingRemediations[1].RemediationTemplate.Kind)))
+				})
+			})
 		})
 	})
 
