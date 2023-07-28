@@ -51,7 +51,7 @@ var (
 			Name:    "nodehealthcheck_unhealthy_node_duration_seconds",
 			Help:    "Unhealthy Node duration distribution",
 			Buckets: []float64{30, 60, 120, 180, 240, 300, 600, 1200, 2400, 3600},
-		}, []string{"name", "namespace", "remediation", "reason"},
+		}, []string{"name", "namespace", "remediation", "unhealthyConditionType"},
 	)
 )
 
@@ -86,11 +86,11 @@ func ObserveNodeHealthCheckRemediationDeleted(name, namespace, remediation strin
 	}).Set(0)
 }
 
-func ObserveNodeHealthCheckUnhealthyNodeDuration(name, namespace, remediation, reason string, duration time.Duration) {
+func ObserveNodeHealthCheckUnhealthyNodeDuration(name, namespace, remediation, unhealthyConditionType string, duration time.Duration) {
 	nodehealtCheckRemediationDuration.With(prometheus.Labels{
-		"name":        name,
-		"namespace":   namespace,
-		"remediation": remediation,
-		"reason":      reason,
+		"name":                   name,
+		"namespace":              namespace,
+		"remediation":            remediation,
+		"unhealthyConditionType": unhealthyConditionType,
 	}).Observe(duration.Seconds())
 }

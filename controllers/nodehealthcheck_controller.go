@@ -70,7 +70,7 @@ const (
 	eventTypeWarning              = "Warning"
 	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
 
-	remediationUnhealthyNodeReasonAnnotationKey = "remediation.medik8s.io/unhealthy-node-reason"
+	unhealthyConditionTypeAnnotationKey = "remediation.medik8s.io/unhealthy-node-reason"
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
@@ -301,7 +301,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nhc.Status.ObservedNodes = pointer.Int(len(nodes))
 
 	// check nodes health
-	healthyNodes, unhealthyNodes, unhealthyNodesReasons, requeueAfter := r.checkNodesHealth(nodes, nhc)
+	healthyNodes, unhealthyNodes, unhealthyConditionTypes, requeueAfter := r.checkNodesHealth(nodes, nhc)
 	finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 	nhc.Status.HealthyNodes = pointer.Int(len(healthyNodes))
 
@@ -367,7 +367,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// remediate unhealthy nodes
 	for i, node := range unhealthyNodes {
 		log.Info("handling unhealthy node", "node", node.GetName())
-		requeueAfter, err := r.remediate(&node, unhealthyNodesReasons[i], nhc, resourceManager)
+		requeueAfter, err := r.remediate(&node, unhealthyConditionTypes[i], nhc, resourceManager)
 		if err != nil {
 			// don't try to remediate other nodes
 			log.Error(err, "failed to start remediation")
@@ -401,9 +401,9 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 	return clusterUpgrading
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy, unhealthy []v1.Node, unhealthyNodeReasons []string, requeueAfter *time.Duration) {
+func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy, unhealthy []v1.Node, unhealthyConditionTypes []string, requeueAfter *time.Duration) {
 	for _, node := range nodes {
-		if isHealthy, thisRequeueAfter, unhealthyNodeReason := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
+		if isHealthy, thisRequeueAfter, unhealthyConditionType := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
 			healthy = append(healthy, node)
 			requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
@@ -411,7 +411,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 			healthy = append(healthy, node)
 		} else {
 			unhealthy = append(unhealthy, node)
-			unhealthyNodeReasons = append(unhealthyNodeReasons, unhealthyNodeReason)
+			unhealthyConditionTypes = append(unhealthyConditionTypes, unhealthyConditionType)
 		}
 	}
 	return
@@ -431,9 +431,7 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 		if n.Status == c.Status {
 			now := currentTime()
 			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
-				// unhealthy condition duration expired, node is unhealthy
-				unhealthyNodeReason := fmt.Sprintf("type:%s, status:%s, duration(max):%v", c.Type, c.Status, c.Duration.Duration)
-				return false, nil, unhealthyNodeReason
+				return false, nil, string(c.Type)
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
 				expiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
@@ -494,13 +492,13 @@ func (r *NodeHealthCheckReconciler) deleteRemediationCR(remediationCR *unstructu
 		metrics.ObserveNodeHealthCheckRemediationDeleted(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 
 		duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
-		reason := "unknown reason"
+		unhealthyConditionType := "unknown"
 		if annotations := remediationCR.GetAnnotations(); annotations != nil {
-			if r, exists := annotations[remediationUnhealthyNodeReasonAnnotationKey]; exists {
-				reason = r
+			if r, exists := annotations[unhealthyConditionTypeAnnotationKey]; exists {
+				unhealthyConditionType = r
 			}
 		}
-		metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), reason, duration)
+		metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), unhealthyConditionType, duration)
 	}
 
 	// always update status, in case patching it failed during last reconcile
@@ -509,7 +507,7 @@ func (r *NodeHealthCheckReconciler) deleteRemediationCR(remediationCR *unstructu
 	return nil
 }
 
-func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, reason string, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
+func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, unhealthyConditionType string, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
 
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
@@ -551,8 +549,8 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, reason string, nhc 
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
-	if _, exists := annotations[remediationUnhealthyNodeReasonAnnotationKey]; !exists {
-		annotations[remediationUnhealthyNodeReasonAnnotationKey] = reason
+	if _, exists := annotations[unhealthyConditionTypeAnnotationKey]; !exists {
+		annotations[unhealthyConditionTypeAnnotationKey] = unhealthyConditionType
 		remediationCR.SetAnnotations(annotations)
 	}
 
