@@ -353,6 +353,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check if we have enough healthy nodes
+	skipRemediation := false
 	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(selectedNodes), true); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
@@ -361,11 +362,18 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
 		log.Info(msg)
 		r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
-		return
+		skipRemediation = true
 	}
 
 	// remediate unhealthy nodes
 	for _, node := range unhealthyNodes {
+
+		// update unhealthy node in status
+		resources.UpdateStatusNodeUnhealthy(&node, nhc)
+		if skipRemediation {
+			continue
+		}
+
 		log.Info("handling unhealthy node", "node", node.GetName())
 		requeueAfter, err := r.remediate(&node, nhc, resourceManager)
 		if err != nil {
@@ -562,14 +570,11 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	if err != nil {
 		//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
 		if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
-			resources.UpdateStatusNodeUnhealthy(node, nhc)
 			return leaseRequeueIn, nil
 		}
 
 		//Lease is overdue
 		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
-			resources.UpdateStatusNodeUnhealthy(node, nhc)
-
 			now := currentTime()
 			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: now}); timeOutErr != nil {
 				return nil, timeOutErr

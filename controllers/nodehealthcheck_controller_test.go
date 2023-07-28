@@ -354,7 +354,11 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(*underTest.Status.HealthyNodes).To(Equal(3))
 					Expect(*underTest.Status.ObservedNodes).To(Equal(7))
 					Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
-					Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(4))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(0))
+					Expect(underTest.Status.UnhealthyNodes[1].Remediations).To(HaveLen(0))
+					Expect(underTest.Status.UnhealthyNodes[2].Remediations).To(HaveLen(0))
+					Expect(underTest.Status.UnhealthyNodes[3].Remediations).To(HaveLen(0))
 					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 					Expect(underTest.Status.Reason).ToNot(BeEmpty())
 				})
@@ -467,7 +471,9 @@ var _ = Describe("Node Health Check CR", func() {
 
 				It("remediation cr should not be processed", func() {
 					Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
-					Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(unhealthyNodeName))
+					Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(0))
 				})
 			})
 
@@ -957,7 +963,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(*underTest.Status.HealthyNodes).To(Equal(6))
 					Expect(*underTest.Status.ObservedNodes).To(Equal(9))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(2))
-					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(2))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(3))
 					Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
 						And(
 							HaveField("Name", unhealthyNodeName),
@@ -1019,7 +1025,7 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						return underTest.Status.UnhealthyNodes
 
-					}, "5s", "1s").Should(HaveLen(2))
+					}, "5s", "1s").Should(HaveLen(3))
 
 					By("simulating remediator finished by removing finalizer on the cp remediation CR")
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNodeCR), unhealthyCPNodeCR)).To(Succeed())
