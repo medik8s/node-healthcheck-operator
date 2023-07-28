@@ -89,14 +89,14 @@ type NodeHealthCheckReconciler struct {
 	MHCChecker                  mhc.Checker
 	OnOpenShift                 bool
 	MHCEvents                   chan event.GenericEvent
-	ctrl                        controller.Controller
+	controller                  controller.Controller
 	watches                     map[string]struct{}
 	watchesLock                 sync.Mutex
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	ctrl, err := ctrl.NewControllerManagedBy(mgr).
+	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}).
 		Watches(
 			&source.Kind{Type: &v1.Node{}},
@@ -122,7 +122,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
-	r.ctrl = ctrl
+	r.controller = controller
 	r.watches = make(map[string]struct{})
 	return nil
 }
@@ -287,14 +287,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// select nodes using the nhc.selector
-	nodes, err := resourceManager.GetNodes(nhc.Spec.Selector)
+	selectedNodes, err := resourceManager.GetNodes(nhc.Spec.Selector)
 	if err != nil {
 		return result, err
 	}
-	nhc.Status.ObservedNodes = pointer.Int(len(nodes))
+	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
 
 	// check nodes health
-	healthyNodes, unhealthyNodes, requeueAfter := r.checkNodesHealth(nodes, nhc)
+	healthyNodes, unhealthyNodes, requeueAfter := r.checkNodesHealth(selectedNodes, nhc)
 	finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 	nhc.Status.HealthyNodes = pointer.Int(len(healthyNodes))
 
@@ -346,7 +346,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check if we have enough healthy nodes
-	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(nodes), true); err != nil {
+	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(selectedNodes), true); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
@@ -396,7 +396,7 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 
 func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy []v1.Node, unhealthy []v1.Node, requeueAfter *time.Duration) {
 	for _, node := range nodes {
-		if isHealthy, thisRequeueAfter := r.isHealthy(nhc.Spec.UnhealthyConditions, node.Status.Conditions); isHealthy {
+		if matchesUnhealthyConditions, thisRequeueAfter := r.matchesUnhealthyConditions(nhc.Spec.UnhealthyConditions, node.Status.Conditions); !matchesUnhealthyConditions {
 			healthy = append(healthy, node)
 			requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
@@ -409,7 +409,7 @@ func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remed
 	return
 }
 
-func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) (bool, *time.Duration) {
+func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) (bool, *time.Duration) {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range nodeConditions {
 		nodeConditionByType[nc.Type] = nc
@@ -425,7 +425,7 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 			now := currentTime()
 			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 				// unhealthy condition duration expired, node is unhealthy
-				return false, nil
+				return true, nil
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
 				thisExpiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
@@ -433,7 +433,7 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 			}
 		}
 	}
-	return true, expiresAfter
+	return false, expiresAfter
 }
 
 func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, allNodes []v1.Node, rm resources.Manager, log logr.Logger) error {
@@ -751,7 +751,7 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 		// already watching
 		return nil
 	}
-	if err := r.ctrl.Watch(
+	if err := r.controller.Watch(
 		&source.Kind{Type: remediationCR},
 		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
 		predicate.Funcs{

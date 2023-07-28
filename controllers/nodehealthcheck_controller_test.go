@@ -1437,9 +1437,9 @@ var _ = Describe("Node Health Check CR", func() {
 					},
 				}
 			})
-			It("should report healthy, should not report expiry", func() {
-				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
-				Expect(healthy).To(BeTrue(), "expected healthy")
+			It("should not report match, should not report expiry", func() {
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
 		})
@@ -1454,9 +1454,9 @@ var _ = Describe("Node Health Check CR", func() {
 					},
 				}
 			})
-			It("should report healthy, should report expiry", func() {
-				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
-				Expect(healthy).To(BeTrue(), "expected healthy")
+			It("should not report match, should report expiry", func() {
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
 			})
@@ -1477,9 +1477,9 @@ var _ = Describe("Node Health Check CR", func() {
 					},
 				}
 			})
-			It("should report not healthy, should not report expiry", func() {
-				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
-				Expect(healthy).To(BeFalse(), "expected not healthy")
+			It("should report match, should not report expiry", func() {
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				Expect(match).To(BeTrue(), "expected not healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
 		})
@@ -1499,9 +1499,9 @@ var _ = Describe("Node Health Check CR", func() {
 					},
 				}
 			})
-			It("should report not healthy, should not report expiry", func() {
-				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
-				Expect(healthy).To(BeTrue(), "expected healthy")
+			It("should not report match, should not report expiry", func() {
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
 			})
