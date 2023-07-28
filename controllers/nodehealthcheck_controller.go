@@ -196,10 +196,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err := r.Get(ctx, req.NamespacedName, nhc)
 	result = ctrl.Result{}
 	if err != nil {
-		log.Error(err, "failed getting Node Health Check", "object", nhc)
 		if apierrors.IsNotFound(err) {
+			log.Info("NodeHealthCheck CR not found", "name", req.Name)
 			return result, nil
 		}
+		log.Error(err, "failed to get NodeHealthCheck CR", "name", req.Name)
 		return result, err
 	}
 
