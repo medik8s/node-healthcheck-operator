@@ -365,6 +365,7 @@ var _ = Describe("Node Health Check CR", func() {
 				BeforeEach(func() {
 					setupObjects(1, 2, true)
 					remediationCR := newRemediationCR("healthy-worker-node-2", underTest)
+					remediationCR.SetFinalizers([]string{"dummy"})
 					remediationCROther := newRemediationCR("healthy-worker-node-1", underTest)
 					refs := remediationCROther.GetOwnerReferences()
 					refs[0].Name = "other"
@@ -373,19 +374,41 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("deletes an existing remediation CR and updates status", func() {
-					cr := newRemediationCR("healthy-worker-node-2", underTest)
+					By("verifying CR owned by other NHC isn't deleted")
+					cr := newRemediationCR("healthy-worker-node-1", underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-					Expect(errors.IsNotFound(err)).To(BeTrue())
-
-					// owned by other NHC, should not be deleted
-					cr = newRemediationCR("healthy-worker-node-1", underTest)
-					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 
+					By("verifying CR owned by us has deletion timestamp")
+					cr = newRemediationCR("healthy-worker-node-2", underTest)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					Expect(cr.GetDeletionTimestamp()).ToNot(BeNil())
+
+					By("verifying node with CR is still considered unhealthy")
+					Expect(*underTest.Status.HealthyNodes).To(Equal(1))
+					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+					// don't test Status.InFlightRemediations / Status.UnhealthyNodes here, they aren't updated for
+					// the existing CR created by the test...
+
+					By("simulating remediator finished by removing finalizer on the cp remediation CR")
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					cr.SetFinalizers([]string{})
+					Expect(k8sClient.Update(context.Background(), cr)).To(Succeed())
+
+					By("verifying CR is deleted")
+					Eventually(func(g Gomega) {
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						g.Expect(errors.IsNotFound(err)).To(BeTrue())
+					}, "2s", "100s").Should(Succeed())
+
+					By("verifying next node remediated now")
 					cr = newRemediationCR(unhealthyNodeName, underTest)
-					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-					Expect(err).NotTo(HaveOccurred())
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					}, "2s", "100ms").Should(Succeed())
 
+					By("verifying status")
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 					Expect(*underTest.Status.HealthyNodes).To(Equal(2))
 					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
@@ -958,27 +981,24 @@ var _ = Describe("Node Health Check CR", func() {
 						),
 					))
 
-					var unhealthyCPNodeName string
+					var remediatedUnhealthyCPNodeName string
 					for _, unhealthyNode := range underTest.Status.UnhealthyNodes {
 						if strings.Contains(unhealthyNode.Name, "unhealthy-control-plane-node") {
-							unhealthyCPNodeName = unhealthyNode.Name
+							remediatedUnhealthyCPNodeName = unhealthyNode.Name
 							break
 						}
 					}
-					Expect(unhealthyCPNodeName).ToNot(BeEmpty())
+					Expect(remediatedUnhealthyCPNodeName).ToNot(BeEmpty())
 
 					By("simulating remediator by putting a finalizer on the cp remediation CR")
-					for _, cr := range crList.Items {
-						if cr.GetName() == unhealthyCPNodeName {
-							cr.SetFinalizers([]string{"dummy"})
-							Expect(k8sClient.Update(context.Background(), &cr)).To(Succeed())
-							break
-						}
-					}
+					unhealthyCPNodeCR := newRemediationCR(remediatedUnhealthyCPNodeName, underTest)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNodeCR), unhealthyCPNodeCR)).To(Succeed())
+					unhealthyCPNodeCR.SetFinalizers([]string{"dummy"})
+					Expect(k8sClient.Update(context.Background(), unhealthyCPNodeCR)).To(Succeed())
 
 					By("make cp node healthy")
 					unhealthyCPNode := &v1.Node{}
-					unhealthyCPNode.Name = unhealthyCPNodeName
+					unhealthyCPNode.Name = remediatedUnhealthyCPNodeName
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNode), unhealthyCPNode)).To(Succeed())
 					unhealthyCPNode.Status.Conditions = []v1.NodeCondition{
 						{
@@ -989,28 +1009,22 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(k8sClient.Status().Update(context.Background(), unhealthyCPNode))
 
 					By("waiting for remediation end of cp node")
-					Eventually(func(g Gomega) []*v1alpha1.UnhealthyNode {
-						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						return underTest.Status.UnhealthyNodes
-
-					}, "2s", "100ms").Should(HaveLen(1))
+					Eventually(func(g Gomega) *metav1.Time {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNodeCR), unhealthyCPNodeCR)).To(Succeed())
+						return unhealthyCPNodeCR.GetDeletionTimestamp()
+					}, "2s", "100ms").ShouldNot(BeNil(), "expected CR to be deleted")
 
 					By("ensuring other cp node isn't remediated yet")
 					Consistently(func(g Gomega) []*v1alpha1.UnhealthyNode {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						return underTest.Status.UnhealthyNodes
 
-					}, "5s", "1s").Should(HaveLen(1))
+					}, "5s", "1s").Should(HaveLen(2))
 
 					By("simulating remediator finished by removing finalizer on the cp remediation CR")
-					for _, cr := range crList.Items {
-						if cr.GetName() == unhealthyCPNodeName {
-							Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(&cr), &cr)).To(Succeed())
-							cr.SetFinalizers([]string{})
-							Expect(k8sClient.Update(context.Background(), &cr)).To(Succeed())
-							break
-						}
-					}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNodeCR), unhealthyCPNodeCR)).To(Succeed())
+					unhealthyCPNodeCR.SetFinalizers([]string{})
+					Expect(k8sClient.Update(context.Background(), unhealthyCPNodeCR)).To(Succeed())
 
 					By("ensuring other cp node is remediated now")
 					Eventually(func(g Gomega) []*v1alpha1.UnhealthyNode {
@@ -1030,7 +1044,7 @@ var _ = Describe("Node Health Check CR", func() {
 						And(
 							HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
 							// ensure it's the other cp node now
-							Not(HaveField("Name", unhealthyCPNodeName)),
+							Not(HaveField("Name", remediatedUnhealthyCPNodeName)),
 							HaveField("Remediations", ContainElement(
 								And(
 									HaveField("Resource.Name", ContainSubstring("unhealthy-control-plane-node")),
@@ -1051,7 +1065,7 @@ var _ = Describe("Node Health Check CR", func() {
 					))
 					Expect(crList.Items).ToNot(ContainElements(
 						// the old unhealthy control plane node
-						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", unhealthyCPNodeName))),
+						HaveField("Object", HaveKeyWithValue("metadata", HaveKeyWithValue("name", remediatedUnhealthyCPNodeName))),
 					))
 
 				})

@@ -62,7 +62,6 @@ const (
 	remediationCRAlertTimeout     = time.Hour * 48
 	eventReasonRemediationCreated = "RemediationCreated"
 	eventReasonRemediationSkipped = "RemediationSkipped"
-	eventReasonRemediationRemoved = "RemediationRemoved"
 	eventReasonNoTemplateLeft     = "NoTemplateLeft"
 	eventReasonDisabled           = "Disabled"
 	eventReasonEnabled            = "Enabled"
@@ -326,15 +325,23 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	for _, node := range healthyNodes {
 		log.Info("handling healthy node", "node", node.GetName())
 		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == node.GetName()
+			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
 		})
 		if err != nil {
 			log.Error(err, "failed to get remediation CRs for healthy node", "node", node.Name)
 			return result, err
 		}
+
 		if len(remediationCRs) == 0 {
+			// when all CRs are gone, the node is considered healthy
+			resources.UpdateStatusNodeHealthy(node.GetName(), nhc, r.Recorder)
 			continue
 		}
+
+		// don't count nodes with remediation CRs as healthy
+		fixedHealthy := *nhc.Status.HealthyNodes - 1
+		nhc.Status.HealthyNodes = &fixedHealthy
+		log.Info("Node conditions don't match unhealthy condition, but node has remediation CRs, considering as unhealthy")
 		if err = r.deleteRemediationCRs(remediationCRs, nhc, resourceManager, false, log); err != nil {
 			return result, err
 		}
@@ -350,8 +357,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
-	} else if len(healthyNodes) < minHealthy {
-		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", len(healthyNodes), minHealthy)
+	} else if *nhc.Status.HealthyNodes < minHealthy {
+		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
 		log.Info(msg)
 		r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
 		return
@@ -438,6 +445,10 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []
 
 func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, allNodes []v1.Node, rm resources.Manager, log logr.Logger) error {
 	orphanedRemediationCRs, err := rm.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+		// skip already deleted CRs
+		if cr.GetDeletionTimestamp() != nil {
+			return false
+		}
 
 		// check conditions
 		permanentNodeDeletionExpectedCondition := getCondition(&cr, commonconditions.PermanentNodeDeletionExpectedType, log)
@@ -478,11 +489,16 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager, orphaned bool, log logr.Logger) error {
 
 	for _, remediationCR := range remediationCRs {
+
+		// add watch in case we were restarted, otherwise we might miss CR deletion events
+		if err := r.addWatch(&remediationCR); err != nil {
+			return errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
+		}
+
 		if deleted, err := rm.DeleteRemediationCR(&remediationCR, nhc); err != nil {
 			log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
 			return err
 		} else if deleted {
-
 			if orphaned {
 				permanentNodeDeletionExpectedCondition := getCondition(&remediationCR, commonconditions.PermanentNodeDeletionExpectedType, log)
 				log.Info("deleted orphaned remediation CR", "name", remediationCR.GetName(),
@@ -491,16 +507,13 @@ func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstru
 			} else {
 				log.Info("deleted remediation CR", "name", remediationCR.GetName())
 			}
-
-			r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
-			metrics.ObserveNodeHealthCheckRemediationDeleted(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
-
-			duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
-			metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), duration)
 		}
 
-		// always update status, in case patching it failed during last reconcile
-		resources.UpdateStatusNodeHealthy(remediationCR.GetName(), nhc)
+		// only update status for orphaned CRs
+		// for all other CRs, the status is updated only when all CRs are gone
+		if orphaned {
+			resources.UpdateStatusNodeHealthy(remediationCR.GetName(), nhc, r.Recorder)
+		}
 	}
 	return nil
 }
