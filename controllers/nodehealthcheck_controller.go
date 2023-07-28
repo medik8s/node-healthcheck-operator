@@ -332,11 +332,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			log.Error(err, "failed to get remediation CRs for healthy node", "node", node.Name)
 			return result, err
 		}
-		for _, remediationCR := range remediationCRs {
-			if err := r.deleteRemediationCR(&remediationCR, nhc, resourceManager, log); err != nil {
-				log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
-				return result, err
-			}
+		if len(remediationCRs) == 0 {
+			continue
+		}
+		if err = r.deleteRemediationCRs(remediationCRs, nhc, resourceManager, false, log); err != nil {
+			return result, err
 		}
 	}
 
@@ -463,35 +463,45 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 		log.Error(err, "failed to check for orphaned remediation CRs")
 		return err
 	}
-	for _, orphanedCR := range orphanedRemediationCRs {
-		if err = r.deleteRemediationCR(&orphanedCR, nhc, rm, log); err != nil {
-			log.Error(err, "failed to delete orphaned remediation CR", "name", orphanedCR.GetName())
-			return err
-		}
-		permanentNodeDeletionExpectedCondition := getCondition(&orphanedCR, commonconditions.PermanentNodeDeletionExpectedType, log)
-		log.Info("deleted orphaned remediation CR", "name", orphanedCR.GetName(),
-			"reason", permanentNodeDeletionExpectedCondition.Reason,
-			"message", permanentNodeDeletionExpectedCondition.Message)
+
+	if len(orphanedRemediationCRs) == 0 {
+		return nil
+	}
+
+	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
+	if err = r.deleteRemediationCRs(orphanedRemediationCRs, nhc, rm, true, log); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (r *NodeHealthCheckReconciler) deleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager, log logr.Logger) error {
-	if deleted, err := rm.DeleteRemediationCR(remediationCR, nhc); err != nil {
-		log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
-		return err
-	} else if deleted {
-		log.Info("deleted remediation CR", "name", remediationCR.GetName())
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
-		metrics.ObserveNodeHealthCheckRemediationDeleted(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
+func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager, orphaned bool, log logr.Logger) error {
 
-		duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
-		metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), duration)
+	for _, remediationCR := range remediationCRs {
+		if deleted, err := rm.DeleteRemediationCR(&remediationCR, nhc); err != nil {
+			log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
+			return err
+		} else if deleted {
+
+			if orphaned {
+				permanentNodeDeletionExpectedCondition := getCondition(&remediationCR, commonconditions.PermanentNodeDeletionExpectedType, log)
+				log.Info("deleted orphaned remediation CR", "name", remediationCR.GetName(),
+					"reason", permanentNodeDeletionExpectedCondition.Reason,
+					"message", permanentNodeDeletionExpectedCondition.Message)
+			} else {
+				log.Info("deleted remediation CR", "name", remediationCR.GetName())
+			}
+
+			r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationCR.GetName())
+			metrics.ObserveNodeHealthCheckRemediationDeleted(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
+
+			duration := time.Now().Sub(remediationCR.GetCreationTimestamp().Time)
+			metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationCR.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind(), duration)
+		}
+
+		// always update status, in case patching it failed during last reconcile
+		resources.UpdateStatusNodeHealthy(remediationCR.GetName(), nhc)
 	}
-
-	// always update status, in case patching it failed during last reconcile
-	resources.UpdateStatusNodeHealthy(remediationCR.GetName(), nhc)
-
 	return nil
 }
 
