@@ -1379,6 +1379,135 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 	})
+
+	Context("Unhealthy condition checks", func() {
+
+		var (
+			r                   = &NodeHealthCheckReconciler{}
+			unhealthyConditions []v1alpha1.UnhealthyCondition
+			nodeConditions      []v1.NodeCondition
+
+			condType1         = v1.NodeConditionType("type1")
+			condType2         = v1.NodeConditionType("type2")
+			condStatusMatch   = v1.ConditionTrue
+			condStatusNoMatch = v1.ConditionUnknown
+
+			now                      = time.Now()
+			unhealthyDuration        = metav1.Duration{Duration: 10 * time.Second}
+			expireIn                 = 2 * time.Second
+			expiredTransitionTime    = metav1.Time{Time: now.Add(-unhealthyDuration.Duration).Add(-time.Second)}
+			notExpiredTransitionTime = metav1.Time{Time: now.Add(-unhealthyDuration.Duration).Add(expireIn)}
+
+			// this is always added in tested code
+			expireBuffer = time.Second
+		)
+
+		BeforeEach(func() {
+			fakeTime = &now
+			DeferCleanup(func() {
+				fakeTime = nil
+			})
+
+			unhealthyConditions = []v1alpha1.UnhealthyCondition{
+				{
+					Type:     condType1,
+					Status:   condStatusMatch,
+					Duration: unhealthyDuration,
+				},
+				{
+					Type:     condType2,
+					Status:   condStatusMatch,
+					Duration: unhealthyDuration,
+				},
+			}
+		})
+
+		When("no condition matches", func() {
+			BeforeEach(func() {
+				nodeConditions = []v1.NodeCondition{
+					{
+						Type:               condType1,
+						Status:             condStatusNoMatch,
+						LastTransitionTime: notExpiredTransitionTime,
+					},
+					{
+						Type:               condType2,
+						Status:             condStatusNoMatch,
+						LastTransitionTime: expiredTransitionTime,
+					},
+				}
+			})
+			It("should report healthy, should not report expiry", func() {
+				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
+				Expect(healthy).To(BeTrue(), "expected healthy")
+				Expect(expire).To(BeNil(), "expected expire to not be set")
+			})
+		})
+
+		When("a single condition matches but didn't expire", func() {
+			BeforeEach(func() {
+				nodeConditions = []v1.NodeCondition{
+					{
+						Type:               condType1,
+						Status:             condStatusMatch,
+						LastTransitionTime: notExpiredTransitionTime,
+					},
+				}
+			})
+			It("should report healthy, should report expiry", func() {
+				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
+				Expect(healthy).To(BeTrue(), "expected healthy")
+				Expect(expire).ToNot(BeNil(), "expected expire to be set")
+				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
+			})
+		})
+
+		When("first condition matches but didn't expire, second condition matches and expired", func() {
+			BeforeEach(func() {
+				nodeConditions = []v1.NodeCondition{
+					{
+						Type:               condType1,
+						Status:             condStatusMatch,
+						LastTransitionTime: notExpiredTransitionTime,
+					},
+					{
+						Type:               condType2,
+						Status:             condStatusMatch,
+						LastTransitionTime: expiredTransitionTime,
+					},
+				}
+			})
+			It("should report not healthy, should not report expiry", func() {
+				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
+				Expect(healthy).To(BeFalse(), "expected not healthy")
+				Expect(expire).To(BeNil(), "expected expire to not be set")
+			})
+		})
+
+		When("first condition doesn't match, second condition matches and didn't expire", func() {
+			BeforeEach(func() {
+				nodeConditions = []v1.NodeCondition{
+					{
+						Type:               condType1,
+						Status:             condStatusNoMatch,
+						LastTransitionTime: notExpiredTransitionTime,
+					},
+					{
+						Type:               condType2,
+						Status:             condStatusMatch,
+						LastTransitionTime: notExpiredTransitionTime,
+					},
+				}
+			})
+			It("should report not healthy, should not report expiry", func() {
+				healthy, expire := r.isHealthy(unhealthyConditions, nodeConditions)
+				Expect(healthy).To(BeTrue(), "expected healthy")
+				Expect(expire).ToNot(BeNil(), "expected expire to be set")
+				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
+			})
+		})
+
+	})
 })
 
 func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer time.Duration) {

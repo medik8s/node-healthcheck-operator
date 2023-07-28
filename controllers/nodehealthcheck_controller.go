@@ -415,6 +415,7 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 		nodeConditionByType[nc.Type] = nc
 	}
 
+	var expiresAfter *time.Duration
 	for _, c := range conditionTests {
 		n, exists := nodeConditionByType[c.Type]
 		if !exists {
@@ -427,12 +428,12 @@ func (r *NodeHealthCheckReconciler) isHealthy(conditionTests []remediationv1alph
 				return false, nil
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
-				expiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
-				return true, &expiresAfter
+				thisExpiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
+				expiresAfter = utils.MinRequeueDuration(expiresAfter, &thisExpiresAfter)
 			}
 		}
 	}
-	return true, nil
+	return true, expiresAfter
 }
 
 func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, allNodes []v1.Node, rm resources.Manager, log logr.Logger) error {
