@@ -20,6 +20,7 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 const (
@@ -78,6 +79,7 @@ func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alp
 	remediationCR.SetUID("")
 	remediationCR.SetSelfLink("")
 	remediationCR.SetCreationTimestamp(metav1.Now())
+	remediationCR.SetAnnotations(utils.CreateProviderIdAnnotation(node))
 
 	owners := make([]metav1.OwnerReference, 0)
 	if nhc != nil {
