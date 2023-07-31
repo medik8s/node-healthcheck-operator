@@ -1,5 +1,7 @@
 resources:
 - monitor.yaml
+- clusterrole.yaml
+- clusterrolebinding.yaml
 
 namePrefix: node-healthcheck-
 
