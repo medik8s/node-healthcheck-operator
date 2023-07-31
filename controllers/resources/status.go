@@ -98,6 +98,18 @@ func UpdateStatusNodeUnhealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeH
 	})
 }
 
+func UpdateStatusNodeConditionsHealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, now time.Time) *time.Time {
+	for i, _ := range nhc.Status.UnhealthyNodes {
+		if nhc.Status.UnhealthyNodes[i].Name == node.Name {
+			if nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp == nil {
+				nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp = &metav1.Time{Time: now}
+			}
+			return &nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp.Time
+		}
+	}
+	return nil
+}
+
 // FindStatusRemediation return the first remediation in the NHC's status for the given node which matches the remediationFilter
 func FindStatusRemediation(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationFilter func(r *remediationv1alpha1.Remediation) bool) *remediationv1alpha1.Remediation {
 	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {

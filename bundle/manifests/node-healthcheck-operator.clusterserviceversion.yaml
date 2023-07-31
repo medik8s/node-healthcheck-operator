@@ -171,6 +171,13 @@ spec:
       - description: UnhealthyNodes tracks currently unhealthy nodes and their remediations.
         displayName: Unhealthy Nodes
         path: unhealthyNodes
+      - description: ConditionsHealthyTimestamp is RFC 3339 date and time at which
+          the unhealthy conditions didn't match anymore. The remediation CR will be
+          deleted at that time, but the node will still be tracked as unhealthy until
+          all remediation CRs are actually deleted, when remediators finished cleanup
+          and removed their finalizers.
+        displayName: Conditions Healthy Timestamp
+        path: unhealthyNodes[0].conditionsHealthyTimestamp
       - description: Name is the name of the unhealthy node
         displayName: Name
         path: unhealthyNodes[0].name

@@ -74,8 +74,9 @@ const (
 )
 
 var (
-	clusterUpgradeRequeueAfter = 1 * time.Minute
-	currentTime                = func() time.Time { return time.Now() }
+	clusterUpgradeRequeueAfter       = 1 * time.Minute
+	logWhenCRPendingDeletionDuration = 10 * time.Second
+	currentTime                      = func() time.Time { return time.Now() }
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object
@@ -342,7 +343,31 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// don't count nodes with remediation CRs as healthy
 		fixedHealthy := *nhc.Status.HealthyNodes - 1
 		nhc.Status.HealthyNodes = &fixedHealthy
-		log.Info("Node conditions don't match unhealthy condition, but node has remediation CRs, considering as unhealthy")
+
+		// set conditions healthy timestamp
+		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(&node, nhc, currentTime())
+		if conditionsHealthyTimestamp != nil {
+			// warn about pending CRs when all CRs have been deleted for some time already but still exist
+			doLog := true
+			logThreshold := conditionsHealthyTimestamp.Add(-logWhenCRPendingDeletionDuration)
+			for _, cr := range remediationCRs {
+				if cr.GetDeletionTimestamp() == nil || cr.GetDeletionTimestamp().After(logThreshold) {
+					doLog = false
+					// requeue when we need to log
+					var logIn time.Duration
+					if cr.GetDeletionTimestamp() != nil {
+						logIn = cr.GetDeletionTimestamp().Sub(logThreshold) + time.Second
+					} else {
+						logIn = logWhenCRPendingDeletionDuration + time.Second
+					}
+					finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, &logIn)
+				}
+			}
+			if doLog {
+				log.Info("Node conditions don't match unhealthy condition anymore, but node has remediation CR(s) with pending deletion, considering node as unhealthy")
+			}
+		}
+
 		if err = r.deleteRemediationCRs(remediationCRs, nhc, resourceManager, false, log); err != nil {
 			return result, err
 		}
