@@ -1141,8 +1141,8 @@ var _ = Describe("Node Health Check CR", func() {
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
-				Expect(*underTest.Status.HealthyNodes).To(Equal(2))
-				Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(*underTest.Status.HealthyNodes).To(Equal(0))
+				Expect(*underTest.Status.ObservedNodes).To(Equal(0))
 				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
 				Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhasePaused))
@@ -1166,8 +1166,8 @@ var _ = Describe("Node Health Check CR", func() {
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
-				Expect(*underTest.Status.HealthyNodes).To(Equal(2))
-				Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+				Expect(*underTest.Status.HealthyNodes).To(Equal(0))
+				Expect(*underTest.Status.ObservedNodes).To(Equal(0))
 				Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
 				Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))

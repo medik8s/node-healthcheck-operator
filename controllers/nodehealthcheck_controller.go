@@ -292,12 +292,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return result, err
 	}
-	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
 
 	// check nodes health
-	healthyNodes, unhealthyNodes, requeueAfter := r.checkNodesHealth(selectedNodes, nhc)
+	notMatchingNodes, matchingNodes, requeueAfter := r.checkNodeConditions(selectedNodes, nhc)
 	finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
-	nhc.Status.HealthyNodes = pointer.Int(len(healthyNodes))
 
 	// TODO consider setting Disabled condition?
 	if r.isClusterUpgrading() {
@@ -319,12 +317,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Delete orphaned CRs: they have no node, and Succeeded and NodeNameChangeExpected conditions set to True.
 	// This happens e.g. on cloud providers with Machine Deletion remediation: the broken node will be deleted and
 	// a new node created, with a new name, and no relationship to the old node
-	if err = r.deleteOrphanedRemediationCRs(nhc, append(healthyNodes, unhealthyNodes...), resourceManager, log); err != nil {
+	if err = r.deleteOrphanedRemediationCRs(nhc, append(notMatchingNodes, matchingNodes...), resourceManager, log); err != nil {
 		return result, err
 	}
 
 	// delete remediation CRs for healthy nodes
-	for _, node := range healthyNodes {
+	healthyCount := 0
+	for _, node := range notMatchingNodes {
 		log.Info("handling healthy node", "node", node.GetName())
 		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
 			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
@@ -337,12 +336,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if len(remediationCRs) == 0 {
 			// when all CRs are gone, the node is considered healthy
 			resources.UpdateStatusNodeHealthy(node.GetName(), nhc, r.Recorder)
+			healthyCount++
 			continue
 		}
-
-		// don't count nodes with remediation CRs as healthy
-		fixedHealthy := *nhc.Status.HealthyNodes - 1
-		nhc.Status.HealthyNodes = &fixedHealthy
 
 		// set conditions healthy timestamp
 		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(&node, nhc, currentTime())
@@ -373,8 +369,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
+	nhc.Status.HealthyNodes = &healthyCount
+
 	// we are done in case we don't have unhealthy nodes
-	if len(unhealthyNodes) == 0 {
+	if len(matchingNodes) == 0 {
 		return result, nil
 	}
 
@@ -392,7 +391,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// remediate unhealthy nodes
-	for _, node := range unhealthyNodes {
+	for _, node := range matchingNodes {
 
 		// update unhealthy node in status
 		resources.UpdateStatusNodeUnhealthy(&node, nhc)
@@ -435,16 +434,16 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 	return clusterUpgrading
 }
 
-func (r *NodeHealthCheckReconciler) checkNodesHealth(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (healthy []v1.Node, unhealthy []v1.Node, requeueAfter *time.Duration) {
+func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (notMatchingNodes []v1.Node, matchingNodes []v1.Node, requeueAfter *time.Duration) {
 	for _, node := range nodes {
 		if matchesUnhealthyConditions, thisRequeueAfter := r.matchesUnhealthyConditions(nhc.Spec.UnhealthyConditions, node.Status.Conditions); !matchesUnhealthyConditions {
-			healthy = append(healthy, node)
+			notMatchingNodes = append(notMatchingNodes, node)
 			requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
 			// consider terminating nodes being handled by MHC as healthy, from NHC point of view
-			healthy = append(healthy, node)
+			notMatchingNodes = append(notMatchingNodes, node)
 		} else {
-			unhealthy = append(unhealthy, node)
+			matchingNodes = append(matchingNodes, node)
 		}
 	}
 	return
