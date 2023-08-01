@@ -464,8 +464,10 @@ var _ = Describe("Node Health Check CR", func() {
 					}, "2s", "100ms").Should(Succeed())
 
 					By("verifying status")
-					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-					Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+					}, "2s", "100ms").Should(Succeed())
 					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
 					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
