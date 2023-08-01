@@ -321,7 +321,7 @@ bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s commun
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-metrics
-bundle-metrics: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
+bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metric relates manifests, then validate generated files.
 	$(KUSTOMIZE) build config/manifests-metrics | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
