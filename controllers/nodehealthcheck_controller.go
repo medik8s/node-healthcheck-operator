@@ -410,7 +410,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// check if we need to alert about a very old remediation CR
 		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == node.GetName()
+			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
 		})
 		for _, remediationCR := range remediationCRs {
 			isAlert, requeueAfter := r.alertOldRemediationCR(&remediationCR)
@@ -480,6 +480,11 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 	orphanedRemediationCRs, err := rm.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
 		// skip already deleted CRs
 		if cr.GetDeletionTimestamp() != nil {
+			return false
+		}
+
+		// skip CRs we don't own
+		if !resources.IsOwner(&cr, nhc) {
 			return false
 		}
 
