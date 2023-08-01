@@ -294,6 +294,12 @@ var _ = Describe("e2e", func() {
 					}, 5*time.Minute, 5*time.Second).
 					Should(BeTrue())
 
+				By("waiting for remediation CR deletion, else cleanup fails")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nhc), nhc)).To(Succeed())
+					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(0))
+				}, "5m", "5s").Should(Succeed(), "CR not deleted")
+
 			})
 		})
 
@@ -350,8 +356,14 @@ var _ = Describe("e2e", func() {
 				nhc.Spec.MinHealthy = &newValue
 				Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
 
-				By("waiting for healthy node")
+				By("waiting for healthy node condition")
 				waitForNodeHealthyCondition(nodeUnderTest, v1.ConditionTrue)
+
+				By("waiting for remediation CR deletion, else cleanup fails")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nhc), nhc)).To(Succeed())
+					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(0))
+				}, "5m", "5s").Should(Succeed(), "CR not deleted")
 			})
 		})
 

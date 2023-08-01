@@ -141,7 +141,7 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
 	// check if CR already exists
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
-		if !isOwner(remediationCR, nhc) {
+		if !IsOwner(remediationCR, nhc) {
 			m.log.Info("external remediation CR already exists, but it's not owned by us", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace(), "owners", remediationCR.GetOwnerReferences())
 			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
@@ -177,7 +177,7 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 }
 
 func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (isDeleted bool, errResult error) {
-	err := m.Get(context.Background(), client.ObjectKeyFromObject(remediationCR), remediationCR)
+	err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR)
 	if err != nil && !apierrors.IsNotFound(err) {
 		// something went wrong
 		return false, errors.Wrapf(err, "failed to get remediation CR")
@@ -188,11 +188,11 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	}
 
 	// also check if this is our CR
-	if !isOwner(remediationCR, nhc) {
+	if !IsOwner(remediationCR, nhc) {
 		return false, nil
 	}
 
-	err = m.Delete(context.Background(), remediationCR, &client.DeleteOptions{})
+	err = m.Delete(m.ctx, remediationCR, &client.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
@@ -258,7 +258,7 @@ func (m *manager) GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, e
 	return nodes.Items, err
 }
 
-func isOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
+func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
 	for _, owner := range remediationCR.GetOwnerReferences() {
 		if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
 			return true

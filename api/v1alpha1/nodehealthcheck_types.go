@@ -253,6 +253,14 @@ type UnhealthyNode struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	Remediations []*Remediation `json:"remediations,omitempty"`
+
+	// ConditionsHealthyTimestamp is RFC 3339 date and time at which the unhealthy conditions didn't match anymore.
+	// The remediation CR will be deleted at that time, but the node will still be tracked as unhealthy until all
+	// remediation CRs are actually deleted, when remediators finished cleanup and removed their finalizers.
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	ConditionsHealthyTimestamp *metav1.Time `json:"conditionsHealthyTimestamp,omitempty"`
 }
 
 // Remediation defines a remediation which was created for a node
