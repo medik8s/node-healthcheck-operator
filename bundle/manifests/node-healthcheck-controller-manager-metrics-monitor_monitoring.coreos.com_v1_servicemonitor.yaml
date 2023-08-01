@@ -16,3 +16,4 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/component: controller-manager
+      app.kubernetes.io/name: node-healthcheck-operator
