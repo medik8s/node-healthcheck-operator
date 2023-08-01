@@ -598,12 +598,12 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
 
 	if err != nil {
-		//An unhealthy node exist but remediation couldn't be created because lease wasn't obtained - update unhealthy nodes and requeue
+		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained
 		if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
 			return leaseRequeueIn, nil
 		}
 
-		//Lease is overdue
+		// Lease is overdue
 		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
 			now := currentTime()
 			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: now}); timeOutErr != nil {

@@ -75,7 +75,7 @@ func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealt
 				remediation := remediation
 				remediationResource := remediation.Resource
 
-				recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR for node %s", remediationResource.Name)
+				recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR of kind %s for node %s", remediationResource.Kind, remediationResource.Name)
 
 				duration := time.Now().Sub(remediation.Started.Time)
 				metrics.ObserveNodeHealthCheckRemediationDeleted(remediationResource.Name, remediationResource.Namespace, remediationResource.Kind)
