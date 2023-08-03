@@ -170,6 +170,6 @@ jobs:
         echo "Debugging SNR agents"
         kubectl describe daemonset -n ${DEPLOY_NAMESPACE} self-node-remediation-ds
         echo "\n\n"
-        kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=app=self-node-remediation-agent,control-plane=controller-manager
+        kubectl describe pod -n ${DEPLOY_NAMESPACE} --selector=app.kubernetes.io/name=self-node-remediation,app.kubernetes.io/component=agent
         echo "\n\n"
-        kubectl logs -n ${DEPLOY_NAMESPACE} --selector=app=self-node-remediation-agent,control-plane=controller-manager --tail -1
+        kubectl logs -n ${DEPLOY_NAMESPACE} --selector=app.kubernetes.io/name=self-node-remediation,app.kubernetes.io/component=agent --tail -1
