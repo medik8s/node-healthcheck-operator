@@ -1,7 +1,7 @@
 # SHELL defines bash so all the inline scripts here will work as expected.
 SHELL := /bin/bash
 
-OPERATOR_SDK_VERSION = v1.26.1
+OPERATOR_SDK_VERSION = v1.31.0
 OPM_VERSION = v1.26.3
 CONTROLLER_GEN_VERSION = v0.12.0
 KUSTOMIZE_VERSION = v5.0.0
@@ -340,7 +340,11 @@ bundle-update: ## update container image in the metadata
 .PHONY: bundle-validate
 bundle-validate: operator-sdk ## Validate the bundle directory with additional validators (suite=operatorframework), such as Kubernetes deprecated APIs (https://kubernetes.io/docs/reference/using-api/deprecation-guide/) based on bundle.CSV.Spec.MinKubeVersion
 	$(OPERATOR_SDK) bundle validate ./bundle --select-optional suite=operatorframework
-	
+
+.PHONY: bundle-scorecard
+bundle-scorecard: operator-sdk ## Run scorecard tests
+	$(OPERATOR_SDK) scorecard ./bundle
+
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
 	VERSION=0.0.1 $(MAKE) manifests bundle
