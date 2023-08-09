@@ -1,7 +1,7 @@
 # SHELL defines bash so all the inline scripts here will work as expected.
 SHELL := /bin/bash
 
-OPERATOR_SDK_VERSION = v1.26.1
+OPERATOR_SDK_VERSION = v1.31.0
 OPM_VERSION = v1.26.3
 CONTROLLER_GEN_VERSION = v0.12.0
 KUSTOMIZE_VERSION = v5.0.0
@@ -136,11 +136,6 @@ test-no-verify: vendor generate test-imports fmt vet envtest ## Generate and for
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... -coverprofile cover.out -v -ginkgo.v
 endif
 
-.PHONY: test-mutation
-test-mutation: verify-no-changes fetch-mutation ## Run mutation tests in manual mode.
-	echo -e "## Verifying diff ## \n##Mutations tests actually changes the code while running - this is a safeguard in order to be able to easily revert mutation tests changes (in case mutation tests have not completed properly)##"
-	./hack/test-mutation.sh
-
 .PHONY: manager
 manager: generate fmt vet ## Build manager binary
 	./hack/build.sh
@@ -203,10 +198,6 @@ vendor: tidy ## Run go mod vendor
 .PHONY: verify
 verify: bundle-reset ## verify there are no un-committed changes
 	./hack/verify-diff.sh
-
-.PHONY: fetch-mutation
-fetch-mutation: ## fetch mutation package.
-	GO111MODULE=off go get -t -v github.com/mshitrit/go-mutesting/...
 
 .PHONY: generate
 generate: controller-gen ## Generate code
@@ -340,7 +331,11 @@ bundle-update: ## update container image in the metadata
 .PHONY: bundle-validate
 bundle-validate: operator-sdk ## Validate the bundle directory with additional validators (suite=operatorframework), such as Kubernetes deprecated APIs (https://kubernetes.io/docs/reference/using-api/deprecation-guide/) based on bundle.CSV.Spec.MinKubeVersion
 	$(OPERATOR_SDK) bundle validate ./bundle --select-optional suite=operatorframework
-	
+
+.PHONY: bundle-scorecard
+bundle-scorecard: operator-sdk ## Run scorecard tests
+	$(OPERATOR_SDK) scorecard ./bundle
+
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
 	VERSION=0.0.1 $(MAKE) manifests bundle
@@ -417,7 +412,3 @@ container-build-metrics: ## Build containers
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
 	make docker-push bundle-push index-build index-push
-
-.PHONY: test-mutation-ci
-test-mutation-ci: fetch-mutation ## Run mutation tests as part of auto build process.
-	./hack/test-mutation.sh

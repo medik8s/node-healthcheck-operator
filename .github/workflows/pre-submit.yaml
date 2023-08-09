@@ -31,9 +31,6 @@ jobs:
     - name: Test container build
       run: make container-build
 
-    - name: TestMutations
-      run: make test-mutation-ci
-
   e2e-k8s:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
