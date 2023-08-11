@@ -1,9 +1,11 @@
 resources:
 - service.yaml
 - deployment.yaml
-
 # not supported by OLM :/ Created in code for now
 #- consoleplugin.yaml
+
+components:
+- ../common-patches
 
 generatorOptions:
   disableNameSuffixHash: true

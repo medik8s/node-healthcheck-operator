@@ -481,6 +481,24 @@ spec:
                 app.kubernetes.io/component: node-remediation-console-plugin
                 app.kubernetes.io/name: node-healthcheck-operator
             spec:
+              affinity:
+                nodeAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                  - preference:
+                      matchExpressions:
+                      - key: node-role.kubernetes.io/infra
+                        operator: Exists
+                    weight: 2
+                  - preference:
+                      matchExpressions:
+                      - key: node-role.kubernetes.io/master
+                        operator: Exists
+                    weight: 1
+                  - preference:
+                      matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+                    weight: 1
               containers:
               - image: quay.io/medik8s/node-remediation-console:latest
                 name: node-remediation-console-plugin
@@ -503,6 +521,19 @@ spec:
                   readOnly: true
               securityContext:
                 runAsNonRoot: true
+              tolerations:
+              - effect: NoSchedule
+                key: node-role.kubernetes.io/master
+                operator: Exists
+              - effect: NoSchedule
+                key: node-role.kubernetes.io/control-plane
+                operator: Exists
+              - effect: NoSchedule
+                key: node-role.kubernetes.io/infra
+                operator: Exists
+              - effect: NoExecute
+                key: node-role.kubernetes.io/infra
+                operator: Exists
               volumes:
               - name: nrc-plugin-cert
                 secret:
