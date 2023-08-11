@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Adds namespace to all resources.
+namespace: node-healthcheck-operator-system
+
+# Value of this field is prepended to the
+# names of all resources, e.g. a deployment named
+# "wordpress" becomes "alices-wordpress".
+# Note that it should also match with the prefix (text before '-') of the namespace
+# field above.
+namePrefix: node-healthcheck-
+
+# Labels to add to all resources and selectors.
+#
+# *** STOP! ***
+# Adding labels breaks updates, because the label selector in the deployment is immutable,
+# and OLM does not deal with it by creating a new deployment instead.
+# Workaround: rename the deployment (by modifying namePrefix above)
+commonLabels:
+  app.kubernetes.io/name: node-healthcheck-operator
