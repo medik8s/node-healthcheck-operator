@@ -5,7 +5,7 @@ resources:
 - manager.yaml
 
 components:
-- ../patch-affinity
+- ../patches/affinity
 
 generatorOptions:
   disableNameSuffixHash: true

@@ -14,7 +14,7 @@ resources:
 #- ../prometheus
 
 components:
-- ../patch-common
+- ../patches/common
 
 patchesStrategicMerge:
 # Protect the /metrics endpoint by putting it behind auth.

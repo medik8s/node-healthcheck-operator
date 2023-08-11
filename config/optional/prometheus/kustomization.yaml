@@ -5,4 +5,4 @@ resources:
 - monitor.yaml
 
 components:
-  - ../patch-common
+- ../../patches/common

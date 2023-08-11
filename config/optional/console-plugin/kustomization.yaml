@@ -8,8 +8,8 @@ resources:
 #- consoleplugin.yaml
 
 components:
-- ../patch-common
-- ../patch-affinity
+- ../../patches/affinity
+- ../../patches/common
 
 generatorOptions:
   disableNameSuffixHash: true

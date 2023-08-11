@@ -1,5 +1,5 @@
 resources:
-- ../manifests
+- ../base
 
 patchesStrategicMerge:
   - seccomp_patch.yaml
