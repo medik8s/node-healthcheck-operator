@@ -1,7 +1,0 @@
-resources:
-- monitor.yaml
-
-namePrefix: node-healthcheck-
-
-commonLabels:
-  app.kubernetes.io/name: node-healthcheck-operator

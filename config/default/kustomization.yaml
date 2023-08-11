@@ -1,23 +1,7 @@
-# Adds namespace to all resources.
-namespace: node-healthcheck-operator-system
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 
-# Value of this field is prepended to the
-# names of all resources, e.g. a deployment named
-# "wordpress" becomes "alices-wordpress".
-# Note that it should also match with the prefix (text before '-') of the namespace
-# field above.
-namePrefix: node-healthcheck-
-
-# Labels to add to all resources and selectors.
-#
-# *** STOP! ***
-# Adding labels breaks updates, because the label selector in the deployment is immutable,
-# and OLM does not deal with it by creating a new deployment instead.
-# Workaround: rename the deployment (by modifying namePrefix above)
-commonLabels:
-  app.kubernetes.io/name: node-healthcheck-operator
-
-bases:
+resources:
 - ../crd
 - ../rbac
 - ../manager
@@ -28,6 +12,9 @@ bases:
 #- ../certmanager
 # [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
 #- ../prometheus
+
+components:
+- ../patches/common
 
 patchesStrategicMerge:
 # Protect the /metrics endpoint by putting it behind auth.
@@ -50,7 +37,7 @@ patchesStrategicMerge:
 #- webhookcainjection_patch.yaml
 
 # the following config is for teaching kustomize how to do var substitution
-vars:
+#vars:
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 #- name: CERTIFICATE_NAMESPACE # namespace of the certificate CR
 #  objref:
