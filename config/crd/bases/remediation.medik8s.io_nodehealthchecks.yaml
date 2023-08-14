@@ -356,6 +356,10 @@ spec:
                 description: InFlightRemediations records the timestamp when remediation
                   triggered per node. Deprecated in favour of UnhealthyNodes.
                 type: object
+              lastUpdateTime:
+                description: LastUpdateTime is the last time the status was updated.
+                format: date-time
+                type: string
               observedNodes:
                 description: ObservedNodes specified the number of nodes observed
                   by using the NHC spec.selector

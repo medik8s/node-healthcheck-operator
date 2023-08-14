@@ -111,6 +111,9 @@ spec:
           per node. Deprecated in favour of UnhealthyNodes.
         displayName: In Flight Remediations
         path: inFlightRemediations
+      - description: LastUpdateTime is the last time the status was updated.
+        displayName: Last Update Time
+        path: lastUpdateTime
       - description: ObservedNodes specified the number of nodes observed by using
           the NHC spec.selector
         displayName: Observed Nodes

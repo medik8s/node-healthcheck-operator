@@ -239,6 +239,14 @@ type NodeHealthCheckStatus struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase:reason"
 	Reason string `json:"reason,omitempty"`
+
+	// LastUpdateTime is the last time the status was updated.
+	//
+	//+optional
+	//+kubebuilder:validation:Type=string
+	//+kubebuilder:validation:Format=date-time
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
 }
 
 // UnhealthyNode defines an unhealthy node and its remediations
