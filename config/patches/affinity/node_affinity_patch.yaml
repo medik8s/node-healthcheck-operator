@@ -8,7 +8,7 @@ spec:
       affinity:
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 2
+            - weight: 3 # must be more than master + control-plane weights!
               preference:
                 matchExpressions:
                   - key: node-role.kubernetes.io/infra
