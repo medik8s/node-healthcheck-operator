@@ -335,7 +335,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		if len(remediationCRs) == 0 {
 			// when all CRs are gone, the node is considered healthy
-			resources.UpdateStatusNodeHealthy(node.GetName(), nhc, r.Recorder)
+			if err = resourceManager.HandleHealthyNode(node.GetName(), nhc, r.Recorder); err != nil {
+				log.Error(err, "failed to handle healthy node", "node", node.Name)
+				return result, err
+			}
 			healthyCount++
 			continue
 		}
@@ -550,7 +553,10 @@ func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstru
 		// only update status for orphaned CRs
 		// for all other CRs, the status is updated only when all CRs are gone
 		if orphaned {
-			resources.UpdateStatusNodeHealthy(remediationCR.GetName(), nhc, r.Recorder)
+			if err := rm.HandleHealthyNode(remediationCR.GetName(), nhc, r.Recorder); err != nil {
+				log.Error(err, "failed to handle orphaned node", "node", remediationCR.GetName())
+				return err
+			}
 		}
 	}
 	return nil

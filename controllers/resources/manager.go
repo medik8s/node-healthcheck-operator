@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +38,7 @@ type Manager interface {
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
+	HandleHealthyNode(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) error
 }
 
 type RemediationCRNotOwned struct{ msg string }
@@ -197,10 +199,6 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 		return false, err
 	}
 
-	if err = m.leaseManager.InvalidateLease(m.ctx, remediationCR); err != nil {
-		return true, err
-	}
-
 	return true, nil
 }
 
@@ -265,6 +263,14 @@ func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.
 		}
 	}
 	return false
+}
+
+func (m *manager) HandleHealthyNode(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) error {
+	if err := m.leaseManager.InvalidateLease(m.ctx, nodeName); err != nil {
+		return err
+	}
+	UpdateStatusNodeHealthy(nodeName, nhc, recorder)
+	return nil
 }
 
 func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.OwnerReference, string, error) {
