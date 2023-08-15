@@ -384,7 +384,7 @@ spec:
                       matchExpressions:
                       - key: node-role.kubernetes.io/infra
                         operator: Exists
-                    weight: 2
+                    weight: 3
                   - preference:
                       matchExpressions:
                       - key: node-role.kubernetes.io/master
@@ -494,7 +494,7 @@ spec:
                       matchExpressions:
                       - key: node-role.kubernetes.io/infra
                         operator: Exists
-                    weight: 2
+                    weight: 3
                   - preference:
                       matchExpressions:
                       - key: node-role.kubernetes.io/master
