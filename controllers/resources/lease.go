@@ -46,8 +46,8 @@ type LeaseManager interface {
 	ObtainNodeLease(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (*time.Duration, error)
 	//ManageLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
 	ManageLease(ctx context.Context, remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (time.Duration, error)
-	// InvalidateLease extends or releases a lease based on the CR status, type of remediation and how long the lease is already leased
-	InvalidateLease(ctx context.Context, remediationCR *unstructured.Unstructured) error
+	// InvalidateLease invalidates the lease for the node with the given name
+	InvalidateLease(ctx context.Context, nodeName string) error
 }
 
 type nhcLeaseManager struct {
@@ -143,7 +143,7 @@ func (m *nhcLeaseManager) ManageLease(ctx context.Context, remediationCR *unstru
 	return leaseExpectedDuration, nil
 }
 
-func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, remediationCR *unstructured.Unstructured) error {
+func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, nodeName string) error {
 	// node might be deleted already, so build it manually
 	node := &corev1.Node{
 		TypeMeta: metav1.TypeMeta{
@@ -151,12 +151,12 @@ func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, remediationCR *un
 			APIVersion: corev1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: remediationCR.GetName(),
+			Name: nodeName,
 		},
 	}
 	err := m.commonLeaseManager.InvalidateLease(ctx, node)
 	if err != nil {
-		m.log.Error(err, "failed to invalidate lease", "node name", remediationCR.GetName())
+		m.log.Error(err, "failed to invalidate lease", "node name", nodeName)
 		return err
 	}
 	return nil
