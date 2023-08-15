@@ -851,7 +851,7 @@ func getCondition(remediationCR *unstructured.Unstructured, conditionType string
 						Status:             metav1.ConditionStatus(condStatus),
 						LastTransitionTime: metav1.Time{Time: condLastTransition},
 					}
-					log.Info("found succeeded condition", "status", cond.Status, "reason", cond.Reason, "message", cond.Message, "lastTransition", cond.LastTransitionTime.UTC().Format(time.RFC3339))
+					log.Info("found condition", "type", cond.Type, "status", cond.Status, "reason", cond.Reason, "message", cond.Message, "lastTransition", cond.LastTransitionTime.UTC().Format(time.RFC3339))
 					return cond
 				}
 			}
