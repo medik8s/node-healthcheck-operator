@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -219,7 +220,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if finalRequeueAfter != nil {
 			result.RequeueAfter = *finalRequeueAfter
 		}
-		patchErr := r.patchStatus(nhc, nhcOrig)
+		patchErr := r.patchStatus(nhc, nhcOrig, ctx)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
 			// check if we have an error from the rest of the code already
@@ -739,7 +740,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 	return len(controlPlaneRemediationCRs) == 0, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck, ctx context.Context) error {
 
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
@@ -773,7 +774,33 @@ func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha
 		log.Info("Patching NHC status", "new status", nhc.Status, "patch", string(patchBytes))
 	}
 
-	return r.Client.Status().Patch(context.Background(), nhc, mergeFrom)
+	// only update lastUpdate when there were other changes
+	now := metav1.Now()
+	nhc.Status.LastUpdateTime = &now
+
+	if err := r.Client.Status().Patch(ctx, nhc, mergeFrom); err != nil {
+		return err
+	}
+
+	// Wait until the cache is updated in order to prevent reading a stale status in the next reconcile
+	// and making wrong decisions based on it. The chance to run into this is very low, because we use RequeueAfter
+	// with a minimum delay of 1 second everywhere instead of Requeue: true, but this needs to be fixed because
+	// it bypasses the controller's rate limiter!
+	err := wait.PollWithContext(ctx, 200*time.Millisecond, 5*time.Second, func(ctx context.Context) (bool, error) {
+		tmpNhc := &remediationv1alpha1.NodeHealthCheck{}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(nhc), tmpNhc); err != nil {
+			if apierrors.IsNotFound(err) {
+				// nothing we can do anymore
+				return true, nil
+			}
+			return false, nil
+		}
+		return tmpNhc.Status.LastUpdateTime != nil && (tmpNhc.Status.LastUpdateTime.Equal(nhc.Status.LastUpdateTime) || tmpNhc.Status.LastUpdateTime.After(nhc.Status.LastUpdateTime.Time)), nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "failed to wait for updated cache after status patch")
+	}
+	return nil
 }
 
 func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstructured.Unstructured) (bool, *time.Duration) {
