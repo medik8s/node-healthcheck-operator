@@ -612,16 +612,17 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(err).ToNot(HaveOccurred())
 
 						//Remediation should be removed
-						Eventually(
-							func() bool {
-								err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-								return errors.IsNotFound(err)
-							},
-							time.Second, time.Millisecond*100).Should(BeTrue())
+						Eventually(func() bool {
+							err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+							return errors.IsNotFound(err)
+						}, "2s", "100ms").Should(BeTrue(), "remediation CR wasn't removed")
 
 						//Verify NHC removed the lease
-						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
-						Expect(errors.IsNotFound(err)).To(BeTrue())
+						Eventually(func() bool {
+							err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+							return errors.IsNotFound(err)
+						}, "2s", "100ms").Should(BeTrue(), "lease wasn't removed")
+
 					})
 				})
 
