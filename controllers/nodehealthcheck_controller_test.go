@@ -497,12 +497,8 @@ var _ = Describe("Node Health Check CR", func() {
 					By("faking time and triggering another reconcile")
 					afterTimeout := time.Now().Add(remediationCRAlertTimeout).Add(2 * time.Minute)
 					fakeTime = &afterTimeout
-					labels := underTest.Labels
-					if labels == nil {
-						labels = make(map[string]string)
-					}
-					labels["trigger"] = "now"
-					underTest.Labels = labels
+					newMinHealthy := intstr.FromString("52%")
+					underTest.Spec.MinHealthy = &newMinHealthy
 					Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
 					time.Sleep(2 * time.Second)
 

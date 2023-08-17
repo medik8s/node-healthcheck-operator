@@ -98,7 +98,7 @@ type NodeHealthCheckReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
-		For(&remediationv1alpha1.NodeHealthCheck{}).
+		For(&remediationv1alpha1.NodeHealthCheck{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
 			&source.Kind{Type: &v1.Node{}},
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger())),
