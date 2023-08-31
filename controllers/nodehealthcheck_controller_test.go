@@ -620,6 +620,53 @@ var _ = Describe("Node Health Check CR", func() {
 						}, "2s", "100ms").Should(BeTrue(), "lease wasn't removed")
 
 					})
+
+					It("node lease not owned by us isn't removed, but status is updated (invalidate lease error is ignored)", func() {
+						cr := newRemediationCR(unhealthyNodeName, underTest)
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						Expect(err).ToNot(HaveOccurred())
+						//Verify lease exist
+						lease := &coordv1.Lease{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+						Expect(err).ToNot(HaveOccurred())
+
+						// change lease owner
+						newLeaseOwner := "someone-else"
+						lease.Spec.HolderIdentity = pointer.String(newLeaseOwner)
+						Expect(k8sClient.Update(context.Background(), lease)).To(Succeed(), "failed to update lease owner")
+
+						//Mock node becoming healthy
+						node := &v1.Node{}
+						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)
+						Expect(err).ToNot(HaveOccurred())
+						for i, c := range node.Status.Conditions {
+							if c.Type == v1.NodeReady {
+								node.Status.Conditions[i].Status = v1.ConditionTrue
+							}
+						}
+						err = k8sClient.Status().Update(context.Background(), node)
+						Expect(err).ToNot(HaveOccurred())
+
+						//Remediation should be removed
+						Eventually(func() bool {
+							err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+							return errors.IsNotFound(err)
+						}, "2s", "100ms").Should(BeTrue(), "remediation CR wasn't removed")
+
+						// Status should be updated even though lease isn't owned by us anymore
+						Eventually(func(g Gomega) {
+							g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+							g.Expect(underTest.Status.InFlightRemediations).To(BeEmpty())
+							g.Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
+						}, "2s", "100ms").Should(Succeed(), "status update failed")
+
+						//Verify NHC didn't touch the lease
+						Consistently(func(g Gomega) {
+							g.Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)).To(Succeed(), "failed to get lease")
+							g.Expect(*lease.Spec.HolderIdentity).To(Equal(newLeaseOwner))
+						}, "2s", "100ms").Should(Succeed(), "lease was touched even though it's not owned by us")
+
+					})
 				})
 
 				When("an unhealthy node lease is already taken", func() {

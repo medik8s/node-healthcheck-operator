@@ -156,6 +156,10 @@ func (m *nhcLeaseManager) InvalidateLease(ctx context.Context, nodeName string) 
 	}
 	err := m.commonLeaseManager.InvalidateLease(ctx, node)
 	if err != nil {
+		if _, ok := err.(lease.AlreadyHeldError); ok {
+			// lease exists but isn't owned by us, can be ignored
+			return nil
+		}
 		m.log.Error(err, "failed to invalidate lease", "node name", nodeName)
 		return err
 	}
