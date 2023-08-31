@@ -45,13 +45,13 @@ type manager struct {
 	log            logr.Logger
 }
 
-// AlreadyHeldError is returned in case the lease that is requested is already held by a different holder
+// AlreadyHeldError is returned in case the lease is already held by a different holder
 type AlreadyHeldError struct {
 	holderIdentity string
 }
 
 func (e AlreadyHeldError) Error() string {
-	return fmt.Sprintf("can't update valid lease held by different owner: %s", e.holderIdentity)
+	return fmt.Sprintf("can't update or invalidate the lease because it is held by different owner: %s", e.holderIdentity)
 }
 
 func (l *manager) RequestLease(ctx context.Context, obj client.Object, leaseDuration time.Duration) error {
@@ -226,6 +226,9 @@ func (l *manager) invalidateLease(ctx context.Context, obj client.Object) error 
 			return nil
 		}
 		return err
+	}
+	if lease.Spec.HolderIdentity != nil && l.holderIdentity != *lease.Spec.HolderIdentity {
+		return AlreadyHeldError{*lease.Spec.HolderIdentity}
 	}
 	if err := l.Client.Delete(ctx, lease); err != nil {
 		log.Error(err, "failed to delete lease to be invalidated")
