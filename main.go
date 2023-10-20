@@ -17,9 +17,11 @@ limitations under the License.
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	// +kubebuilder:scaffold:imports
@@ -51,6 +53,12 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
 
+const (
+	WebhookCertDir  = "/apiserver.local.config/certificates"
+	WebhookCertName = "apiserver.crt"
+	WebhookKeyName  = "apiserver.key"
+)
+
 var (
 	scheme   = pkgruntime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -72,11 +80,13 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var enableHTTP2 bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If HTTP/2 should be enabled for the metrics and webhook servers.")
 
 	opts := zap.Options{
 		Development: true,
@@ -90,7 +100,9 @@ func main() {
 	printVersion()
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		// HEADS UP: once controller runtime is updated and this changes to metrics.Options{},
+		// and in case you configure TLS / SecureServing, disable HTTP/2 in it for mitigating related CVEs!
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
@@ -101,6 +113,8 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	configureWebhookServer(mgr, enableHTTP2)
 
 	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
 	if err != nil {
@@ -193,4 +207,39 @@ func printVersion() {
 	setupLog.Info(fmt.Sprintf("Operator Version: %s", version.Version))
 	setupLog.Info(fmt.Sprintf("Git Commit: %s", version.GitCommit))
 	setupLog.Info(fmt.Sprintf("Build Date: %s", version.BuildDate))
+}
+
+func configureWebhookServer(mgr ctrl.Manager, enableHTTP2 bool) {
+
+	server := mgr.GetWebhookServer()
+
+	// check for OLM injected certs
+	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
+	certsInjected := true
+	for _, fname := range certs {
+		if _, err := os.Stat(fname); err != nil {
+			certsInjected = false
+			break
+		}
+	}
+	if certsInjected {
+		server.CertDir = WebhookCertDir
+		server.CertName = WebhookCertName
+		server.KeyName = WebhookKeyName
+	} else {
+		setupLog.Info("OLM injected certs for webhooks not found")
+	}
+
+	// disable http/2 for mitigating relevant CVEs
+	if !enableHTTP2 {
+		server.TLSOpts = append(server.TLSOpts,
+			func(c *tls.Config) {
+				c.NextProtos = []string{"http/1.1"}
+			},
+		)
+		setupLog.Info("HTTP/2 for webhooks disabled")
+	} else {
+		setupLog.Info("HTTP/2 for webhooks enabled")
+	}
+
 }
