@@ -18,8 +18,6 @@ package v1alpha1
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"time"
 
@@ -33,10 +31,6 @@ import (
 )
 
 const (
-	WebhookCertDir  = "/apiserver.local.config/certificates"
-	WebhookCertName = "apiserver.crt"
-	WebhookKeyName  = "apiserver.key"
-
 	OngoingRemediationError   = "prohibited due to running remediation"
 	minHealthyError           = "MinHealthy must not be negative"
 	invalidSelectorError      = "Invalid selector"
@@ -52,25 +46,6 @@ const (
 var nodehealthchecklog = logf.Log.WithName("nodehealthcheck-resource")
 
 func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
-
-	// check if OLM injected certs
-	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
-	certsInjected := true
-	for _, fname := range certs {
-		if _, err := os.Stat(fname); err != nil {
-			certsInjected = false
-			break
-		}
-	}
-	if certsInjected {
-		server := mgr.GetWebhookServer()
-		server.CertDir = WebhookCertDir
-		server.CertName = WebhookCertName
-		server.KeyName = WebhookKeyName
-	} else {
-		nodehealthchecklog.Info("OLM injected certs for webhooks not found")
-	}
-
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(nhc).
 		Complete()
