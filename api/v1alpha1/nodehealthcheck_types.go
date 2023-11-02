@@ -120,13 +120,13 @@ type UnhealthyCondition struct {
 type NodeHealthCheckStatus struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="observedNodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:observedNodes"
 	//ObservedNodes specified the number of nodes observed by using the NHC spec.selector
-	//+optional
-	ObservedNodes int `json:"observedNodes,omitempty"`
+	// +kubebuilder:default:=0
+	ObservedNodes int `json:"observedNodes"`
 
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="healthynodes",xDescriptors="urn:alm:descriptor:com.tectonic.ui:healthyNodes"
 	//HealthyNodes specified the number of healthy nodes observed
-	//+optional
-	HealthyNodes int `json:"healthyNodes,omitempty"`
+	// +kubebuilder:default:=0
+	HealthyNodes int `json:"healthyNodes"`
 
 	// +operator-sdk:csv:customresourcedefinitions:type=status,displayName="inFlightRemediations",xDescriptors="urn:alm:descriptor:com.tectonic.ui:inFlightRemediations"
 	//InFlightRemediations records the timestamp when remediation triggered per node

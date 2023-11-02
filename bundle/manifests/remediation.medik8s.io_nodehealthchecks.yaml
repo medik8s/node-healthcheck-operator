@@ -262,6 +262,7 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               healthyNodes:
+                default: 0
                 description: HealthyNodes specified the number of healthy nodes observed
                 type: integer
               inFlightRemediations:
@@ -272,6 +273,7 @@ spec:
                   triggered per node
                 type: object
               observedNodes:
+                default: 0
                 description: ObservedNodes specified the number of nodes observed
                   by using the NHC spec.selector
                 type: integer
@@ -284,6 +286,9 @@ spec:
               reason:
                 description: Reason explains the current phase in more detail.
                 type: string
+            required:
+            - healthyNodes
+            - observedNodes
             type: object
         type: object
     served: true
