@@ -20,8 +20,7 @@ import (
 )
 
 var (
-	templateSuffix       = "Template"
-	holderIdentityPrefix = "NodeHealthCheck"
+	templateSuffix = "Template"
 	//LeaseBuffer is used to make sure we have a bit of buffer before extending the lease, so it won't be taken by another component
 	LeaseBuffer         = time.Minute
 	RequeueIfLeaseTaken = time.Minute
@@ -54,9 +53,8 @@ type nhcLeaseManager struct {
 	log                logr.Logger
 }
 
-func NewLeaseManager(client client.Client, nhc *remediationv1alpha1.NodeHealthCheck, log logr.Logger) (LeaseManager, error) {
-	holderIdentity := fmt.Sprintf("%s-%s", holderIdentityPrefix, nhc.GetName())
-	newManager, err := lease.NewManager(client, holderIdentity)
+func NewLeaseManager(client client.Client, holderIdent string, log logr.Logger) (LeaseManager, error) {
+	newManager, err := lease.NewManager(client, holderIdent)
 	if err != nil {
 		log.Error(err, "couldn't initialize lease manager")
 		return nil, err
@@ -64,7 +62,7 @@ func NewLeaseManager(client client.Client, nhc *remediationv1alpha1.NodeHealthCh
 	return &nhcLeaseManager{
 		client:             client,
 		commonLeaseManager: newManager,
-		holderIdentity:     holderIdentity,
+		holderIdentity:     holderIdent,
 		log:                log.WithName("nhc lease manager"),
 	}, nil
 }

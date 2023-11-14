@@ -157,7 +157,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	leaseManager, err := resources.NewLeaseManager(r.Client, nhc, log)
+	leaseHolderIdent := fmt.Sprintf("NodeHealthCheck-%s", nhc.GetName())
+	leaseManager, err := resources.NewLeaseManager(r.Client, leaseHolderIdent, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

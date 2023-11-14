@@ -172,7 +172,12 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	log.Info("Reconciling MHC in NodeHealthCheck operator!")
 
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, true)
+	leaseHolderIdent := fmt.Sprintf("MachineHealthCheck-%s", mhc.GetName())
+	leaseManager, err := resources.NewLeaseManager(r.Client, leaseHolderIdent, log)
+	if err != nil {
+		return result, err
+	}
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, true, leaseManager)
 
 	// always check if we need to patch status before we exit Reconcile
 	mhcOrig := mhc.DeepCopy()
