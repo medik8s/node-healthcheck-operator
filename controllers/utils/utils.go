@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	v1 "k8s.io/api/core/v1"
 	"os"
 	"time"
 
@@ -60,4 +61,15 @@ func MinRequeueDuration(old, new *time.Duration) *time.Duration {
 		return new
 	}
 	return old
+}
+
+func GetAllRemediationTemplates(nhc *v1alpha1.NodeHealthCheck) []*v1.ObjectReference {
+	refs := make([]*v1.ObjectReference, 1)
+	if nhc.Spec.RemediationTemplate != nil {
+		refs = append(refs, nhc.Spec.RemediationTemplate)
+	}
+	for _, rem := range nhc.Spec.EscalatingRemediations {
+		refs = append(refs, &rem.RemediationTemplate)
+	}
+	return refs
 }

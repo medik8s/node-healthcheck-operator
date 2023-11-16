@@ -326,7 +326,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	healthyCount := 0
 	for _, node := range notMatchingNodes {
 		log.Info("handling healthy node", "node", node.GetName())
-		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+		remediationCRs, err := resourceManager.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
 			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
 		})
 		if err != nil {
@@ -413,7 +413,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 
 		// check if we need to alert about a very old remediation CR
-		remediationCRs, err := resourceManager.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+		remediationCRs, err := resourceManager.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
 			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
 		})
 		for _, remediationCR := range remediationCRs {
@@ -481,7 +481,7 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []
 }
 
 func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, allNodes []v1.Node, rm resources.Manager, log logr.Logger) error {
-	orphanedRemediationCRs, err := rm.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+	orphanedRemediationCRs, err := rm.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
 		// skip already deleted CRs
 		if cr.GetDeletionTimestamp() != nil {
 			return false
@@ -730,7 +730,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 	}
 
 	// check all remediation CRs. If there already is one for another control plane node, skip remediation
-	controlPlaneRemediationCRs, err := rm.ListRemediationCRs(nhc, func(cr unstructured.Unstructured) bool {
+	controlPlaneRemediationCRs, err := rm.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
 		_, isControlPlane := cr.GetLabels()[RemediationControlPlaneLabelKey]
 		return isControlPlane && cr.GetName() != node.GetName()
 	})
