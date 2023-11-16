@@ -32,11 +32,11 @@ type Manager interface {
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
-	GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
-	CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error)
-	DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, error)
+	GenerateRemediationCR(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
+	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, *time.Duration, error)
+	DeleteRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
-	ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
+	ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 	HandleHealthyNode(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) error
 }
@@ -65,7 +65,7 @@ func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshi
 	}
 }
 
-func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+func (m *manager) GenerateRemediationCR(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 
 	remediationCR := m.GenerateRemediationCRBase(template.GroupVersionKind())
 
@@ -82,12 +82,13 @@ func (m *manager) GenerateRemediationCR(node *corev1.Node, nhc *remediationv1alp
 	remediationCR.SetCreationTimestamp(metav1.Now())
 
 	owners := make([]metav1.OwnerReference, 0)
-	if nhc != nil {
+	if owner != nil {
+		apiVersion, kind := owner.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
 		owners = append(owners, metav1.OwnerReference{
-			APIVersion:         nhc.APIVersion,
-			Kind:               nhc.Kind,
-			Name:               nhc.Name,
-			UID:                nhc.UID,
+			APIVersion:         apiVersion,
+			Kind:               kind,
+			Name:               owner.GetName(),
+			UID:                owner.GetUID(),
 			Controller:         pointer.Bool(false),
 			BlockOwnerDeletion: nil,
 		})
@@ -140,15 +141,15 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 }
 
 // CreateRemediationCR creates a remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease and an error
-func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration, error) {
+func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, *time.Duration, error) {
 	// check if CR already exists
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
-		if !IsOwner(remediationCR, nhc) {
+		if !IsOwner(remediationCR, owner) {
 			m.log.Info("external remediation CR already exists, but it's not owned by us", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace(), "owners", remediationCR.GetOwnerReferences())
 			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
-		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, nhc)
+		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, owner)
 		return false, &duration, err
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
@@ -158,7 +159,7 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 	m.log.Info("Attempting to obtain Node Lease",
 		"Node name", remediationCR.GetName())
 
-	requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, nhc)
+	requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, owner)
 	if err != nil {
 		return false, requeue, err
 	}
@@ -178,7 +179,7 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 
 }
 
-func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) (isDeleted bool, errResult error) {
+func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (isDeleted bool, errResult error) {
 	err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR)
 	if err != nil && !apierrors.IsNotFound(err) {
 		// something went wrong
@@ -190,7 +191,7 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	}
 
 	// also check if this is our CR
-	if !IsOwner(remediationCR, nhc) {
+	if !IsOwner(remediationCR, owner) {
 		return false, nil
 	}
 
@@ -206,17 +207,11 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 	return m.Update(m.ctx, remediationCR)
 }
 
-func (m *manager) ListRemediationCRs(nhc *remediationv1alpha1.NodeHealthCheck, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
+func (m *manager) ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
 	// gather all GVKs
-	gvks := make([]schema.GroupVersionKind, 0)
-	if nhc.Spec.RemediationTemplate != nil {
-		// the classic one
-		gvks = append(gvks, nhc.Spec.RemediationTemplate.GroupVersionKind())
-	} else {
-		// the escalating ones
-		for _, escRem := range nhc.Spec.EscalatingRemediations {
-			gvks = append(gvks, escRem.RemediationTemplate.GroupVersionKind())
-		}
+	gvks := make([]schema.GroupVersionKind, len(remediationTemplates))
+	for _, template := range remediationTemplates {
+		gvks = append(gvks, template.GroupVersionKind())
 	}
 
 	// get CRs
@@ -256,9 +251,10 @@ func (m *manager) GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, e
 	return nodes.Items, err
 }
 
-func IsOwner(remediationCR *unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck) bool {
-	for _, owner := range remediationCR.GetOwnerReferences() {
-		if owner.Kind == nhc.Kind && owner.APIVersion == nhc.APIVersion && owner.Name == nhc.Name {
+func IsOwner(remediationCR *unstructured.Unstructured, owner client.Object) bool {
+	apiVersion, kind := owner.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
+	for _, ownerRef := range remediationCR.GetOwnerReferences() {
+		if ownerRef.Kind == kind && ownerRef.APIVersion == apiVersion && ownerRef.Name == owner.GetName() {
 			return true
 		}
 	}
