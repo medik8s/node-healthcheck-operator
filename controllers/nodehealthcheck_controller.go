@@ -601,8 +601,10 @@ func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1a
 		remediationCR.SetLabels(labels)
 	}
 
+	currentRemediationDuration, previousRemediationsDuration := utils.GetRemediationDuration(nhc, remediationCR)
+
 	// create remediation CR
-	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc)
+	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc, currentRemediationDuration, previousRemediationsDuration)
 
 	if err != nil {
 		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained

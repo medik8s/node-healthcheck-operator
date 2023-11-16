@@ -33,7 +33,7 @@ type Manager interface {
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCR(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
-	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, *time.Duration, error)
+	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
@@ -141,7 +141,7 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 }
 
 // CreateRemediationCR creates a remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease and an error
-func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, *time.Duration, error) {
+func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, error) {
 	// check if CR already exists
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
 		if !IsOwner(remediationCR, owner) {
@@ -149,7 +149,7 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
-		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, owner)
+		duration, err := m.leaseManager.ManageLease(m.ctx, remediationCR, currentRemediationDuration, previousRemediationsDuration)
 		return false, &duration, err
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
@@ -159,7 +159,7 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 	m.log.Info("Attempting to obtain Node Lease",
 		"Node name", remediationCR.GetName())
 
-	requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, owner)
+	requeue, err := m.leaseManager.ObtainNodeLease(remediationCR, currentRemediationDuration)
 	if err != nil {
 		return false, requeue, err
 	}
@@ -210,8 +210,8 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 func (m *manager) ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
 	// gather all GVKs
 	gvks := make([]schema.GroupVersionKind, len(remediationTemplates))
-	for _, template := range remediationTemplates {
-		gvks = append(gvks, template.GroupVersionKind())
+	for i, template := range remediationTemplates {
+		gvks[i] = template.GroupVersionKind()
 	}
 
 	// get CRs
