@@ -200,7 +200,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// For now we only upport MHCs with RemediationTemplate set
+	// For now we only support MHCs with RemediationTemplate set
 	if mhc.Spec.RemediationTemplate == nil {
 		log.Error(fmt.Errorf("empty RemediationTemplate"), "NodeHealthCheck only supports MachineHealthChecks with a RemediationTemplate")
 		// TODO event, status...?

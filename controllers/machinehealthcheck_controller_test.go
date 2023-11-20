@@ -439,7 +439,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 			},
 		},
 
-		{ //When remediationTemplate is set and node transitions to unhealthy, and a a Remediation Request already exist
+		{ //When remediationTemplate is set and node transitions to unhealthy, and Remediation Request already exist
 			name:                "external remediation is in process",
 			machine:             machineWithNodeUnHealthy,
 			node:                nodeUnHealthy,
@@ -1095,7 +1095,8 @@ func TestGetTargetsFromMHC(t *testing.T) {
 
 		t.Run(tc.testCase, func(t *testing.T) {
 			reconciler := newFakeReconciler(objects...)
-			rm := resources.NewManager(reconciler, ctx, reconciler.Log, true)
+			leaseManager, _ := resources.NewLeaseManager(reconciler.Client, "test", reconciler.Log)
+			rm := resources.NewManager(reconciler, ctx, reconciler.Log, true, leaseManager)
 			got, err := rm.GetMHCTargets(tc.mhc)
 			if !equality.Semantic.DeepEqual(got, tc.expectedTargets) {
 				t.Errorf("Case: %v. Got: %+v, expected: %+v", tc.testCase, got, tc.expectedTargets)
@@ -1993,7 +1994,8 @@ func TestHealthCheckTargets(t *testing.T) {
 	for _, tc := range testCases {
 		recorder := record.NewFakeRecorder(2)
 		r := newFakeReconcilerWithCustomRecorder(recorder)
-		rm := resources.NewManager(r, ctx, r.Log, true)
+		leaseManager, _ := resources.NewLeaseManager(r.Client, "test", r.Log)
+		rm := resources.NewManager(r, ctx, r.Log, true, leaseManager)
 		t.Run(tc.testCase, func(t *testing.T) {
 			currentHealhty, needRemediationTargets, _, errList := r.checkHealth(tc.targets, rm)
 			if len(currentHealhty) != tc.currentHealthy {
@@ -2377,7 +2379,7 @@ func assertBaseReconcile(t *testing.T, tc testCase, ctx context.Context, r *Mach
 		if !tc.expected.error {
 			errorExpectation = "no"
 		}
-		t.Errorf("Test case: %s. Expected: %s error, got: %v", tc.node.Name, errorExpectation, err)
+		t.Errorf("Test case: %s. Expected: %s error, got: %v", tc.name, errorExpectation, err)
 	}
 
 	if result != tc.expected.result {
@@ -2385,7 +2387,7 @@ func assertBaseReconcile(t *testing.T, tc testCase, ctx context.Context, r *Mach
 			before := tc.expected.result.RequeueAfter
 			after := tc.expected.result.RequeueAfter + time.Second
 			if after < result.RequeueAfter || before > result.RequeueAfter {
-				t.Errorf("Test case: %s. Expected RequeueAfter between: %v and %v, got: %v", tc.node.Name, before, after, result)
+				t.Errorf("Test case: %s. Expected RequeueAfter between: %v and %v, got: %v", tc.name, before, after, result)
 			}
 		} else {
 			t.Errorf("Test case: %s. Expected: %v, got: %v", tc.name, tc.expected.result, result)

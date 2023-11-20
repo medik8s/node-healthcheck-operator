@@ -290,7 +290,8 @@ var _ = Describe("Node Health Check CR", func() {
 				It("create a remediation CR for each unhealthy node and updates status", func() {
 
 					By("checking CR isn't created when unhealthy duration didn't expire yet")
-					cr := newRemediationCR(unhealthyNodeName, underTest)
+
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 					// first call should fail, because the node gets unready in a few seconds only
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -391,7 +392,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("skips remediation - CR is not created, status updated correctly", func() {
-					cr := newRemediationCR(unhealthyNodeName, underTest)
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -412,9 +413,9 @@ var _ = Describe("Node Health Check CR", func() {
 			When("few nodes become healthy", func() {
 				BeforeEach(func() {
 					setupObjects(1, 2, true)
-					remediationCR := newRemediationCR("healthy-worker-node-2", underTest)
+					remediationCR := newRemediationCRForNHC("healthy-worker-node-2", underTest)
 					remediationCR.SetFinalizers([]string{"dummy"})
-					remediationCROther := newRemediationCR("healthy-worker-node-1", underTest)
+					remediationCROther := newRemediationCRForNHC("healthy-worker-node-1", underTest)
 					refs := remediationCROther.GetOwnerReferences()
 					refs[0].Name = "other"
 					remediationCROther.SetOwnerReferences(refs)
@@ -423,12 +424,12 @@ var _ = Describe("Node Health Check CR", func() {
 
 				It("deletes an existing remediation CR and updates status", func() {
 					By("verifying CR owned by other NHC isn't deleted")
-					cr := newRemediationCR("healthy-worker-node-1", underTest)
+					cr := newRemediationCRForNHC("healthy-worker-node-1", underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 
 					By("verifying CR owned by us has deletion timestamp")
-					cr = newRemediationCR("healthy-worker-node-2", underTest)
+					cr = newRemediationCRForNHC("healthy-worker-node-2", underTest)
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 					Expect(cr.GetDeletionTimestamp()).ToNot(BeNil())
 
@@ -450,7 +451,7 @@ var _ = Describe("Node Health Check CR", func() {
 					}, "2s", "100s").Should(Succeed())
 
 					By("verifying next node remediated now")
-					cr = newRemediationCR(unhealthyNodeName, underTest)
+					cr = newRemediationCRForNHC(unhealthyNodeName, underTest)
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 					}, "2s", "100ms").Should(Succeed())
@@ -494,7 +495,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(k8sClient.Update(context.Background(), underTest)).To(Succeed())
 					time.Sleep(2 * time.Second)
 
-					cr := newRemediationCR(unhealthyNodeName, underTest)
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(Equal("flagon"))
@@ -503,7 +504,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("a remediation cr not owned by current NHC exists", func() {
 				BeforeEach(func() {
-					cr := newRemediationCR(unhealthyNodeName, underTest)
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 					owners := cr.GetOwnerReferences()
 					owners[0].Name = "not-me"
 					cr.SetOwnerReferences(owners)
@@ -579,7 +580,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 				When("an unhealthy node becomes healthy", func() {
 					It("node lease is removed", func() {
-						cr := newRemediationCR(unhealthyNodeName, underTest)
+						cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 						Expect(err).ToNot(HaveOccurred())
 						//Verify lease exist
@@ -614,7 +615,7 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 
 					It("node lease not owned by us isn't removed, but status is updated (invalidate lease error is ignored)", func() {
-						cr := newRemediationCR(unhealthyNodeName, underTest)
+						cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 						Expect(err).ToNot(HaveOccurred())
 						//Verify lease exist
@@ -673,7 +674,7 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 
 					It("a remediation CR isn't created until lease is obtained", func() {
-						cr := newRemediationCR(unhealthyNodeName, underTest)
+						cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 						Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -787,7 +788,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("it should try one remediation after another", func() {
-				cr := newRemediationCR(unhealthyNodeName, underTest)
+				cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 				// first call should fail, because the node gets unready in a few seconds only
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
@@ -832,7 +833,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 
 				// get new CR
-				cr = newRemediationCRForSecondRemediation(unhealthyNodeName, underTest)
+				cr = newRemediationCRForNHCSecondRemediation(unhealthyNodeName, underTest)
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 
 				Expect(*underTest.Status.HealthyNodes).To(Equal(2))
@@ -923,7 +924,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("it should timeout early", func() {
-				cr := newRemediationCR(unhealthyNodeName, underTest)
+				cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
@@ -981,7 +982,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 			markCR := func() *unstructured.Unstructured {
 				By("marking CR as succeeded and permanent node deletion expected")
-				cr := newRemediationCR("unhealthy-worker-node-1", underTest)
+				cr := newRemediationCRForNHC("unhealthy-worker-node-1", underTest)
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 				conditions := []interface{}{
 					map[string]interface{}{
@@ -1121,7 +1122,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(remediatedUnhealthyCPNodeName).ToNot(BeEmpty())
 
 					By("simulating remediator by putting a finalizer on the cp remediation CR")
-					unhealthyCPNodeCR := newRemediationCR(remediatedUnhealthyCPNodeName, underTest)
+					unhealthyCPNodeCR := newRemediationCRForNHC(remediatedUnhealthyCPNodeName, underTest)
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(unhealthyCPNodeCR), unhealthyCPNodeCR)).To(Succeed())
 					unhealthyCPNodeCR.SetFinalizers([]string{"dummy"})
 					Expect(k8sClient.Update(context.Background(), unhealthyCPNodeCR)).To(Succeed())
@@ -1242,7 +1243,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("skips remediation and updates status", func() {
-				cr := newRemediationCR(unhealthyNodeName, underTest)
+				cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -1267,7 +1268,7 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 
 			It("doesn't not remediate but requeues reconciliation and updates status", func() {
-				cr := newRemediationCR(unhealthyNodeName, underTest)
+				cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 				err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
@@ -1328,7 +1329,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("should set owner ref to the machine", func() {
-					cr := newRemediationCR(unhealthyNodeName, underTest)
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 					Expect(cr.GetOwnerReferences()).To(
 						ContainElement(
