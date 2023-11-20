@@ -312,7 +312,7 @@ func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target, r
 		}
 
 		// delete remediation CRs for healthy target
-		remediationCRs, err := rm.ListRemediationCRs(t.MHC.Spec.RemediationTemplate, nil, func(cr unstructured.Unstructured) bool {
+		remediationCRs, err := rm.ListRemediationCRs(utils.GetAllRemediationTemplates(t.MHC), func(cr unstructured.Unstructured) bool {
 			return cr.GetName() == t.Machine.GetName()
 		})
 		if err != nil {
@@ -425,7 +425,7 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 	// TODO add control plane label
 
 	// create remediation CR
-	_, err = rm.CreateRemediationCR(remediationCR, target.MHC)
+	_, _, err = rm.CreateRemediationCR(remediationCR, target.MHC, utils.DefaultRemediationDuration, 0)
 	// TODO set remediation request available condition
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
