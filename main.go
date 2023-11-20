@@ -62,12 +62,6 @@ const (
 	WebhookKeyName  = "apiserver.key"
 )
 
-const (
-	WebhookCertDir  = "/apiserver.local.config/certificates"
-	WebhookCertName = "apiserver.crt"
-	WebhookKeyName  = "apiserver.key"
-)
-
 var (
 	scheme   = pkgruntime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -116,14 +110,12 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
-		WebhookServer:          getWebhookServer(setupLog),
+		WebhookServer:          getWebhookServer(enableHTTP2, setupLog),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
-	configureWebhookServer(mgr, enableHTTP2)
 
 	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
 	if err != nil {
@@ -217,7 +209,7 @@ func main() {
 	}
 }
 
-func getWebhookServer(log logr.Logger) webhook.Server {
+func getWebhookServer(enableHTTP2 bool, log logr.Logger) webhook.Server {
 
 	options := webhook.Options{
 		Port: 9443,
@@ -240,6 +232,18 @@ func getWebhookServer(log logr.Logger) webhook.Server {
 		log.Info("OLM injected certs for webhooks not found")
 	}
 
+	// disable http/2 for mitigating relevant CVEs unless configured otherwise
+	if !enableHTTP2 {
+		options.TLSOpts = []func(*tls.Config){
+			func(c *tls.Config) {
+				c.NextProtos = []string{"http/1.1"}
+			},
+		}
+		setupLog.Info("HTTP/2 for webhooks disabled")
+	} else {
+		setupLog.Info("HTTP/2 for webhooks enabled")
+	}
+
 	return webhook.NewServer(options)
 }
 
@@ -249,39 +253,4 @@ func printVersion() {
 	setupLog.Info(fmt.Sprintf("Operator Version: %s", version.Version))
 	setupLog.Info(fmt.Sprintf("Git Commit: %s", version.GitCommit))
 	setupLog.Info(fmt.Sprintf("Build Date: %s", version.BuildDate))
-}
-
-func configureWebhookServer(mgr ctrl.Manager, enableHTTP2 bool) {
-
-	server := mgr.GetWebhookServer()
-
-	// check for OLM injected certs
-	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
-	certsInjected := true
-	for _, fname := range certs {
-		if _, err := os.Stat(fname); err != nil {
-			certsInjected = false
-			break
-		}
-	}
-	if certsInjected {
-		server.CertDir = WebhookCertDir
-		server.CertName = WebhookCertName
-		server.KeyName = WebhookKeyName
-	} else {
-		setupLog.Info("OLM injected certs for webhooks not found")
-	}
-
-	// disable http/2 for mitigating relevant CVEs
-	if !enableHTTP2 {
-		server.TLSOpts = append(server.TLSOpts,
-			func(c *tls.Config) {
-				c.NextProtos = []string{"http/1.1"}
-			},
-		)
-		setupLog.Info("HTTP/2 for webhooks disabled")
-	} else {
-		setupLog.Info("HTTP/2 for webhooks enabled")
-	}
-
 }
