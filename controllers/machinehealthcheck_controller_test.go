@@ -1957,6 +1957,7 @@ func TestHealthCheckTargets(t *testing.T) {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test",
 							Namespace: MachineNamespace,
+							UID:       "1234",
 						},
 						TypeMeta: metav1.TypeMeta{
 							Kind: "MachineHealthCheck",
@@ -1994,10 +1995,8 @@ func TestHealthCheckTargets(t *testing.T) {
 	for _, tc := range testCases {
 		recorder := record.NewFakeRecorder(2)
 		r := newFakeReconcilerWithCustomRecorder(recorder)
-		leaseManager, _ := resources.NewLeaseManager(r.Client, "test", r.Log)
-		rm := resources.NewManager(r, ctx, r.Log, true, leaseManager)
 		t.Run(tc.testCase, func(t *testing.T) {
-			currentHealhty, needRemediationTargets, _, errList := r.checkHealth(tc.targets, rm)
+			currentHealhty, needRemediationTargets, _, errList := r.checkHealth(tc.targets)
 			if len(currentHealhty) != tc.currentHealthy {
 				t.Errorf("Case: %v. Got: %v, expected: %v", tc.testCase, currentHealhty, tc.currentHealthy)
 			}
@@ -2033,6 +2032,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2055,6 +2055,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2077,6 +2078,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2099,6 +2101,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2121,6 +2124,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2143,6 +2147,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2165,6 +2170,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2187,6 +2193,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2209,6 +2216,7 @@ func TestIsAllowedRemediation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: MachineNamespace,
+					UID:       "1234",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind: "MachineHealthCheck",
@@ -2554,6 +2562,7 @@ func newMachineHealthCheck(name string) *machinev1.MachineHealthCheck {
 			Namespace: MachineNamespace,
 			// the following line is to account for a change in the fake client, see https://github.com/kubernetes-sigs/controller-runtime/pull/1306
 			ResourceVersion: "999",
+			UID:             "1234",
 		},
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "machine.openshift.io/v1beta1",
