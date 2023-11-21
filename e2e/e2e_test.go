@@ -71,7 +71,7 @@ var _ = Describe("e2e", func() {
 				RemediationTemplate: &v1.ObjectReference{
 					Kind:       "SelfNodeRemediationTemplate",
 					APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
-					Name:       "self-node-remediation-resource-deletion-template",
+					Name:       "self-node-remediation-automatic-strategy-template",
 					Namespace:  operatorNsName,
 				},
 				UnhealthyConditions: []v1alpha1.UnhealthyCondition{
@@ -222,7 +222,7 @@ var _ = Describe("e2e", func() {
 						RemediationTemplate: v1.ObjectReference{
 							Kind:       "SelfNodeRemediationTemplate",
 							APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
-							Name:       "self-node-remediation-resource-deletion-template",
+							Name:       "self-node-remediation-automatic-strategy-template",
 							Namespace:  operatorNsName,
 						},
 						Order:   5,

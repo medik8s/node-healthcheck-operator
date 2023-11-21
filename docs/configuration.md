@@ -20,13 +20,13 @@ spec:
     apiVersion: self-node-remediation.medik8s.io/v1alpha1
     kind: SelfNodeRemediationTemplate
     namespace: <SNR namespace>
-    name: self-node-remediation-resource-deletion-template
+    name: self-node-remediation-automatic-strategy-template
   escalatingRemediations: # Note: mutually exclusive with remediationTemplate
     - remediationTemplate:
         apiVersion: self-node-remediation.medik8s.io/v1alpha1
         kind: SelfNodeRemediationTemplate
         namespace: <SNR namespace>
-        name: self-node-remediation-resource-deletion-template
+        name: self-node-remediation-automatic-strategy-template
       order: 1
       timeout: 300s
     # Note: The remediator below is an example only, it doesn't exist

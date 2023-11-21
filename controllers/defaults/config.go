@@ -27,7 +27,7 @@ const (
 var DefaultTemplateRef = &corev1.ObjectReference{
 	Kind:       "SelfNodeRemediationTemplate",
 	APIVersion: "self-node-remediation.medik8s.io/v1alpha1",
-	Name:       "self-node-remediation-resource-deletion-template",
+	Name:       "self-node-remediation-automatic-strategy-template",
 }
 
 var DefaultSelector = metav1.LabelSelector{
