@@ -556,7 +556,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	currentRemediationDuration, previousRemediationsDuration := utils.GetRemediationDuration(nhc, remediationCR)
 
 	// create remediation CR
-	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc, currentRemediationDuration, previousRemediationsDuration)
+	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc, &node.Name, currentRemediationDuration, previousRemediationsDuration)
 
 	if err != nil {
 		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained

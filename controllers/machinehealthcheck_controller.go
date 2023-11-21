@@ -425,7 +425,11 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 	// TODO add control plane label
 
 	// create remediation CR
-	_, _, err = rm.CreateRemediationCR(remediationCR, target.MHC, utils.DefaultRemediationDuration, 0)
+	var nodeName *string
+	if target.Node != nil && target.Node.ResourceVersion != "" {
+		nodeName = &target.Node.Name
+	}
+	_, _, err = rm.CreateRemediationCR(remediationCR, target.MHC, nodeName, utils.DefaultRemediationDuration, 0)
 	// TODO set remediation request available condition
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
