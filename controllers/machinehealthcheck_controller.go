@@ -184,13 +184,8 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 		patchErr := patchStatus(ctx, *r, log, mhc, mhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
-			// check if we have an error from the rest of the code already
-			if returnErr != nil {
-				returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
-			} else {
-				returnErr = patchErr
-			}
 		}
+		returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
 	}()
 
 	// Return early if the object is paused

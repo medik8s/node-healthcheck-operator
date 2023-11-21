@@ -175,13 +175,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		patchErr := r.patchStatus(ctx, log, nhc, nhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
-			// check if we have an error from the rest of the code already
-			if returnErr != nil {
-				returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
-			} else {
-				returnErr = patchErr
-			}
 		}
+		returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
 		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeuAfter", result.RequeueAfter)
 	}()
 
