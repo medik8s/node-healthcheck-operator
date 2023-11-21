@@ -98,9 +98,9 @@ func UpdateStatusNodeUnhealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeH
 	})
 }
 
-func UpdateStatusNodeConditionsHealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, now time.Time) *time.Time {
+func UpdateStatusNodeConditionsHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, now time.Time) *time.Time {
 	for i, _ := range nhc.Status.UnhealthyNodes {
-		if nhc.Status.UnhealthyNodes[i].Name == node.Name {
+		if nhc.Status.UnhealthyNodes[i].Name == nodeName {
 			if nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp == nil {
 				nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp = &metav1.Time{Time: now}
 			}

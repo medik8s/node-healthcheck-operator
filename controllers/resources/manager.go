@@ -14,13 +14,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 const (
@@ -41,7 +41,8 @@ type Manager interface {
 	ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 	GetMHCTargets(mhc *machinev1beta1.MachineHealthCheck) ([]Target, error)
-	HandleHealthyNode(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) error
+	HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, error)
+	CleanUp(nodeName string) error
 }
 
 type RemediationCRNotOwned struct{ msg string }
@@ -293,12 +294,38 @@ func IsOwner(remediationCR *unstructured.Unstructured, owner client.Object) bool
 	return false
 }
 
-func (m *manager) HandleHealthyNode(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) error {
-	if err := m.leaseManager.InvalidateLease(m.ctx, nodeName); err != nil {
-		return err
+func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, error) {
+	remediationCRs, err := m.ListRemediationCRs(utils.GetAllRemediationTemplates(owner), func(cr unstructured.Unstructured) bool {
+		return cr.GetName() == crName && IsOwner(&cr, owner)
+	})
+	if err != nil {
+		m.log.Error(err, "failed to get remediation CRs for healthy node", "node", nodeName)
+		return remediationCRs, err
 	}
-	UpdateStatusNodeHealthy(nodeName, nhc, recorder)
-	return nil
+
+	if len(remediationCRs) == 0 {
+		// when all CRs are gone, the node is considered healthy
+		if err = m.CleanUp(nodeName); err != nil {
+			m.log.Error(err, "failed to handle healthy node", "node", nodeName)
+			return remediationCRs, err
+		}
+		return remediationCRs, nil
+	}
+
+	for _, cr := range remediationCRs {
+		if deleted, err := m.DeleteRemediationCR(&cr, owner); err != nil {
+			m.log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
+			return remediationCRs, err
+		} else if deleted {
+			m.log.Info("deleted remediation CR", "name", cr.GetName())
+		}
+	}
+
+	return remediationCRs, nil
+}
+
+func (m *manager) CleanUp(nodeName string) error {
+	return m.leaseManager.InvalidateLease(m.ctx, nodeName)
 }
 
 func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.OwnerReference, string, error) {

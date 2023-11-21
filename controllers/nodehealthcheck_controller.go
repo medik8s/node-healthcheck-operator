@@ -278,26 +278,28 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	healthyCount := 0
 	for _, node := range notMatchingNodes {
 		log.Info("handling healthy node", "node", node.GetName())
-		remediationCRs, err := resourceManager.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
-		})
+		remediationCRs, err := resourceManager.HandleHealthyNode(node.GetName(), node.GetName(), nhc)
 		if err != nil {
-			log.Error(err, "failed to get remediation CRs for healthy node", "node", node.Name)
+			log.Error(err, "failed to handle healthy node", "node", node.Name)
 			return result, err
 		}
 
+		// only consider nodes without remediation CRs as healthy
 		if len(remediationCRs) == 0 {
-			// when all CRs are gone, the node is considered healthy
-			if err = resourceManager.HandleHealthyNode(node.GetName(), nhc, r.Recorder); err != nil {
-				log.Error(err, "failed to handle healthy node", "node", node.Name)
-				return result, err
-			}
+			resources.UpdateStatusNodeHealthy(node.GetName(), nhc, r.Recorder)
 			healthyCount++
 			continue
 		}
 
+		// add watch in case we were restarted, otherwise we might miss CR deletion events
+		for _, cr := range remediationCRs {
+			if err := r.addWatch(&cr); err != nil {
+				return result, errors.Wrapf(err, "failed to add watch for %s", cr.GroupVersionKind().String())
+			}
+		}
+
 		// set conditions healthy timestamp
-		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(&node, nhc, currentTime())
+		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(node.GetName(), nhc, currentTime())
 		if conditionsHealthyTimestamp != nil {
 			// warn about pending CRs when all CRs have been deleted for some time already but still exist
 			doLog := true
@@ -318,10 +320,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			if doLog {
 				log.Info("Node conditions don't match unhealthy condition anymore, but node has remediation CR(s) with pending deletion, considering node as unhealthy")
 			}
-		}
-
-		if err = r.deleteRemediationCRs(remediationCRs, nhc, resourceManager, false, log); err != nil {
-			return result, err
 		}
 	}
 
@@ -474,43 +472,30 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 	}
 
 	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
-	if err = r.deleteRemediationCRs(orphanedRemediationCRs, nhc, rm, true, log); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager, orphaned bool, log logr.Logger) error {
-
-	for _, remediationCR := range remediationCRs {
+	for _, cr := range orphanedRemediationCRs {
 
 		// add watch in case we were restarted, otherwise we might miss CR deletion events
-		if err := r.addWatch(&remediationCR); err != nil {
-			return errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
+		if err := r.addWatch(&cr); err != nil {
+			return errors.Wrapf(err, "failed to add watch for %s", cr.GroupVersionKind().String())
 		}
 
-		if deleted, err := rm.DeleteRemediationCR(&remediationCR, nhc); err != nil {
-			log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
+		// do some housekeeping first. When the CRs are deleted, we never get back here...
+		if err := rm.CleanUp(cr.GetName()); err != nil {
+			log.Error(err, "failed to clean up orphaned node", "node", cr.GetName())
+			return err
+		}
+		resources.UpdateStatusNodeHealthy(cr.GetName(), nhc, r.Recorder)
+
+		if deleted, err := rm.DeleteRemediationCR(&cr, nhc); err != nil {
+			log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
 			return err
 		} else if deleted {
-			if orphaned {
-				permanentNodeDeletionExpectedCondition := getCondition(&remediationCR, commonconditions.PermanentNodeDeletionExpectedType, log)
-				log.Info("deleted orphaned remediation CR", "name", remediationCR.GetName(),
-					"reason", permanentNodeDeletionExpectedCondition.Reason,
-					"message", permanentNodeDeletionExpectedCondition.Message)
-			} else {
-				log.Info("deleted remediation CR", "name", remediationCR.GetName())
-			}
+			permanentNodeDeletionExpectedCondition := getCondition(&cr, commonconditions.PermanentNodeDeletionExpectedType, log)
+			log.Info("deleted orphaned remediation CR", "name", cr.GetName(),
+				"reason", permanentNodeDeletionExpectedCondition.Reason,
+				"message", permanentNodeDeletionExpectedCondition.Message)
 		}
 
-		// only update status for orphaned CRs
-		// for all other CRs, the status is updated only when all CRs are gone
-		if orphaned {
-			if err := rm.HandleHealthyNode(remediationCR.GetName(), nhc, r.Recorder); err != nil {
-				log.Error(err, "failed to handle orphaned node", "node", remediationCR.GetName())
-				return err
-			}
-		}
 	}
 	return nil
 }

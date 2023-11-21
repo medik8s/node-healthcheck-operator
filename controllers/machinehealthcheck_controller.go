@@ -14,7 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
@@ -197,7 +196,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Return early if the object is paused
 	if utils.HasMHCPausedAnnotation(mhc) {
 		log.Info("Reconciliation is paused")
-		return ctrl.Result{}, nil
+		return result, nil
 	}
 
 	// For now we only support MHCs with RemediationTemplate set
@@ -215,13 +214,24 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	targets, err := resourceManager.GetMHCTargets(mhc)
 	if err != nil {
 		log.Error(err, "failed to get targets")
-		return reconcile.Result{}, err
+		return result, err
 	}
 	totalTargets := len(targets)
 
 	// health check all targets and reconcile mhc status
-	healthy, needRemediation, requeueIn, errList := r.checkHealth(targets, resourceManager)
-	healthyCount := len(healthy)
+	healthy, needRemediation, requeueIn, errList := r.checkHealth(targets)
+
+	healthyCount := 0
+	for _, healthyTarget := range healthy {
+		log.Info("handling healthy target", "target", healthyTarget.String())
+		_, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc)
+		if err != nil {
+			log.Error(err, "failed to handle healthy target", "target", healthyTarget.String())
+			return result, err
+		}
+		healthyCount++
+	}
+
 	mhc.Status.CurrentHealthy = &healthyCount
 	mhc.Status.ExpectedMachines = &totalTargets
 	unhealthyCount := totalTargets - healthyCount
@@ -288,7 +298,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return result, nil
 }
 
-func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target, rm resources.Manager) (healthy []resources.Target, needRemediation []resources.Target, overallRequeueIn time.Duration, errList []error) {
+func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target) (healthy []resources.Target, needRemediation []resources.Target, overallRequeueIn time.Duration, errList []error) {
 
 	for _, t := range targets {
 		log := r.Log.WithValues("target", t.String())
@@ -311,25 +321,6 @@ func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target, r
 			continue
 		}
 
-		// delete remediation CRs for healthy target
-		remediationCRs, err := rm.ListRemediationCRs(utils.GetAllRemediationTemplates(t.MHC), func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == t.Machine.GetName()
-		})
-		if err != nil {
-			log.Error(err, "Reconciling: failed to check for remediation CRs", "target", t.String())
-			errList = append(errList, err)
-			continue
-		}
-		for _, cr := range remediationCRs {
-			_, err := rm.DeleteRemediationCR(&cr, t.MHC)
-			if err != nil {
-				log.Error(err, "Reconciling: failed to delete remediation CR", "target", t.String(), "CR kind", cr.GetKind(), "CR name", cr.GetName())
-				errList = append(errList, err)
-				continue
-			}
-		}
-
-		// only add to healthy when CRs were deleted, in order to take them into account for maxUnhealthy calculation
 		healthy = append(healthy, t)
 	}
 
