@@ -83,7 +83,7 @@ func patchStatus(ctx context.Context, cl client.Client, log logr.Logger, actual,
 		log.Info("Patching status", "new status", status, "patch", string(patchBytes))
 	}
 
-	return cl.Status().Patch(context.Background(), actual, mergeFrom)
+	return cl.Status().Patch(ctx, actual, mergeFrom)
 }
 
 func getStatus(obj client.Object) (map[string]interface{}, error) {

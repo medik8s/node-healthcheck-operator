@@ -116,7 +116,8 @@ func MHCByNodeMapperFunc(c client.Client, logger logr.Logger, featureGates featu
 
 		node := &v1.Node{}
 		if err := c.Get(ctx, client.ObjectKey{Name: o.GetName()}, node); err != nil {
-			if !errors.IsNotFound(err) {
+			if errors.IsNotFound(err) {
+				node = &v1.Node{}
 				node.Name = o.GetName()
 				logger.Info("mapping deleted node", "node name", o.GetName())
 			} else {
@@ -126,8 +127,8 @@ func MHCByNodeMapperFunc(c client.Client, logger logr.Logger, featureGates featu
 		}
 
 		machine, err := getMachineFromNode(ctx, c, node.Name)
-		if machine == nil || err != nil {
-			logger.Info("No-op: Unable to retrieve machine from node %q: %v", node.Name, err)
+		if err != nil {
+			logger.Error(err, "No-op: Unable to retrieve machine from node", "node", node.Name)
 			return requests
 		}
 
