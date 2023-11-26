@@ -150,26 +150,26 @@ func indexMachineByNodeName(object client.Object) []string {
 func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, returnErr error) {
 	log := r.Log.WithValues("MachineHealthCheck name", req.Name)
 
-	// get mhc
+	// update MHCChecker status
+	if err := r.MHCChecker.UpdateStatus(ctx); err != nil {
+		return result, err
+	}
+
+	// check if we need to reconcile MHCs
+	if !r.FeatureGates.IsMachineAPIOperatorMHCDisabled() {
+		return
+	}
+
+	log.Info("Reconciling MachineHealthCheck in NodeHealthCheck operator!")
 	mhc := &v1beta1.MachineHealthCheck{}
 	err := r.Get(ctx, req.NamespacedName, mhc)
 	if err != nil {
-		log.Error(err, "failed getting Machine Health Check")
+		log.Error(err, "failed to get MachineHealthCheck")
 		if apierrors.IsNotFound(err) {
 			return result, nil
 		}
 		return result, err
 	}
-
-	// update MHCChecker status
-	if err = r.MHCChecker.UpdateStatus(ctx); err != nil {
-		return result, err
-	}
-
-	if !r.FeatureGates.IsMachineAPIOperatorMHCDisabled() {
-		return
-	}
-	log.Info("Reconciling MHC in NodeHealthCheck operator!")
 
 	leaseHolderIdent := fmt.Sprintf("MachineHealthCheck-%s", mhc.GetName())
 	leaseManager, err := resources.NewLeaseManager(r.Client, leaseHolderIdent, log)
