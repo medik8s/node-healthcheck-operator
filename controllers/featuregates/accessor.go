@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,6 +21,17 @@ import (
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
+)
+
+const (
+	// Minimum server version to use feature gate accessor
+	// OCP 4.14+ = K8s 1.27
+	minFeatureGateVersionMajor = 1
+	minFeatureGateVersionMinor = 27
+)
+
+var (
+	leadingDigits = regexp.MustCompile(`^(\d+)`)
 )
 
 type Accessor interface {
@@ -54,6 +67,14 @@ func (fga *accessor) Start(ctx context.Context) error {
 		fga.log.Error(err, "failed to get openshift client")
 		return err
 	}
+	if featureGateSupported, err := isFeatureGateAccessorSupported(osClient, fga.log); err != nil {
+		fga.log.Error(err, "failed to check version for feature gate support")
+		return err
+	} else if !featureGateSupported {
+		fga.log.Info("feature gate accessor not supported")
+		return nil
+	}
+
 	configSharedInformer := configinformersv1.NewSharedInformerFactoryWithOptions(osClient, time.Hour)
 	clusterVersionsInformer := configSharedInformer.Config().V1().ClusterVersions()
 	featureGatesInformer := configSharedInformer.Config().V1().FeatureGates()
@@ -114,6 +135,29 @@ func (fga *accessor) featureGateChanged(fc featuregates.FeatureChange) {
 		fga.isMaoMhcDisabled = false
 		fga.log.Info("MachineAPIOperatorDisableMachineHealthCheckController feature gate is disabled")
 	}
+}
+
+func isFeatureGateAccessorSupported(cs *osclientset.Clientset, log logr.Logger) (bool, error) {
+	versionInfo, err := cs.ServerVersion()
+	if err != nil {
+		log.Error(err, "failed to get server version")
+		return false, err
+	}
+	majorVer, err := strconv.Atoi(versionInfo.Major)
+	if err != nil {
+		log.Error(err, "couldn't parse k8s major version", "major version", versionInfo.Major)
+		return false, err
+	}
+	minorVer, err := strconv.Atoi(leadingDigits.FindString(versionInfo.Minor))
+	if err != nil {
+		log.Error(err, "couldn't parse k8s minor version", "minor version", versionInfo.Minor)
+		return false, err
+	}
+	if majorVer > minFeatureGateVersionMajor || (majorVer == minFeatureGateVersionMajor) && minorVer >= minFeatureGateVersionMinor {
+		return true, nil
+	}
+	return false, nil
+
 }
 
 type FakeAccessor struct {
