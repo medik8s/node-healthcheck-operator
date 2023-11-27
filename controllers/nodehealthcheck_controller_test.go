@@ -1630,11 +1630,11 @@ var _ = Describe("Node Health Check CR", func() {
 
 func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer time.Duration) {
 	orgRequeueIfLeaseTaken := resources.RequeueIfLeaseTaken
-	orgDefaultLeaseDuration := resources.DefaultLeaseDuration
+	orgDefaultLeaseDuration := utils.DefaultRemediationDuration
 	orgLeaseBuffer := resources.LeaseBuffer
 	//set up mock values so tests can run in a reasonable time
 	resources.RequeueIfLeaseTaken = mockRequeueDurationIfLeaseTaken
-	resources.DefaultLeaseDuration = mockDefaultLeaseDuration
+	utils.DefaultRemediationDuration = mockDefaultLeaseDuration
 	resources.LeaseBuffer = mockLeaseBuffer
 
 	ns := &v1.Namespace{}
@@ -1649,7 +1649,7 @@ func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, 
 
 	DeferCleanup(func() {
 		resources.RequeueIfLeaseTaken = orgRequeueIfLeaseTaken
-		resources.DefaultLeaseDuration = orgDefaultLeaseDuration
+		utils.DefaultRemediationDuration = orgDefaultLeaseDuration
 		resources.LeaseBuffer = orgLeaseBuffer
 	})
 }
