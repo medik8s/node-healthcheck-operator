@@ -314,6 +314,14 @@ spec:
         - apiGroups:
           - machine.openshift.io
           resources:
+          - machinehealthchecks/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - machine.openshift.io
+          resources:
           - machines
           verbs:
           - get

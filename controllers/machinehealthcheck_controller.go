@@ -140,6 +140,7 @@ func indexMachineByNodeName(object client.Object) []string {
 
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch;patch;update
+// +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks/status,verbs=get;update;patch
 
 // for the feature gate accessor
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
