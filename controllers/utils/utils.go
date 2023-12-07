@@ -7,17 +7,23 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/api/machine/v1beta1"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+)
+
+const (
+	machineAnnotation = "machine.openshift.io/machine"
 )
 
 var (
@@ -126,5 +132,24 @@ func GetRemediationDuration(nhc *v1alpha1.NodeHealthCheck, remediationCR *unstru
 		}
 	}
 
+	return
+}
+
+// MachineAnnotationNotFoundError indicates that in GetMachineNsName the machine annotation wasn't found on the given node
+var MachineAnnotationNotFoundError = errors.New("machine annotation not found")
+
+// GetMachineNamespaceName returns machine namespace and name of the given Node. Returns MachineAnnotationNotFoundError
+// in case the needed annotation doesn't exist on the given node
+func GetMachineNamespaceName(node *v1.Node) (namespace, name string, err error) {
+	// TODO this is Openshift / MachineAPI specific
+	// TODO add support for upstream CAPI machines
+	namespacedMachine, exists := node.GetAnnotations()[machineAnnotation]
+	if !exists {
+		return "", "", MachineAnnotationNotFoundError
+	}
+	namespace, name, err = cache.SplitMetaNamespaceKey(namespacedMachine)
+	if err != nil {
+		return "", "", errors.Wrapf(err, "failed to split machine annotation value into namespace + name: %v", namespacedMachine)
+	}
 	return
 }

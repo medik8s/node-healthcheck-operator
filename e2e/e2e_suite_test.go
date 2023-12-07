@@ -42,11 +42,12 @@ func TestE2e(t *testing.T) {
 }
 
 const (
-	unhealthyConditionDuration = 90 * time.Second
+	unhealthyConditionDuration = 30 * time.Second
 )
 
 var (
-	labelOcpOnly = Label("OCP-ONLY")
+	labelOcpOnlyValue = "OCP-ONLY"
+	labelOcpOnly      = Label(labelOcpOnlyValue)
 
 	dynamicClient          dynamic.Interface
 	clientSet              *kubernetes.Clientset
@@ -74,6 +75,7 @@ var (
 	dummyRemediationTemplateGVK schema.GroupVersionKind
 	dummyRemediationGVK         schema.GroupVersionKind
 	dummyTemplateName           = "dummy-template"
+	snrTemplateName             string
 
 	log logr.Logger
 
@@ -94,6 +96,9 @@ var _ = BeforeSuite(func() {
 
 	operatorNsName = os.Getenv("OPERATOR_NS")
 	Expect(operatorNsName).ToNot(BeEmpty(), "OPERATOR_NS env var not set, can't start e2e test")
+
+	snrTemplateName = os.Getenv("SNRT_NAME")
+	Expect(snrTemplateName).ToNot(BeEmpty(), "SNRT_NAME env var not set, can't start e2e test")
 
 	// +kubebuilder:scaffold:scheme
 

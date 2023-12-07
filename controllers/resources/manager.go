@@ -13,7 +13,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -21,10 +20,6 @@ import (
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-)
-
-const (
-	machineAnnotation = "machine.openshift.io/machine"
 )
 
 type Manager interface {
@@ -329,17 +324,14 @@ func (m *manager) CleanUp(nodeName string) error {
 }
 
 func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.OwnerReference, string, error) {
-	// TODO this is Openshift / MachineAPI specific
-	// TODO add support for upstream CAPI machines
-	namespacedMachine, exists := node.GetAnnotations()[machineAnnotation]
-	if !exists {
-		m.log.Info("didn't find machine annotation for Openshift machine", "node", node.GetName())
-		// nothing we can do, continue without owning machine
-		return nil, "", nil
-	}
-	ns, name, err := cache.SplitMetaNamespaceKey(namespacedMachine)
+	ns, name, err := utils.GetMachineNamespaceName(node)
 	if err != nil {
-		return nil, "", errors.Wrapf(err, "failed to split machine annotation value into namespace + name: %v", namespacedMachine)
+		if errors.Is(err, utils.MachineAnnotationNotFoundError) {
+			m.log.Info("didn't find machine annotation for Openshift machine", "node", node.GetName())
+			// nothing we can do, continue without owning machine
+			return nil, "", nil
+		}
+		return nil, "", err
 	}
 	machine := &machinev1beta1.Machine{}
 	if err := m.Get(m.ctx, client.ObjectKey{Namespace: ns, Name: name}, machine); err != nil {

@@ -379,11 +379,8 @@ index-push: ## Push a catalog image.
 	podman push $(INDEX_IMG)
 
 .PHONY: test-e2e
-export OPERATOR_NS ?= openshift-operators
 test-e2e: ## Run end to end tests
-	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
-	echo "Running e2e tests"
-	go test ./e2e -coverprofile cover.out -timeout 60m -test.v -ginkgo.vv $(TEST_OPTS)
+	./hack/test-e2e.sh
 
 
 .PHONY: deploy-snr ## Deploy self node remediation to a running cluster
