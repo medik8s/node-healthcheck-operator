@@ -1,0 +1,7 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rapidast-job
+  namespace: rapidast-nhc
+status:
+  succeeded: 1
