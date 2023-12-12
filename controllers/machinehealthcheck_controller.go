@@ -34,6 +34,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
+	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
 const (
@@ -141,6 +142,11 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		log.Error(err, "failed to get MachineHealthCheck")
 		if apierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// In the event that this was a deletion, we need to remove the associated metric label
+			metrics.DeleteMachineHealthCheckNodesCovered(req.NamespacedName.Name, req.NamespacedName.Namespace)
+			// We also need to revert short circuiting of such object so it doesn't overflow to a new object.
+			metrics.ObserveMachineHealthCheckShortCircuitDisabled(req.NamespacedName.Name, req.NamespacedName.Namespace)
 			return result, nil
 		}
 		return result, err
@@ -187,6 +193,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return result, err
 	}
 	totalTargets := len(targets)
+	metrics.ObserveMachineHealthCheckNodesCovered(mhc.Name, mhc.Namespace, totalTargets)
 
 	// health check all targets and reconcile mhc status
 	healthy, needRemediation, requeueIn, errList := r.checkHealth(targets)
@@ -221,8 +228,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 			totalTargets, unhealthyCount, mhc.Spec.MaxUnhealthy)
 		log.Info(msg)
 		r.Recorder.Event(mhc, corev1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
-
-		// TODO metrics
+		metrics.ObserveMachineHealthCheckShortCircuitEnabled(mhc.Name, mhc.Namespace)
 
 		// Remediation not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy
 		mhc.Status.RemediationsAllowed = 0
@@ -243,8 +249,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	log.Info("Remediations are allowed", "total targets", totalTargets, "max unhealthy", mhc.Spec.MaxUnhealthy, "unhealthy targets", unhealthyCount)
-
-	// TODO metrics
+	metrics.ObserveMachineHealthCheckShortCircuitDisabled(mhc.Name, mhc.Namespace)
 
 	utils.SetMachineCondition(mhc, &v1beta1.Condition{
 		Type:   v1beta1.RemediationAllowedCondition,

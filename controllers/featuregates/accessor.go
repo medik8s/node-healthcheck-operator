@@ -21,6 +21,8 @@ import (
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
+
+	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
 const (
@@ -125,6 +127,8 @@ func (fga *accessor) featureGateChanged(fc featuregates.FeatureChange) {
 			if !fga.isMaoMhcDisabled {
 				fga.isMaoMhcDisabled = true
 				fga.log.Info("MachineAPIOperatorDisableMachineHealthCheckController feature gate is enabled")
+				// init metrics
+				metrics.InitializeMachineHealthCheckMetrics()
 				// trigger reconcile of all MHCs
 				fga.featureGateMHCControllerDisabledEvents <- event.GenericEvent{}
 			}
