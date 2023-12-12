@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -50,17 +51,19 @@ type manager struct {
 	log          logr.Logger
 	onOpenshift  bool
 	leaseManager LeaseManager
+	recorder     record.EventRecorder
 }
 
 var _ Manager = &manager{}
 
-func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshift bool, leaseManager LeaseManager) Manager {
+func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshift bool, leaseManager LeaseManager, recorder record.EventRecorder) Manager {
 	return &manager{
 		Client:       c,
 		ctx:          ctx,
 		log:          log.WithName("resource manager"),
 		onOpenshift:  onOpenshift,
 		leaseManager: leaseManager,
+		recorder:     recorder,
 	}
 }
 
@@ -227,7 +230,7 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
-
+	m.recorder.Eventf(owner, corev1.EventTypeNormal, utils.EventReasonRemediationRemoved, "Deleted remediation CR of kind %s with name %s", remediationCR.GetKind(), remediationCR.GetName())
 	return true, nil
 }
 

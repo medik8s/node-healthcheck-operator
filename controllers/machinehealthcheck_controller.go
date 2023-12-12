@@ -40,32 +40,6 @@ const (
 	defaultNodeStartupTimeout = 10 * time.Minute
 )
 
-const (
-	// Event types
-
-	// EventRemediationRestricted is emitted in case when machine remediation
-	// is restricted by remediation circuit shorting logic
-	EventRemediationRestricted string = "RemediationRestricted"
-	// EventDetectedUnhealthy is emitted in case a node asociated with a
-	// machine was detected unhealthy
-	EventDetectedUnhealthy string = "DetectedUnhealthy"
-	// EventSkippedNoController is emitted in case an unhealthy node (or a machine
-	// associated with the node) has no controller owner
-	EventSkippedNoController string = "SkippedNoController"
-	// EventMachineDeletionFailed is emitted in case remediation of a machine
-	// is required but deletion of its Machine object failed
-	EventMachineDeletionFailed string = "MachineDeletionFailed"
-	// EventMachineDeleted is emitted when machine was successfully remediated
-	// by deleting its Machine object
-	EventMachineDeleted string = "MachineDeleted"
-	// EventExternalAnnotationFailed is emitted in case adding external annotation
-	// to a Node object failed
-	EventExternalAnnotationFailed string = "ExternalAnnotationFailed"
-	// EventExternalAnnotationAdded is emitted when external annotation was
-	// successfully added to a Node object
-	EventExternalAnnotationAdded string = "ExternalAnnotationAdded"
-)
-
 var (
 	// We allow users to disable the nodeStartupTimeout by setting the duration to 0.
 	disabledNodeStartupTimeout = metav1.Duration{Duration: 0}
@@ -177,7 +151,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return result, err
 	}
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, true, leaseManager)
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, true, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
 	mhcOrig := mhc.DeepCopy()
@@ -242,13 +216,13 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	mhc.Status.RemediationsAllowed = int32(getNrRemediationsAllowed(unhealthyCount, maxUnhealthy))
 
 	if !isRemediationsAllowed(unhealthyCount, maxUnhealthy) {
-		msg := fmt.Sprintf("Remediation is not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy (total: %v, unhealthy: %v, maxUnhealthy: %v)",
-			totalTargets,
-			unhealthyCount,
-			mhc.Spec.MaxUnhealthy)
-		log.Info(msg)
 
-		// TODO event + metrics
+		msg := fmt.Sprintf("Skipped remediation because the number of not started or unhealthy machines selected by the selector exceeds maxUnhealthy (total: %v, unhealthy: %v, maxUnhealthy: %v)",
+			totalTargets, unhealthyCount, mhc.Spec.MaxUnhealthy)
+		log.Info(msg)
+		r.Recorder.Event(mhc, corev1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
+
+		// TODO metrics
 
 		// Remediation not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy
 		mhc.Status.RemediationsAllowed = 0
@@ -313,6 +287,13 @@ func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target) (
 
 		if requeueIn > 0 {
 			log.Info("Reconciling: is likely to go unhealthy", "next check", requeueIn)
+			nodeName := "unknown"
+			if t.Node != nil {
+				nodeName = t.Node.GetName()
+			}
+			r.Recorder.Eventf(t.Node, corev1.EventTypeNormal, utils.EventReasonDetectedUnhealthy,
+				"Machine %v has unhealthy node %v", t.Machine.GetName(), nodeName,
+			)
 			overallRequeueIn = *utils.MinRequeueDuration(&overallRequeueIn, &requeueIn)
 			continue
 		}
@@ -394,13 +375,18 @@ func (r *MachineHealthCheckReconciler) remediateAll(targets []resources.Target, 
 }
 
 func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm resources.Manager) error {
+
+	// ignore machines with deletion timestamp
+	if target.Machine.DeletionTimestamp != nil {
+		return nil
+	}
+
 	// diverting from original MHC code here, because we can reuse NHC code for creating the remediation CR
 
 	// TODO add control plane max remediation check!?
 
 	// generate remediation CR
 	template, err := rm.GetTemplate(target.MHC)
-	// TODO set template available condition
 	if err != nil {
 		return errors.Wrapf(err, "failed to get remediation template")
 	}
@@ -416,14 +402,17 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 	if target.Node != nil && target.Node.ResourceVersion != "" {
 		nodeName = &target.Node.Name
 	}
-	_, _, err = rm.CreateRemediationCR(remediationCR, target.MHC, nodeName, utils.DefaultRemediationDuration, 0)
-	// TODO set remediation request available condition
+	created, _, err := rm.CreateRemediationCR(remediationCR, target.MHC, nodeName, utils.DefaultRemediationDuration, 0)
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do
 			return nil
 		}
 		return errors.Wrapf(err, "failed to create remediation CR")
+	}
+	if created {
+		r.Recorder.Event(target.MHC, corev1.EventTypeNormal, utils.EventReasonRemediationCreated,
+			fmt.Sprintf("Created remediation object for machine %s with node %s", target.Machine.GetName(), target.Node.GetName()))
 	}
 	return nil
 }

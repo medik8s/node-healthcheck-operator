@@ -156,7 +156,7 @@ func TestReconcile(t *testing.T) {
 				result: reconcile.Result{},
 				error:  false,
 			},
-			expectedEvents: []string{EventMachineDeleted},
+			expectedEvents: []string{utils.EventReasonRemediationCreated},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -209,7 +209,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{EventDetectedUnhealthy},
+			expectedEvents: []string{utils.EventReasonDetectedUnhealthy},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -266,7 +266,7 @@ func TestReconcile(t *testing.T) {
 				result: reconcile.Result{},
 				error:  false,
 			},
-			expectedEvents: []string{EventSkippedNoController},
+			expectedEvents: []string{utils.EventReasonRemediationCreated},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -287,7 +287,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{EventDetectedUnhealthy},
+			expectedEvents: []string{utils.EventReasonDetectedUnhealthy},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -346,7 +346,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{EventRemediationRestricted},
+			expectedEvents: []string{utils.EventReasonRemediationSkipped},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -406,7 +406,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				result: reconcile.Result{},
 				error:  false,
 			},
-			expectedEvents: []string{},
+			expectedEvents: []string{utils.EventReasonRemediationRemoved},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(1),
@@ -428,7 +428,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				result: reconcile.Result{},
 				error:  false,
 			},
-			expectedEvents: []string{},
+			expectedEvents: []string{utils.EventReasonRemediationCreated},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -1096,7 +1096,8 @@ func TestGetTargetsFromMHC(t *testing.T) {
 		t.Run(tc.testCase, func(t *testing.T) {
 			reconciler := newFakeReconciler(objects...)
 			leaseManager, _ := resources.NewLeaseManager(reconciler.Client, "test", reconciler.Log)
-			rm := resources.NewManager(reconciler, ctx, reconciler.Log, true, leaseManager)
+			recorder := record.NewFakeRecorder(2)
+			rm := resources.NewManager(reconciler, ctx, reconciler.Log, true, leaseManager, recorder)
 			got, err := rm.GetMHCTargets(tc.mhc)
 			if !equality.Semantic.DeepEqual(got, tc.expectedTargets) {
 				t.Errorf("Case: %v. Got: %+v, expected: %+v", tc.testCase, got, tc.expectedTargets)
@@ -2324,25 +2325,28 @@ func TestGetMaxUnhealthy(t *testing.T) {
 }
 
 func assertEvents(t *testing.T, testCase string, expectedEvents []string, realEvents chan string) {
-	//if len(expectedEvents) != len(realEvents) {
-	//	t.Errorf(
-	//		"Test case: %s. Number of expected events (%v) differs from number of real events (%v)",
-	//		testCase,
-	//		len(expectedEvents),
-	//		len(realEvents),
-	//	)
-	//} else {
-	//	for _, eventType := range expectedEvents {
-	//		select {
-	//		case event := <-realEvents:
-	//			if !strings.Contains(event, fmt.Sprintf(" %s ", eventType)) {
-	//				t.Errorf("Test case: %s. Expected %v event, got: %v", testCase, eventType, event)
-	//			}
-	//		default:
-	//			t.Errorf("Test case: %s. Expected %v event, but no event occured", testCase, eventType)
-	//		}
-	//	}
-	//}
+	if len(expectedEvents) != len(realEvents) {
+		realEv := []string{}
+		close(realEvents)
+		for ev := range realEvents {
+			realEv = append(realEv, ev)
+		}
+		t.Errorf(
+			"Test case: %s. Number of expected events (%+v) differs from number of real events (%+v)",
+			testCase, expectedEvents, realEv,
+		)
+	} else {
+		for _, eventType := range expectedEvents {
+			select {
+			case event := <-realEvents:
+				if !strings.Contains(event, fmt.Sprintf(" %s ", eventType)) {
+					t.Errorf("Test case: %s. Expected %v event, got: %v", testCase, eventType, event)
+				}
+			default:
+				t.Errorf("Test case: %s. Expected %v event, but no event occured", testCase, eventType)
+			}
+		}
+	}
 }
 
 // newFakeReconciler returns a new reconcile.Reconciler with a fake client
@@ -2392,7 +2396,7 @@ func assertBaseReconcile(t *testing.T, tc testCase, ctx context.Context, r *Mach
 
 	if result != tc.expected.result {
 		if tc.expected.result.Requeue {
-			before := tc.expected.result.RequeueAfter
+			before := tc.expected.result.RequeueAfter - time.Second
 			after := tc.expected.result.RequeueAfter + time.Second
 			if after < result.RequeueAfter || before > result.RequeueAfter {
 				t.Errorf("Test case: %s. Expected RequeueAfter between: %v and %v, got: %v", tc.name, before, after, result)

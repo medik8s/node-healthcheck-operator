@@ -61,13 +61,7 @@ import (
 const (
 	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
 	remediationCRAlertTimeout     = time.Hour * 48
-	eventReasonRemediationCreated = "RemediationCreated"
-	eventReasonRemediationSkipped = "RemediationSkipped"
 	eventReasonNoTemplateLeft     = "NoTemplateLeft"
-	eventReasonDisabled           = "Disabled"
-	eventReasonEnabled            = "Enabled"
-	eventTypeNormal               = "Normal"
-	eventTypeWarning              = "Warning"
 	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
@@ -162,7 +156,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager)
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
 	nhcOrig := nhc.DeepCopy()
@@ -195,7 +189,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
 				Message: "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts",
 			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
+			r.Recorder.Eventf(nhc, v1.EventTypeWarning, utils.EventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
 		}
 		// stop reconciling
 		return result, nil
@@ -214,7 +208,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  reason,
 				Message: message,
 			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
+			r.Recorder.Eventf(nhc, v1.EventTypeWarning, utils.EventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
 		}
 		if reason == remediationv1alpha1.ConditionReasonDisabledTemplateNotFound {
 			// requeue for checking back if template exists later
@@ -232,7 +226,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Reason:  remediationv1alpha1.ConditionReasonEnabled,
 			Message: enabledMessage,
 		})
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, enabledMessage)
+		r.Recorder.Eventf(nhc, v1.EventTypeNormal, utils.EventReasonEnabled, enabledMessage)
 	}
 
 	// select nodes using the nhc.selector
@@ -249,7 +243,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if r.isClusterUpgrading() {
 		msg := "Postponing potential remediations because of ongoing cluster upgrade"
 		log.Info(msg)
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationSkipped, msg)
 		result.RequeueAfter = clusterUpgradeRequeueAfter
 		return result, nil
 	}
@@ -258,7 +252,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// some actors want to pause remediation.
 		msg := "Postponing potential remediations because of pause requests"
 		log.Info(msg)
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationSkipped, msg)
 		return result, nil
 	}
 
@@ -281,7 +275,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// only consider nodes without remediation CRs as healthy
 		if len(remediationCRs) == 0 {
-			resources.UpdateStatusNodeHealthy(node.GetName(), nhc, r.Recorder)
+			resources.UpdateStatusNodeHealthy(node.GetName(), nhc)
 			healthyCount++
 			continue
 		}
@@ -335,7 +329,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	} else if *nhc.Status.HealthyNodes < minHealthy {
 		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
 		log.Info(msg)
-		r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
+		r.Recorder.Event(nhc, v1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
 		skipRemediation = true
 	}
 
@@ -479,7 +473,7 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 			log.Error(err, "failed to clean up orphaned node", "node", cr.GetName())
 			return err
 		}
-		resources.UpdateStatusNodeHealthy(cr.GetName(), nhc, r.Recorder)
+		resources.UpdateStatusNodeHealthy(cr.GetName(), nhc)
 
 		if deleted, err := rm.DeleteRemediationCR(&cr, nhc); err != nil {
 			log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
@@ -506,7 +500,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
 		} else if !isAllowed {
 			log.Info("skipping remediation for preventing control plane / etcd quorum loss", "node", node.GetName())
-			r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName()))
+			r.Recorder.Event(nhc, v1.EventTypeWarning, utils.EventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName()))
 			return nil, nil
 		}
 	}
@@ -516,7 +510,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	if err != nil {
 		if _, ok := err.(resources.NoTemplateLeftError); ok {
 			log.Error(err, "Remediation timed out, and no template left to try")
-			r.Recorder.Event(nhc, eventTypeWarning, eventReasonNoTemplateLeft, fmt.Sprintf("Remediation timed out, and no template left to try. %s", err.Error()))
+			r.Recorder.Event(nhc, v1.EventTypeWarning, eventReasonNoTemplateLeft, fmt.Sprintf("Remediation timed out, and no template left to try. %s", err.Error()))
 			// there is nothing we can do about this
 			return nil, nil
 		}
@@ -586,7 +580,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	metrics.ObserveNodeHealthCheckRemediationCreated(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 
 	if created {
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
+		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
 		var requeueIn *time.Duration
 		if timeout != nil {
 			// come back when timeout expires
