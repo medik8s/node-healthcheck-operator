@@ -11,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
-	"github.com/medik8s/node-healthcheck-operator/controllers/defaults"
 	"github.com/medik8s/node-healthcheck-operator/controllers/rbac"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
@@ -46,11 +45,6 @@ func (i *initializer) Start(ctx context.Context) error {
 	// TODO use give context
 	if err = rbac.NewAggregation(i.cl, ns).CreateOrUpdateAggregation(); err != nil {
 		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
-	}
-
-	// TODO use give context
-	if err = defaults.UpdateDefaultNHC(i.cl, ns, ctrl.Log.WithName("defaults")); err != nil {
-		return errors.Wrap(err, "failed to update default NHC resource")
 	}
 
 	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.config, ns, ctrl.Log.WithName("console-plugin")); err != nil {
