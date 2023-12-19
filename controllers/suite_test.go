@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -110,6 +111,7 @@ var _ = BeforeSuite(func() {
 	Expect(remediationv1alpha1.AddToScheme(testScheme)).To(Succeed())
 	Expect(machinev1beta1.Install(testScheme)).To(Succeed())
 	Expect(apiextensionsv1.AddToScheme(testScheme)).To(Succeed())
+	Expect(policyv1.AddToScheme(testScheme)).To(Succeed())
 	// +kubebuilder:scaffold:scheme
 
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: testScheme})
