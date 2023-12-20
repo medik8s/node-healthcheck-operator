@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
 
@@ -61,6 +63,15 @@ func (m *manager) GetCurrentTemplateWithTimeout(node *v1.Node, nhc *remediationv
 
 	// no template left
 	return nil, nil, NoTemplateLeftError{msg: fmt.Sprintf("didn't find a template to use for NHC %s and node %s", nhc.Name, node.Name)}
+}
+
+func (m *manager) GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstructured.Unstructured, error) {
+	if mhc.Spec.RemediationTemplate == nil {
+		// TODO catch this early in Reconciler
+		return nil, fmt.Errorf("remediation template must set for MHC %s", mhc.GetName())
+	}
+	template, err := m.getTemplate(mhc.Spec.RemediationTemplate)
+	return template, err
 }
 
 func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Unstructured, error) {

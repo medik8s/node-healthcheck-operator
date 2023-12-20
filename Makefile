@@ -364,7 +364,7 @@ bundle-run: operator-sdk ## Run bundle image
 
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
-	$(OPERATOR_SDK) -n openshift-operators cleanup node-healthcheck-operator
+	$(OPERATOR_SDK) -n openshift-operators cleanup node-healthcheck-operator --delete-all
 
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
@@ -379,11 +379,8 @@ index-push: ## Push a catalog image.
 	podman push $(INDEX_IMG)
 
 .PHONY: test-e2e
-export OPERATOR_NS ?= openshift-operators
 test-e2e: ## Run end to end tests
-	@test -n "${KUBECONFIG}" -o -r ${HOME}/.kube/config || (echo "Failed to find kubeconfig in ~/.kube/config or no KUBECONFIG set"; exit 1)
-	echo "Running e2e tests"
-	go test ./e2e -coverprofile cover.out -timeout 60m -test.v -ginkgo.vv $(TEST_OPTS)
+	./hack/test-e2e.sh
 
 
 .PHONY: deploy-snr ## Deploy self node remediation to a running cluster
@@ -411,4 +408,7 @@ container-build-metrics: ## Build containers
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
-	make docker-push bundle-push index-build index-push
+	make docker-push bundle-push #index-build index-push
+
+.PHONY: build-and-run
+build-and-run: container-build container-push bundle-run

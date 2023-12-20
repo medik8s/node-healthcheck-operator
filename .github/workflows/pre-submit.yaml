@@ -141,7 +141,7 @@ jobs:
     - name: Run NHC e2e
       run: |
         echo "running e2e test"
-        OPERATOR_NS=${DEPLOY_NAMESPACE} TEST_OPTS='-ginkgo.label-filter="!OCP-ONLY"' make test-e2e
+        OPERATOR_NS=${DEPLOY_NAMESPACE} LABEL_FILTER="!OCP-ONLY" make test-e2e
         echo "finished e2e test"
 
     - name: Debug

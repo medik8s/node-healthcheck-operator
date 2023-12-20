@@ -5,10 +5,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var _ = Describe("NodeHealthCheck Validation", func() {
@@ -192,18 +195,25 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			}
 		})
 
+		validateError := func(validate func(obj runtime.Object) (admission.Warnings, error), nhc *NodeHealthCheck, substrings ...string) {
+			warnings, err := validate(nhc)
+			ExpectWithOffset(1, warnings).To(BeEmpty())
+			matchers := make([]types.GomegaMatcher, 0)
+			for _, substring := range substrings {
+				matchers = append(matchers, ContainSubstring(substring))
+			}
+			ExpectWithOffset(1, err).To(MatchError(
+				And(matchers...),
+			))
+		}
+
 		Context("updating selector", func() {
 			BeforeEach(func() {
 				nhcNew = nhcOld.DeepCopy()
 				nhcNew.Spec.Selector.MatchExpressions[0].Key = "node-role.kubernetes.io/infra"
 			})
 			It("should be denied", func() {
-				Expect(nhcNew.ValidateUpdate(nhcOld)).To(MatchError(
-					And(
-						ContainSubstring(OngoingRemediationError),
-						ContainSubstring("selector"),
-					),
-				))
+				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "selector")
 			})
 		})
 
@@ -213,12 +223,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhcNew.Spec.RemediationTemplate.Name = "newName"
 			})
 			It("should be denied", func() {
-				Expect(nhcNew.ValidateUpdate(nhcOld)).To(MatchError(
-					And(
-						ContainSubstring(OngoingRemediationError),
-						ContainSubstring("remediation template"),
-					),
-				))
+				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "remediation template")
 			})
 		})
 
@@ -229,12 +234,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhcNew.Spec.EscalatingRemediations[0].Order = 42
 			})
 			It("should be denied", func() {
-				Expect(nhcNew.ValidateUpdate(nhcOld)).To(MatchError(
-					And(
-						ContainSubstring(OngoingRemediationError),
-						ContainSubstring("escalating remediations"),
-					),
-				))
+				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "escalating remediations")
 			})
 		})
 	})

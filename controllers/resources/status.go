@@ -6,15 +6,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/tools/record"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
-)
-
-const (
-	eventReasonRemediationRemoved = "RemediationRemoved"
-	eventTypeNormal               = "Normal"
 )
 
 func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationCR *unstructured.Unstructured) {
@@ -67,16 +61,13 @@ func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.
 
 }
 
-func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, recorder record.EventRecorder) {
+func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck) {
 	delete(nhc.Status.InFlightRemediations, nodeName)
 	for i, _ := range nhc.Status.UnhealthyNodes {
 		if nhc.Status.UnhealthyNodes[i].Name == nodeName {
 			for _, remediation := range nhc.Status.UnhealthyNodes[i].Remediations {
 				remediation := remediation
 				remediationResource := remediation.Resource
-
-				recorder.Eventf(nhc, eventTypeNormal, eventReasonRemediationRemoved, "Deleted remediation CR of kind %s for node %s", remediationResource.Kind, remediationResource.Name)
-
 				duration := time.Now().Sub(remediation.Started.Time)
 				metrics.ObserveNodeHealthCheckRemediationDeleted(remediationResource.Name, remediationResource.Namespace, remediationResource.Kind)
 				metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationResource.Name, remediationResource.Namespace, remediationResource.Kind, duration)
@@ -98,9 +89,9 @@ func UpdateStatusNodeUnhealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeH
 	})
 }
 
-func UpdateStatusNodeConditionsHealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, now time.Time) *time.Time {
+func UpdateStatusNodeConditionsHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, now time.Time) *time.Time {
 	for i, _ := range nhc.Status.UnhealthyNodes {
-		if nhc.Status.UnhealthyNodes[i].Name == node.Name {
+		if nhc.Status.UnhealthyNodes[i].Name == nodeName {
 			if nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp == nil {
 				nhc.Status.UnhealthyNodes[i].ConditionsHealthyTimestamp = &metav1.Time{Time: now}
 			}

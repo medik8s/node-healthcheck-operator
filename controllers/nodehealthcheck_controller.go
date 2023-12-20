@@ -35,7 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -43,6 +42,7 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -61,13 +61,7 @@ import (
 const (
 	oldRemediationCRAnnotationKey = "nodehealthcheck.medik8s.io/old-remediation-cr-flag"
 	remediationCRAlertTimeout     = time.Hour * 48
-	eventReasonRemediationCreated = "RemediationCreated"
-	eventReasonRemediationSkipped = "RemediationSkipped"
 	eventReasonNoTemplateLeft     = "NoTemplateLeft"
-	eventReasonDisabled           = "Disabled"
-	eventReasonEnabled            = "Enabled"
-	eventTypeNormal               = "Normal"
-	eventTypeWarning              = "Warning"
 	enabledMessage                = "No issues found, NodeHealthCheck is enabled."
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
@@ -84,7 +78,6 @@ var (
 type NodeHealthCheckReconciler struct {
 	client.Client
 	Log                         logr.Logger
-	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
@@ -92,7 +85,8 @@ type NodeHealthCheckReconciler struct {
 	MHCEvents                   chan event.GenericEvent
 	controller                  controller.Controller
 	watches                     map[string]struct{}
-	watchesLock                 sync.Mutex
+	watchesLock                 *sync.Mutex
+	cache                       cache.Cache
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -100,7 +94,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.NodeHealthCheck{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
-			&source.Kind{Type: &v1.Node{}},
+			&v1.Node{},
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByNodeMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 			builder.WithPredicates(
 				predicate.Funcs{
@@ -114,7 +108,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				},
 			),
 		).
-		Watches(
+		WatchesRawSource(
 			&source.Channel{Source: r.MHCEvents},
 			handler.EnqueueRequestsFromMapFunc(utils.NHCByMHCEventMapperFunc(mgr.GetClient(), mgr.GetLogger())),
 		).
@@ -125,57 +119,9 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.controller = controller
 	r.watches = make(map[string]struct{})
+	r.watchesLock = &sync.Mutex{}
+	r.cache = mgr.GetCache()
 	return nil
-}
-
-func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
-	var oldNode *v1.Node
-	var newNode *v1.Node
-	var ok bool
-	if oldNode, ok = ev.ObjectOld.(*v1.Node); !ok {
-		return false
-	}
-	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
-		return false
-	}
-	needsReconcile := conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
-	//ctrl.Log.Info("NODE UPDATE", "node", newNode.GetName(), "needs reconcile", needsReconcile)
-	return needsReconcile
-}
-
-func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bool {
-	// Check if the Ready condition exists on the new node.
-	// If not, the node was just created and hasn't updated its status yet
-	readyConditionFound := false
-	for _, cond := range newConditions {
-		if cond.Type == v1.NodeReady {
-			readyConditionFound = true
-			break
-		}
-	}
-	if !readyConditionFound {
-		return false
-	}
-
-	// Check if conditions changed
-	if len(oldConditions) != len(newConditions) {
-		return true
-	}
-	for _, condOld := range oldConditions {
-		conditionFound := false
-		for _, condNew := range newConditions {
-			if condOld.Type == condNew.Type {
-				if condOld.Status != condNew.Status {
-					return true
-				}
-				conditionFound = true
-			}
-		}
-		if !conditionFound {
-			return true
-		}
-	}
-	return false
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -184,7 +130,6 @@ func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bo
 // +kubebuilder:rbac:groups=remediation.medik8s.io,resources=nodehealthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
-// +kubebuilder:rbac:groups=machine.openshift.io,resources=machinehealthchecks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;update;patch;watch;create;delete
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;create
 
@@ -206,11 +151,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, err
 	}
 
-	leaseManager, err := resources.NewLeaseManager(r.Client, nhc, log)
+	leaseHolderIdent := fmt.Sprintf("NodeHealthCheck-%s", nhc.GetName())
+	leaseManager, err := resources.NewLeaseManager(r.Client, leaseHolderIdent, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager)
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
 	nhcOrig := nhc.DeepCopy()
@@ -220,16 +166,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if finalRequeueAfter != nil {
 			result.RequeueAfter = *finalRequeueAfter
 		}
-		patchErr := r.patchStatus(nhc, nhcOrig, ctx)
+		patchErr := r.patchStatus(ctx, log, nhc, nhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
-			// check if we have an error from the rest of the code already
-			if returnErr != nil {
-				returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
-			} else {
-				returnErr = patchErr
-			}
 		}
+		returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
 		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeuAfter", result.RequeueAfter)
 	}()
 
@@ -248,7 +189,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
 				Message: "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts",
 			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
+			r.Recorder.Eventf(nhc, v1.EventTypeWarning, utils.EventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
 		}
 		// stop reconciling
 		return result, nil
@@ -267,7 +208,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  reason,
 				Message: message,
 			})
-			r.Recorder.Eventf(nhc, eventTypeWarning, eventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
+			r.Recorder.Eventf(nhc, v1.EventTypeWarning, utils.EventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
 		}
 		if reason == remediationv1alpha1.ConditionReasonDisabledTemplateNotFound {
 			// requeue for checking back if template exists later
@@ -285,7 +226,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Reason:  remediationv1alpha1.ConditionReasonEnabled,
 			Message: enabledMessage,
 		})
-		r.Recorder.Eventf(nhc, eventTypeNormal, eventReasonEnabled, enabledMessage)
+		r.Recorder.Eventf(nhc, v1.EventTypeNormal, utils.EventReasonEnabled, enabledMessage)
 	}
 
 	// select nodes using the nhc.selector
@@ -302,7 +243,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if r.isClusterUpgrading() {
 		msg := "Postponing potential remediations because of ongoing cluster upgrade"
 		log.Info(msg)
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationSkipped, msg)
 		result.RequeueAfter = clusterUpgradeRequeueAfter
 		return result, nil
 	}
@@ -311,7 +252,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// some actors want to pause remediation.
 		msg := "Postponing potential remediations because of pause requests"
 		log.Info(msg)
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationSkipped, msg)
+		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationSkipped, msg)
 		return result, nil
 	}
 
@@ -326,26 +267,28 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	healthyCount := 0
 	for _, node := range notMatchingNodes {
 		log.Info("handling healthy node", "node", node.GetName())
-		remediationCRs, err := resourceManager.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
-		})
+		remediationCRs, err := resourceManager.HandleHealthyNode(node.GetName(), node.GetName(), nhc)
 		if err != nil {
-			log.Error(err, "failed to get remediation CRs for healthy node", "node", node.Name)
+			log.Error(err, "failed to handle healthy node", "node", node.Name)
 			return result, err
 		}
 
+		// only consider nodes without remediation CRs as healthy
 		if len(remediationCRs) == 0 {
-			// when all CRs are gone, the node is considered healthy
-			if err = resourceManager.HandleHealthyNode(node.GetName(), nhc, r.Recorder); err != nil {
-				log.Error(err, "failed to handle healthy node", "node", node.Name)
-				return result, err
-			}
+			resources.UpdateStatusNodeHealthy(node.GetName(), nhc)
 			healthyCount++
 			continue
 		}
 
+		// add watch in case we were restarted, otherwise we might miss CR deletion events
+		for _, cr := range remediationCRs {
+			if err := r.addWatch(&cr); err != nil {
+				return result, errors.Wrapf(err, "failed to add watch for %s", cr.GroupVersionKind().String())
+			}
+		}
+
 		// set conditions healthy timestamp
-		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(&node, nhc, currentTime())
+		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(node.GetName(), nhc, currentTime())
 		if conditionsHealthyTimestamp != nil {
 			// warn about pending CRs when all CRs have been deleted for some time already but still exist
 			doLog := true
@@ -367,10 +310,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				log.Info("Node conditions don't match unhealthy condition anymore, but node has remediation CR(s) with pending deletion, considering node as unhealthy")
 			}
 		}
-
-		if err = r.deleteRemediationCRs(remediationCRs, nhc, resourceManager, false, log); err != nil {
-			return result, err
-		}
 	}
 
 	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
@@ -390,7 +329,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	} else if *nhc.Status.HealthyNodes < minHealthy {
 		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
 		log.Info(msg)
-		r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, msg)
+		r.Recorder.Event(nhc, v1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
 		skipRemediation = true
 	}
 
@@ -522,43 +461,30 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 	}
 
 	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
-	if err = r.deleteRemediationCRs(orphanedRemediationCRs, nhc, rm, true, log); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstructured.Unstructured, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager, orphaned bool, log logr.Logger) error {
-
-	for _, remediationCR := range remediationCRs {
+	for _, cr := range orphanedRemediationCRs {
 
 		// add watch in case we were restarted, otherwise we might miss CR deletion events
-		if err := r.addWatch(&remediationCR); err != nil {
-			return errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
+		if err := r.addWatch(&cr); err != nil {
+			return errors.Wrapf(err, "failed to add watch for %s", cr.GroupVersionKind().String())
 		}
 
-		if deleted, err := rm.DeleteRemediationCR(&remediationCR, nhc); err != nil {
-			log.Error(err, "failed to delete remediation CR", "name", remediationCR.GetName())
+		// do some housekeeping first. When the CRs are deleted, we never get back here...
+		if err := rm.CleanUp(cr.GetName()); err != nil {
+			log.Error(err, "failed to clean up orphaned node", "node", cr.GetName())
+			return err
+		}
+		resources.UpdateStatusNodeHealthy(cr.GetName(), nhc)
+
+		if deleted, err := rm.DeleteRemediationCR(&cr, nhc); err != nil {
+			log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
 			return err
 		} else if deleted {
-			if orphaned {
-				permanentNodeDeletionExpectedCondition := getCondition(&remediationCR, commonconditions.PermanentNodeDeletionExpectedType, log)
-				log.Info("deleted orphaned remediation CR", "name", remediationCR.GetName(),
-					"reason", permanentNodeDeletionExpectedCondition.Reason,
-					"message", permanentNodeDeletionExpectedCondition.Message)
-			} else {
-				log.Info("deleted remediation CR", "name", remediationCR.GetName())
-			}
+			permanentNodeDeletionExpectedCondition := getCondition(&cr, commonconditions.PermanentNodeDeletionExpectedType, log)
+			log.Info("deleted orphaned remediation CR", "name", cr.GetName(),
+				"reason", permanentNodeDeletionExpectedCondition.Reason,
+				"message", permanentNodeDeletionExpectedCondition.Message)
 		}
 
-		// only update status for orphaned CRs
-		// for all other CRs, the status is updated only when all CRs are gone
-		if orphaned {
-			if err := rm.HandleHealthyNode(remediationCR.GetName(), nhc, r.Recorder); err != nil {
-				log.Error(err, "failed to handle orphaned node", "node", remediationCR.GetName())
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -574,7 +500,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
 		} else if !isAllowed {
 			log.Info("skipping remediation for preventing control plane / etcd quorum loss", "node", node.GetName())
-			r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName()))
+			r.Recorder.Event(nhc, v1.EventTypeWarning, utils.EventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName()))
 			return nil, nil
 		}
 	}
@@ -584,13 +510,13 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	if err != nil {
 		if _, ok := err.(resources.NoTemplateLeftError); ok {
 			log.Error(err, "Remediation timed out, and no template left to try")
-			r.Recorder.Event(nhc, eventTypeWarning, eventReasonNoTemplateLeft, fmt.Sprintf("Remediation timed out, and no template left to try. %s", err.Error()))
+			r.Recorder.Event(nhc, v1.EventTypeWarning, eventReasonNoTemplateLeft, fmt.Sprintf("Remediation timed out, and no template left to try. %s", err.Error()))
 			// there is nothing we can do about this
 			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "failed to get current template")
 	}
-	remediationCR, err := rm.GenerateRemediationCR(node, nhc, currentTemplate)
+	remediationCR, err := rm.GenerateRemediationCRForNode(node, nhc, currentTemplate)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to generate remediation CR")
 	}
@@ -604,7 +530,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	currentRemediationDuration, previousRemediationsDuration := utils.GetRemediationDuration(nhc, remediationCR)
 
 	// create remediation CR
-	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc, currentRemediationDuration, previousRemediationsDuration)
+	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc, &node.Name, currentRemediationDuration, previousRemediationsDuration)
 
 	if err != nil {
 		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained
@@ -654,7 +580,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	metrics.ObserveNodeHealthCheckRemediationCreated(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 
 	if created {
-		r.Recorder.Event(nhc, eventTypeNormal, eventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
+		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
 		var requeueIn *time.Duration
 		if timeout != nil {
 			// come back when timeout expires
@@ -757,9 +683,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 	return false, nil
 }
 
-func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck, ctx context.Context) error {
-
-	log := utils.GetLogWithNHC(r.Log, nhc)
+func (r *NodeHealthCheckReconciler) patchStatus(ctx context.Context, log logr.Logger, nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {
 
 	// calculate phase and reason
 	disabledCondition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled)
@@ -860,7 +784,7 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 		return nil
 	}
 	if err := r.controller.Watch(
-		&source.Kind{Type: remediationCR},
+		source.Kind(r.cache, remediationCR),
 		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
 		predicate.Funcs{
 			// we are just interested in update and delete events for now:

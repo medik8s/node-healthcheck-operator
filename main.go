@@ -25,6 +25,7 @@ import (
 	"runtime"
 
 	// +kubebuilder:scaffold:imports
+	"github.com/go-logr/logr"
 	"go.uber.org/zap/zapcore"
 
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/openshift/api/console/v1alpha1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
@@ -46,6 +48,7 @@ import (
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
+	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
@@ -104,17 +107,15 @@ func main() {
 		// HEADS UP: once controller runtime is updated and this changes to metrics.Options{},
 		// and in case you configure TLS / SecureServing, disable HTTP/2 in it for mitigating related CVEs!
 		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
+		WebhookServer:          getWebhookServer(enableHTTP2, setupLog),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
-	configureWebhookServer(mgr, enableHTTP2)
 
 	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
 	if err != nil {
@@ -142,7 +143,6 @@ func main() {
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
-		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
@@ -154,13 +154,21 @@ func main() {
 	}
 
 	if onOpenshift {
+		featureGateMHCControllerDisabledEvents := make(chan event.GenericEvent)
+		featureGateAccessor := featuregates.NewAccessor(mgr.GetConfig(), featureGateMHCControllerDisabledEvents)
+		if err = mgr.Add(featureGateAccessor); err != nil {
+			setupLog.Error(err, "failed to add feature gate accessor to the manager")
+			os.Exit(1)
+		}
+
 		if err := (&controllers.MachineHealthCheckReconciler{
-			Client:                      mgr.GetClient(),
-			Log:                         ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
-			Scheme:                      mgr.GetScheme(),
-			Recorder:                    mgr.GetEventRecorderFor("MachineHealthCheck"),
-			ClusterUpgradeStatusChecker: upgradeChecker,
-			MHCChecker:                  mhcChecker,
+			Client:                         mgr.GetClient(),
+			Log:                            ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
+			Recorder:                       mgr.GetEventRecorderFor("MachineHealthCheck"),
+			ClusterUpgradeStatusChecker:    upgradeChecker,
+			MHCChecker:                     mhcChecker,
+			FeatureGateMHCControllerEvents: featureGateMHCControllerDisabledEvents,
+			FeatureGates:                   featureGateAccessor,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
 			os.Exit(1)
@@ -201,19 +209,13 @@ func main() {
 	}
 }
 
-func printVersion() {
-	setupLog.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
-	setupLog.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
-	setupLog.Info(fmt.Sprintf("Operator Version: %s", version.Version))
-	setupLog.Info(fmt.Sprintf("Git Commit: %s", version.GitCommit))
-	setupLog.Info(fmt.Sprintf("Build Date: %s", version.BuildDate))
-}
+func getWebhookServer(enableHTTP2 bool, log logr.Logger) webhook.Server {
 
-func configureWebhookServer(mgr ctrl.Manager, enableHTTP2 bool) {
+	options := webhook.Options{
+		Port: 9443,
+	}
 
-	server := mgr.GetWebhookServer()
-
-	// check for OLM injected certs
+	// check if OLM injected certs
 	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
 	certsInjected := true
 	for _, fname := range certs {
@@ -223,23 +225,32 @@ func configureWebhookServer(mgr ctrl.Manager, enableHTTP2 bool) {
 		}
 	}
 	if certsInjected {
-		server.CertDir = WebhookCertDir
-		server.CertName = WebhookCertName
-		server.KeyName = WebhookKeyName
+		options.CertDir = WebhookCertDir
+		options.CertName = WebhookCertName
+		options.KeyName = WebhookKeyName
 	} else {
-		setupLog.Info("OLM injected certs for webhooks not found")
+		log.Info("OLM injected certs for webhooks not found")
 	}
 
-	// disable http/2 for mitigating relevant CVEs
+	// disable http/2 for mitigating relevant CVEs unless configured otherwise
 	if !enableHTTP2 {
-		server.TLSOpts = append(server.TLSOpts,
+		options.TLSOpts = []func(*tls.Config){
 			func(c *tls.Config) {
 				c.NextProtos = []string{"http/1.1"}
 			},
-		)
+		}
 		setupLog.Info("HTTP/2 for webhooks disabled")
 	} else {
 		setupLog.Info("HTTP/2 for webhooks enabled")
 	}
 
+	return webhook.NewServer(options)
+}
+
+func printVersion() {
+	setupLog.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
+	setupLog.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
+	setupLog.Info(fmt.Sprintf("Operator Version: %s", version.Version))
+	setupLog.Info(fmt.Sprintf("Git Commit: %s", version.GitCommit))
+	setupLog.Info(fmt.Sprintf("Build Date: %s", version.BuildDate))
 }

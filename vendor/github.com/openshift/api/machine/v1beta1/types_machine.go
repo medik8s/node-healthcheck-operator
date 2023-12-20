@@ -19,6 +19,11 @@ const (
 	// MachineClusterIDLabel is the label that a machine must have to identify the
 	// cluster to which it belongs.
 	MachineClusterIDLabel = "machine.openshift.io/cluster-api-cluster"
+
+	// IPClaimProtectionFinalizer is placed on an IPAddressClaim by the machine reconciler
+	// when an IPAddressClaim associated with a machine is created. This finalizer is removed
+	// from the IPAddressClaim when the associated machine is deleted.
+	IPClaimProtectionFinalizer = "machine.openshift.io/ip-claim-protection"
 )
 
 type MachineStatusError string
@@ -89,6 +94,9 @@ const (
 	// not result in a Node joining the cluster within a given timeout
 	// and that are managed by a MachineSet
 	JoinClusterTimeoutMachineError = "JoinClusterTimeoutError"
+
+	// IPAddressInvalidReason is set to indicate that the claimed IP address is not valid.
+	IPAddressInvalidReason MachineStatusError = "IPAddressInvalid"
 )
 
 type ClusterStatusError string
@@ -135,6 +143,34 @@ const (
 	RollingUpdateMachineDeploymentStrategyType MachineDeploymentStrategyType = "RollingUpdate"
 )
 
+const (
+	// PhaseFailed indicates a state that will need to be fixed before progress can be made.
+	// Failed machines have encountered a terminal error and must be deleted.
+	// https://github.com/openshift/enhancements/blob/master/enhancements/machine-instance-lifecycle.md
+	// e.g. Instance does NOT exist but Machine has providerID/addresses.
+	// e.g. Cloud service returns a 4xx response.
+	PhaseFailed string = "Failed"
+
+	// PhaseProvisioning indicates the instance does NOT exist.
+	// The machine has NOT been given a providerID or addresses.
+	// Provisioning implies that the Machine API is in the process of creating the instance.
+	PhaseProvisioning string = "Provisioning"
+
+	// PhaseProvisioned indicates the instance exists.
+	// The machine has been given a providerID and addresses.
+	// The machine API successfully provisioned an instance which has not yet joined the cluster,
+	// as such, the machine has NOT yet been given a nodeRef.
+	PhaseProvisioned string = "Provisioned"
+
+	// PhaseRunning indicates the instance exists and the node has joined the cluster.
+	// The machine has been given a providerID, addresses, and a nodeRef.
+	PhaseRunning string = "Running"
+
+	// PhaseDeleting indicates the machine has a deletion timestamp and that the
+	// Machine API is now in the process of removing the machine from the cluster.
+	PhaseDeleting string = "Deleting"
+)
+
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -152,7 +188,10 @@ const (
 // Compatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=2
 type Machine struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   MachineSpec   `json:"spec,omitempty"`
@@ -340,6 +379,10 @@ type LastOperation struct {
 // +openshift:compatibility-gen:level=2
 type MachineList struct {
 	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard list's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Machine `json:"items"`
+
+	Items []Machine `json:"items"`
 }

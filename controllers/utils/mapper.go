@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 
@@ -14,7 +15,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
+)
+
+const (
+	MachineNodeNameIndex = "machineNodeNameIndex"
 )
 
 // NHCByNodeMapperFunc return the Node-to-NHC mapper function
@@ -23,11 +31,11 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	// If we have multiple nhc then it is possible that we fetch nhc objects that
 	// are unrelated to this node. Its even possible that the node still doesn't
 	// have the right labels set to be picked up by the nhc selector.
-	delegate := func(o client.Object) []reconcile.Request {
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
 		requests := make([]reconcile.Request, 0)
 
 		node := &v1.Node{}
-		if err := c.Get(context.Background(), client.ObjectKey{Name: o.GetName()}, node); err != nil {
+		if err := c.Get(ctx, client.ObjectKey{Name: o.GetName()}, node); err != nil {
 			if !errors.IsNotFound(err) {
 				logger.Error(err, "mapper: failed to get node", "node name", o.GetName())
 			}
@@ -35,7 +43,7 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 		}
 
 		nhcList := &remediationv1alpha1.NodeHealthCheckList{}
-		if err := c.List(context.Background(), nhcList, &client.ListOptions{}); err != nil {
+		if err := c.List(ctx, nhcList, &client.ListOptions{}); err != nil {
 			logger.Error(err, "mapper: failed to list NHCs")
 			return requests
 		}
@@ -62,10 +70,10 @@ func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 
 // NHCByMHCEventMapperFunc return the MHC-event-to-NHC mapper function
 func NHCByMHCEventMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
-	delegate := func(o client.Object) []reconcile.Request {
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
 		requests := make([]reconcile.Request, 0)
 		nhcList := &remediationv1alpha1.NodeHealthCheckList{}
-		if err := c.List(context.Background(), nhcList, &client.ListOptions{}); err != nil {
+		if err := c.List(ctx, nhcList, &client.ListOptions{}); err != nil {
 			logger.Error(err, "mapper: failed to list NHCs")
 			return requests
 		}
@@ -81,7 +89,7 @@ func NHCByMHCEventMapperFunc(c client.Client, logger logr.Logger) handler.MapFun
 // NHCByRemediationCRMapperFunc return the RemediationCR-to-NHC mapper function
 func NHCByRemediationCRMapperFunc(logger logr.Logger) handler.MapFunc {
 	// This closure is meant to get the NHC for the given remediation CR
-	delegate := func(o client.Object) []reconcile.Request {
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
 		requests := make([]reconcile.Request, 0)
 		for _, owner := range o.GetOwnerReferences() {
 			if owner.Kind == "NodeHealthCheck" && owner.APIVersion == remediationv1alpha1.GroupVersion.String() {
@@ -94,4 +102,138 @@ func NHCByRemediationCRMapperFunc(logger logr.Logger) handler.MapFunc {
 		return requests
 	}
 	return delegate
+}
+
+// MHCByNodeMapperFunc return the Node-to-MHC mapper function
+func MHCByNodeMapperFunc(c client.Client, logger logr.Logger, featureGates featuregates.Accessor) handler.MapFunc {
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		// only queue MHCs if the MAO MHC controller is disabled
+		if !featureGates.IsMachineAPIOperatorMHCDisabled() {
+			return requests
+		}
+
+		node := &v1.Node{}
+		if err := c.Get(ctx, client.ObjectKey{Name: o.GetName()}, node); err != nil {
+			if errors.IsNotFound(err) {
+				node = &v1.Node{}
+				node.Name = o.GetName()
+				logger.Info("mapping deleted node", "node name", o.GetName())
+			} else {
+				logger.Error(err, "failed to get node", "node name", o.GetName())
+				return requests
+			}
+		}
+
+		machine, err := getMachineFromNode(ctx, c, node.Name)
+		if err != nil {
+			logger.Error(err, "No-op: Unable to retrieve machine from node", "node", node.Name)
+			return requests
+		}
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(ctx, mhcList); err != nil {
+			logger.Error(err, "No-op: Unable to list mhc")
+			return requests
+		}
+
+		for _, mhc := range mhcList.Items {
+			selector, err := metav1.LabelSelectorAsSelector(&mhc.Spec.Selector)
+			if err != nil {
+				logger.Error(err, "mapper: invalid machine selector", "MHC name", mhc.GetName())
+				continue
+			}
+
+			// If the selector is empty, all machines are considered to match
+			if selector.Empty() || selector.Matches(labels.Set(machine.GetLabels())) {
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+					Namespace: mhc.GetNamespace(),
+					Name:      mhc.GetName(),
+				}})
+			}
+		}
+		return requests
+	}
+	return delegate
+}
+
+// MHCByMachineMapperFunc return the Machine-to-MHC mapper function
+func MHCByMachineMapperFunc(c client.Client, logger logr.Logger, featureGates featuregates.Accessor) handler.MapFunc {
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		// only queue MHCs if the MAO MHC controller is disabled
+		if !featureGates.IsMachineAPIOperatorMHCDisabled() {
+			return requests
+		}
+
+		machine := &machinev1beta1.Machine{}
+		if err := c.Get(ctx, client.ObjectKey{Namespace: o.GetNamespace(), Name: o.GetName()}, machine); err != nil {
+			logger.Error(err, "failed to get machine", "namespace", o.GetNamespace(), "name", o.GetName())
+			return requests
+		}
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(ctx, mhcList); err != nil {
+			logger.Error(err, "No-op: Unable to list mhc")
+			return requests
+		}
+
+		for _, mhc := range mhcList.Items {
+			selector, err := metav1.LabelSelectorAsSelector(&mhc.Spec.Selector)
+			if err != nil {
+				logger.Error(err, "mapper: invalid machine selector", "MHC name", mhc.GetName())
+				continue
+			}
+
+			// If the selector is empty, all machines are considered to match
+			if selector.Empty() || selector.Matches(labels.Set(machine.GetLabels())) {
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+					Namespace: mhc.GetNamespace(),
+					Name:      mhc.GetName(),
+				}})
+			}
+		}
+		return requests
+	}
+	return delegate
+}
+
+// MHCByFeatureGateEventMapperFunc return the FeatureGateEvent-to-NHC mapper function
+func MHCByFeatureGateEventMapperFunc(c client.Client, logger logr.Logger, featureGates featuregates.Accessor) handler.MapFunc {
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		// only queue MHCs if the MAO MHC controller is disabled
+		if !featureGates.IsMachineAPIOperatorMHCDisabled() {
+			return requests
+		}
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(ctx, mhcList); err != nil {
+			logger.Error(err, "No-op: Unable to list mhc")
+			return requests
+		}
+		logger.Info("adding all MHCs to reconcile queue for handling feature gate event")
+		for _, mhc := range mhcList.Items {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+				Namespace: mhc.GetNamespace(),
+				Name:      mhc.GetName(),
+			}})
+		}
+		return requests
+	}
+	return delegate
+}
+
+func getMachineFromNode(ctx context.Context, c client.Client, nodeName string) (*machinev1beta1.Machine, error) {
+	machineList := &machinev1beta1.MachineList{}
+	if err := c.List(ctx, machineList, client.MatchingFields{MachineNodeNameIndex: nodeName}); err != nil {
+		return nil, fmt.Errorf("failed getting machine list: %v", err)
+	}
+	if len(machineList.Items) != 1 {
+		return nil, fmt.Errorf("expecting one machine for node %v, got: %v", nodeName, machineList.Items)
+	}
+	return &machineList.Items[0], nil
 }

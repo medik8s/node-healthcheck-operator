@@ -21,6 +21,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - config.openshift.io
+  resources:
+  - featuregates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - console.openshift.io
   resources:
   - consoleplugins
@@ -66,7 +74,17 @@ rules:
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
+- apiGroups:
+  - machine.openshift.io
+  resources:
+  - machinehealthchecks/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - machine.openshift.io
   resources:

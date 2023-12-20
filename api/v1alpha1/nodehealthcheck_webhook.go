@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 const (
@@ -56,36 +57,36 @@ func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &NodeHealthCheck{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (nhc *NodeHealthCheck) ValidateCreate() error {
+func (nhc *NodeHealthCheck) ValidateCreate() (warnings admission.Warnings, err error) {
 	nodehealthchecklog.Info("validate create", "name", nhc.Name)
-	return nhc.validate()
+	return admission.Warnings{}, nhc.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (nhc *NodeHealthCheck) ValidateUpdate(old runtime.Object) error {
+func (nhc *NodeHealthCheck) ValidateUpdate(old runtime.Object) (warnings admission.Warnings, err error) {
 	nodehealthchecklog.Info("validate update", "name", nhc.Name)
 
 	// do the normal validation
 	if err := nhc.validate(); err != nil {
-		return err
+		return admission.Warnings{}, err
 	}
 
 	// during ongoing remediations, some updates are forbidden
 	if nhc.isRemediating() {
 		if updated, field := nhc.isRestrictedFieldUpdated(old.(*NodeHealthCheck)); updated {
-			return fmt.Errorf("%s update %s", field, OngoingRemediationError)
+			return admission.Warnings{}, fmt.Errorf("%s update %s", field, OngoingRemediationError)
 		}
 	}
-	return nil
+	return admission.Warnings{}, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (nhc *NodeHealthCheck) ValidateDelete() error {
+func (nhc *NodeHealthCheck) ValidateDelete() (warnings admission.Warnings, err error) {
 	nodehealthchecklog.Info("validate delete", "name", nhc.Name)
 	if nhc.isRemediating() {
-		return fmt.Errorf("deletion %s", OngoingRemediationError)
+		return admission.Warnings{}, fmt.Errorf("deletion %s", OngoingRemediationError)
 	}
-	return nil
+	return admission.Warnings{}, nil
 }
 
 func (nhc *NodeHealthCheck) validate() error {
