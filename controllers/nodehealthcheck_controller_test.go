@@ -1215,7 +1215,7 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 
 				It("doesn't create a remediation CR for control plane node", func() {
-					cr := newRemediationCR("", underTest)
+					cr := newRemediationCRForNHC("", underTest)
 					crList := &unstructured.UnstructuredList{Object: cr.Object}
 					Consistently(func(g Gomega) {
 						g.Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
