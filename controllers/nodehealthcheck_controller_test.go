@@ -14,6 +14,7 @@ import (
 
 	coordv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -1038,6 +1039,40 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		Context("control plane nodes", func() {
+
+			var pdb *policyv1.PodDisruptionBudget
+			BeforeEach(func() {
+				// create etcd namespace
+				ns := &v1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "openshift-etcd",
+					},
+				}
+				// namespaces can't be deleted!
+				err := k8sClient.Create(context.Background(), ns)
+				if err != nil {
+					Expect(errors.IsAlreadyExists(err)).To(BeTrue())
+				}
+
+				// create PDB
+				pdb = &policyv1.PodDisruptionBudget{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-name",
+						Namespace: "openshift-etcd",
+					},
+				}
+				Expect(k8sClient.Create(context.Background(), pdb)).To(Succeed())
+				DeferCleanup(func() {
+					Expect(k8sClient.Delete(context.Background(), pdb)).To(Succeed())
+				})
+
+				// update pdb status
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pdb), pdb)).To(Succeed())
+				pdb.Status.DisruptionsAllowed = 1
+				Expect(k8sClient.Status().Update(context.Background(), pdb)).To(Succeed())
+
+			})
+
 			When("two control plane nodes are unhealthy, they should be remediated one after another", func() {
 				BeforeEach(func() {
 					objects = newNodes(2, 1, true, true)
@@ -1174,6 +1209,39 @@ var _ = Describe("Node Health Check CR", func() {
 
 				})
 			})
+
+			When("one control plane node is unhealthy, but etcd quorum doesn't allow disruption", func() {
+				BeforeEach(func() {
+					objects = newNodes(1, 2, true, true)
+					underTest = newNodeHealthCheck()
+					objects = append(objects, underTest)
+
+					// update pdb status
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pdb), pdb)).To(Succeed())
+					pdb.Status.DisruptionsAllowed = 0
+					Expect(k8sClient.Status().Update(context.Background(), pdb)).To(Succeed())
+				})
+
+				It("doesn't create a remediation CR for control plane node", func() {
+					cr := newRemediationCR("", underTest)
+					crList := &unstructured.UnstructuredList{Object: cr.Object}
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
+						g.Expect(len(crList.Items)).To(BeNumerically("==", 0), "expected no remediation for cp node")
+					}, "10s", "1s").Should(Succeed())
+					Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+					Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
+						And(
+							HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
+							HaveField("Remediations", BeNil()),
+						),
+					))
+				})
+			})
+
 		})
 
 		When("remediation is needed but pauseRequests exists", func() {

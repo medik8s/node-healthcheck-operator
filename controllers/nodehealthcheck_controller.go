@@ -404,7 +404,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 
 		log.Info("handling unhealthy node", "node", node.GetName())
-		requeueAfter, err := r.remediate(&node, nhc, resourceManager)
+		requeueAfter, err := r.remediate(ctx, &node, nhc, resourceManager)
 		if err != nil {
 			// don't try to remediate other nodes
 			log.Error(err, "failed to start remediation")
@@ -563,18 +563,18 @@ func (r *NodeHealthCheckReconciler) deleteRemediationCRs(remediationCRs []unstru
 	return nil
 }
 
-func (r *NodeHealthCheckReconciler) remediate(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
+func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (*time.Duration, error) {
 
 	log := utils.GetLogWithNHC(r.Log, nhc)
 
 	// prevent remediation of more than 1 control plane node at a time!
 	isControlPlaneNode := nodes.IsControlPlane(node)
 	if isControlPlaneNode {
-		if isAllowed, err := r.isControlPlaneRemediationAllowed(node, nhc, rm); err != nil {
+		if isAllowed, err := r.isControlPlaneRemediationAllowed(ctx, node, nhc, rm); err != nil {
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
 		} else if !isAllowed {
-			log.Info("skipping remediation for preventing control plane quorum loss", "node", node.GetName())
-			r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane quorum loss", node.GetName()))
+			log.Info("skipping remediation for preventing control plane / etcd quorum loss", "node", node.GetName())
+			r.Recorder.Event(nhc, eventTypeWarning, eventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName()))
 			return nil, nil
 		}
 	}
@@ -726,7 +726,7 @@ func (r *NodeHealthCheckReconciler) addTimeOutAnnotation(rm resources.Manager, r
 	return nil
 }
 
-func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (bool, error) {
+func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context.Context, node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck, rm resources.Manager) (bool, error) {
 	if !nodes.IsControlPlane(node) {
 		return true, fmt.Errorf("%s isn't a control plane node", node.GetName())
 	}
@@ -739,7 +739,22 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(node *v1.No
 	if err != nil {
 		return false, err
 	}
-	return len(controlPlaneRemediationCRs) == 0, nil
+	if len(controlPlaneRemediationCRs) > 0 {
+		r.Log.Info("ongoing control plane remediation")
+		return false, nil
+	}
+
+	// no ongoing control plane remediation, check etcd quorum
+	if !r.OnOpenShift {
+		// etcd quorum PDB is only installed in OpenShift
+		return true, nil
+	}
+	if allowed, err := utils.IsEtcdDisruptionAllowed(ctx, r.Client, r.Log); err != nil {
+		return false, err
+	} else if allowed {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (r *NodeHealthCheckReconciler) patchStatus(nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck, ctx context.Context) error {
