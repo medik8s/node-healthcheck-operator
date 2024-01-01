@@ -29,7 +29,7 @@ func IsEtcdDisruptionAllowed(ctx context.Context, cl client.Client, log logr.Log
 		return false, nil
 	}
 	pdb := pdbList.Items[0]
-	if pdb.Status.DisruptionsAllowed >= 1 {
+	if pdb.Status.DisruptionsAllowed >= 0 {
 		log.Info("Etcd disruption is allowed")
 		return true, nil
 	}
