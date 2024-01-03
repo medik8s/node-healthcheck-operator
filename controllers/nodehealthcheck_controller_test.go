@@ -1213,24 +1213,57 @@ var _ = Describe("Node Health Check CR", func() {
 					pdb.Status.DisruptionsAllowed = 0
 					Expect(k8sClient.Status().Update(context.Background(), pdb)).To(Succeed())
 				})
+				// If one CP node is not Ready then NHC is triggered for detecting this node. Two healthy nodes
+				// NHC allows CR creation
+				It("create a remediation CR for control plane node", func() {
+					cr := newRemediationCRForNHC("", underTest)
+					crList := &unstructured.UnstructuredList{Object: cr.Object}
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
+						g.Expect(len(crList.Items)).To(BeNumerically("==", 1), "expected one remediation for one cp node")
+					}, "10s", "1s").Should(Succeed())
+					Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+					Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+					Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
+						And(
+							HaveField("Name", ContainSubstring("unhealthy-control-plane-node-1")),
+							HaveField("Remediations", ContainElement(
+								And(
+									HaveField("Resource.Name", ContainSubstring("unhealthy-control-plane-node-1")),
+									HaveField("Started", Not(BeNil())),
+									HaveField("TimedOut", BeNil()),
+								),
+							)),
+						),
+					))
+				})
+			})
+			When("two control plane node are unhealthy, but etcd quorum doesn't allow disruption", func() {
+				BeforeEach(func() {
+					objects = newNodes(2, 1, true, true)
+					underTest = newNodeHealthCheck()
+					objects = append(objects, underTest)
 
+					// update pdb status
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pdb), pdb)).To(Succeed())
+					pdb.Status.DisruptionsAllowed = 0
+					Expect(k8sClient.Status().Update(context.Background(), pdb)).To(Succeed())
+				})
+				// If two CP nodes are not Ready then NHC is triggered for detecting of them. Only one node is healthy
+				// NHC blocks two CR creation
 				It("doesn't create a remediation CR for control plane node", func() {
 					cr := newRemediationCRForNHC("", underTest)
 					crList := &unstructured.UnstructuredList{Object: cr.Object}
 					Consistently(func(g Gomega) {
 						g.Expect(k8sClient.List(context.Background(), crList)).To(Succeed())
-						g.Expect(len(crList.Items)).To(BeNumerically("==", 0), "expected no remediation for cp node")
+						g.Expect(len(crList.Items)).To(BeNumerically("==", 0), "expected no remediation for two cp nodes")
 					}, "10s", "1s").Should(Succeed())
-					Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+					Expect(*underTest.Status.HealthyNodes).To(Equal(1))
 					Expect(*underTest.Status.ObservedNodes).To(Equal(3))
 					Expect(underTest.Status.InFlightRemediations).To(HaveLen(0))
-					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
-					Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
-						And(
-							HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
-							HaveField("Remediations", BeNil()),
-						),
-					))
+					Expect(underTest.Status.UnhealthyNodes).To(HaveLen(2))
 				})
 			})
 
