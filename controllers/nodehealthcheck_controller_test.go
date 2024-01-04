@@ -1564,6 +1564,7 @@ var _ = Describe("Node Health Check CR", func() {
 			r                   = &NodeHealthCheckReconciler{}
 			unhealthyConditions []v1alpha1.UnhealthyCondition
 			nodeConditions      []v1.NodeCondition
+			node                *v1.Node
 
 			condType1         = v1.NodeConditionType("type1")
 			condType2         = v1.NodeConditionType("type2")
@@ -1600,6 +1601,11 @@ var _ = Describe("Node Health Check CR", func() {
 			}
 		})
 
+		JustBeforeEach(func() {
+			node = &v1.Node{}
+			node.Status.Conditions = nodeConditions
+		})
+
 		When("no condition matches", func() {
 			BeforeEach(func() {
 				nodeConditions = []v1.NodeCondition{
@@ -1616,7 +1622,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
@@ -1633,7 +1639,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
@@ -1656,7 +1662,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
 				Expect(match).To(BeTrue(), "expected not healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
@@ -1678,7 +1684,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, nodeConditions)
+				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
@@ -1761,6 +1767,11 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 					Status:   v1.ConditionFalse,
 					Duration: metav1.Duration{Duration: unhealthyConditionDuration},
 				},
+				{
+					Type:     v1.NodeReady,
+					Status:   v1.ConditionUnknown,
+					Duration: metav1.Duration{Duration: unhealthyConditionDuration},
+				},
 			},
 			RemediationTemplate: infraRemediationTemplateRef.DeepCopy(),
 		},
@@ -1774,7 +1785,7 @@ func newNodes(unhealthy int, healthy int, isControlPlane bool, unhealthyNow bool
 		roleName = "-control-plane"
 	}
 	for i := unhealthy; i > 0; i-- {
-		node := newNode(fmt.Sprintf("unhealthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionFalse, isControlPlane, unhealthyNow)
+		node := newNode(fmt.Sprintf("unhealthy%s-node-%d", roleName, i), v1.NodeReady, v1.ConditionUnknown, isControlPlane, unhealthyNow)
 		o = append(o, node)
 	}
 	for i := healthy; i > 0; i-- {
