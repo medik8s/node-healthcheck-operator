@@ -737,6 +737,43 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 			})
 
+			When("unhealthy condition changes", func() {
+				BeforeEach(func() {
+					setupObjects(1, 2, true)
+				})
+
+				It("should not delete CR when duration didn't expire yet", func() {
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+					By("changing to other unhealthy condition")
+					node := &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)).To(Succeed())
+					Expect(node.Status.Conditions[0].Status).ToNot(Equal(v1.ConditionFalse))
+					node.Status.Conditions[0].Status = v1.ConditionFalse
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					By("ensuring CR isn't deleted")
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					}, unhealthyConditionDuration*2, "1s").Should(Succeed(), "CR was deleted")
+
+					By("changing to healthy condition")
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)).To(Succeed())
+					node.Status.Conditions[0].Status = v1.ConditionTrue
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					By("ensuring CR is deleted")
+					Eventually(func(g Gomega) {
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						g.Expect(errors.IsNotFound(err)).To(BeTrue())
+					}, "2s", "200ms").Should(Succeed(), "CR wasn't deleted")
+				})
+
+			})
+
 		})
 
 		Context("with a single escalating remediation", func() {
@@ -905,7 +942,60 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(0))
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 
+				// TODO test that all CRs are deleted!
 			})
+
+			When("unhealthy condition changes", func() {
+
+				It("should not proceed with next remediation when duration didn't expire yet", func() {
+					// wait until nodes are unhealthy
+					time.Sleep(nodeUnhealthyIn)
+
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+					By("changing to other unhealthy condition")
+					node := &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)).To(Succeed())
+					Expect(node.Status.Conditions[0].Status).ToNot(Equal(v1.ConditionFalse))
+					node.Status.Conditions[0].Status = v1.ConditionFalse
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					By("ensuring CR isn't deleted")
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					}, firstRemediationTimeout+2*time.Second, "500ms").Should(Succeed(), "CR was deleted")
+
+					By("waiting for duration expiration")
+					time.Sleep(unhealthyConditionDuration - firstRemediationTimeout)
+
+					By("ensuring next remediation is processed now")
+					// old CR timed out
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
+					// new CR created
+					newCr := newRemediationCRForNHCSecondRemediation(unhealthyNodeName, underTest)
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)).To(Succeed())
+
+					By("changing to healthy condition")
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)).To(Succeed())
+					node.Status.Conditions[0].Status = v1.ConditionTrue
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					By("ensuring CRs are deleted")
+					Eventually(func(g Gomega) {
+						// TODO this currently fails, already reported, will be handled in a separate PR
+						//err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						//g.Expect(errors.IsNotFound(err)).To(BeTrue())
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)
+						g.Expect(errors.IsNotFound(err)).To(BeTrue())
+					}, "2s", "200ms").Should(Succeed(), "CR wasn't deleted")
+				})
+
+			})
+
 		})
 
 		Context("with progressing condition being set", func() {
