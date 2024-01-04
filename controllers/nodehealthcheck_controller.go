@@ -675,7 +675,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 		// etcd quorum PDB is only installed in OpenShift
 		return true, nil
 	}
-	if allowed, err := utils.IsEtcdDisruptionAllowed(ctx, r.Client, r.Log); err != nil {
+	if allowed, err := utils.IsEtcdDisruptionAllowed(ctx, r.Client, r.Log, node); err != nil {
 		return false, err
 	} else if allowed {
 		return true, nil

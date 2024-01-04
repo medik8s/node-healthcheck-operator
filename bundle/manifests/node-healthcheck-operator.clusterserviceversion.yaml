@@ -302,6 +302,14 @@ spec:
           - list
           - watch
         - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
           - machine.openshift.io
           resources:
           - machinehealthchecks
