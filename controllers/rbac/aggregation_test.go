@@ -33,7 +33,7 @@ var _ = Describe("Aggregation Tests", func() {
 
 	JustBeforeEach(func() {
 		By("init new Aggregation")
-		aggr = NewAggregation(k8sManager.GetClient(), "default")
+		aggr = NewAggregation(context.Background(), k8sManager.GetClient(), "default")
 		Expect(aggr.CreateOrUpdateAggregation()).To(Succeed())
 	})
 

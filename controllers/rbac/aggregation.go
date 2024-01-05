@@ -31,15 +31,17 @@ type Aggregation interface {
 
 type aggregation struct {
 	client.Client
+	ctx       context.Context
 	namespace string
 }
 
 var _ Aggregation = aggregation{}
 
 // NewAggregation create a new Aggregation struct
-func NewAggregation(client client.Client, namespace string) Aggregation {
+func NewAggregation(ctx context.Context, client client.Client, namespace string) Aggregation {
 	return &aggregation{
 		Client:    client,
+		ctx:       ctx,
 		namespace: namespace,
 	}
 }
@@ -60,7 +62,7 @@ func (a aggregation) createOrUpdateRole() error {
 			Name: roleName,
 		},
 	}
-	err := a.Get(context.Background(), client.ObjectKeyFromObject(role), role)
+	err := a.Get(a.ctx, client.ObjectKeyFromObject(role), role)
 	if errors.IsNotFound(err) {
 		return a.createRole()
 	} else if err != nil {
@@ -70,7 +72,7 @@ func (a aggregation) createOrUpdateRole() error {
 }
 
 func (a aggregation) createRole() error {
-	err := a.Create(context.Background(), a.getRole())
+	err := a.Create(a.ctx, a.getRole())
 	return err
 }
 
@@ -78,7 +80,7 @@ func (a aggregation) updateRole(oldRole *rbacv1.ClusterRole) error {
 	newRole := a.getRole()
 	oldRole.Rules = newRole.Rules
 	oldRole.AggregationRule = newRole.AggregationRule
-	return a.Update(context.Background(), oldRole)
+	return a.Update(a.ctx, oldRole)
 }
 
 func (a aggregation) getRole() *rbacv1.ClusterRole {
@@ -107,7 +109,7 @@ func (a aggregation) createOrUpdateRoleBinding() error {
 			Name: roleName,
 		},
 	}
-	err := a.Get(context.Background(), client.ObjectKeyFromObject(binding), binding)
+	err := a.Get(a.ctx, client.ObjectKeyFromObject(binding), binding)
 	if errors.IsNotFound(err) {
 		return a.createRoleBinding()
 	} else if err != nil {
@@ -117,7 +119,7 @@ func (a aggregation) createOrUpdateRoleBinding() error {
 }
 
 func (a aggregation) createRoleBinding() error {
-	err := a.Create(context.Background(), a.getRoleBinding())
+	err := a.Create(a.ctx, a.getRoleBinding())
 	return err
 }
 
@@ -125,7 +127,7 @@ func (a aggregation) updateRoleBinding(oldBinding *rbacv1.ClusterRoleBinding) er
 	newBinding := a.getRoleBinding()
 	oldBinding.RoleRef = newBinding.RoleRef
 	oldBinding.Subjects = newBinding.Subjects
-	return a.Update(context.Background(), oldBinding)
+	return a.Update(a.ctx, oldBinding)
 }
 
 func (a aggregation) getRoleBinding() *rbacv1.ClusterRoleBinding {
@@ -158,7 +160,7 @@ func (a aggregation) getOwnerRefs() []metav1.OwnerReference {
 			Namespace: a.namespace,
 		},
 	}
-	if err := a.Get(context.Background(), client.ObjectKeyFromObject(depl), depl); err != nil {
+	if err := a.Get(a.ctx, client.ObjectKeyFromObject(depl), depl); err != nil {
 		// ignore for now, skip owner refs
 		return nil
 	}

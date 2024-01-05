@@ -42,8 +42,7 @@ func (i *initializer) Start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to get the deployment namespace")
 	}
 
-	// TODO use give context
-	if err = rbac.NewAggregation(i.cl, ns).CreateOrUpdateAggregation(); err != nil {
+	if err = rbac.NewAggregation(ctx, i.cl, ns).CreateOrUpdateAggregation(); err != nil {
 		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
 	}
 
