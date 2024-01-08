@@ -71,7 +71,7 @@ export IMAGE_TAG
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
 
 OPERATOR_NAME ?= node-healthcheck-operator
-OPERATOR_NAMESPACE ?= openshift-operators
+OPERATOR_NAMESPACE ?= openshift-workload-availability
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
