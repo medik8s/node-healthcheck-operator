@@ -46,8 +46,8 @@ func modifyKubelet(clientSet *kubernetes.Clientset, node *v1.Node, namespace str
 
 func WaitForNodeHealthyCondition(k8sClient ctrl.Client, node *v1.Node, status v1.ConditionStatus) time.Time {
 	var transitionTime time.Time
-	Eventually(func() v1.ConditionStatus {
-		Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
+	Eventually(func(g Gomega) v1.ConditionStatus {
+		g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
 		for _, cond := range node.Status.Conditions {
 			if cond.Type == v1.NodeReady {
 				transitionTime = cond.LastTransitionTime.Time
