@@ -74,6 +74,10 @@ var _ = BeforeSuite(func() {
 	err = remediationv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient).NotTo(BeNil())
+
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:             scheme.Scheme,
 		MetricsBindAddress: "0",
@@ -83,16 +87,15 @@ var _ = BeforeSuite(func() {
 	os.Setenv("DEPLOYMENT_NAMESPACE", "default")
 
 	go func() {
-		GinkgoRecover()
+		defer GinkgoRecover()
 		// https://github.com/kubernetes-sigs/controller-runtime/issues/1571
 		ctx, cancel = context.WithCancel(ctrl.SetupSignalHandler())
 		err := k8sManager.Start(ctx)
 		Expect(err).NotTo(HaveOccurred())
 	}()
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
+	// no clue why, but do not use the context from above!
+	Expect(k8sManager.GetCache().WaitForCacheSync(context.Background())).To(BeTrue(), "failed to wait for caches to sync")
 })
 
 var _ = AfterSuite(func() {
