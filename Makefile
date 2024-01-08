@@ -21,8 +21,9 @@ ENVTEST_K8S_VERSION = 1.26
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 DEFAULT_VERSION := 0.0.1
 # Let CI set VERSION based on git tags. But heads up, VERSION should not have the 'v' prefix!
-VERSION ?= $(DEFAULT_VERSION)
-export VERSION
+export VERSION ?= $(DEFAULT_VERSION)
+# For the replaces field in the CSV, mandatory to be set for versioned builds! Should also not have the 'v' prefix.
+export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
 
 CHANNELS = stable
 export CHANNELS
@@ -329,6 +330,16 @@ bundle-update: ## update container image in the metadata
 	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ${CSV}
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
 	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
+
+	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
+		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
+			echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
+			exit 1; \
+		else \
+			# add replaces field when building versioned bundle \
+			sed -r -i "/olm.skipRange:.*/ a\    replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
+		fi \
+	fi
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-validate
@@ -344,6 +355,8 @@ bundle-reset: ## Revert all version or build date related changes
 	VERSION=0.0.1 $(MAKE) manifests bundle
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
+	# delete replaces field
+	sed -r -i "/replaces:.*/d" ${CSV}
 
 .PHONY: bundle-build
 bundle-build: bundle bundle-update ## Build the bundle image.
