@@ -47,3 +47,24 @@ It is up to the remediation provider to delete the remediation CR in case the
 node is deleted, and a new one (with a different name) is reprovisioned.
 In that specific scenario the NHC controller can not detect a successful node
 remediation and delete the remediation CR itself.
+
+### Special cases
+
+#### Ignoring unhealthy node condition duration in case node condition changes during remediation
+
+Sometimes the node status changes from one condition to another one during remediation, and both conditions are configured as unhealthy.
+E.g. when a node with condition type `Ready` and status `Unknown` is rebooted, it typically moves to `Ready` = `False` during reboot,
+before finally moving to `Ready` = `True` when done.
+
+This can result in remediation loops: in theory the node has to be considered as healthy while `Ready` = `False`, as long as the configured duration
+didn't expire yet. Subsequently, when the duration expires before the node moves to `Ready` = `True`, the node is considered unhealthy and remediated again.
+
+In order to prevent such remediation loops, NHC will ignore unhealthy nodes which don't have any unhealthy condition with expired duration anymore,
+but an unhealthy condition with not expired duration.
+
+That means:
+
+- remediation CRs are not deleted during that time
+- for escalating remediations, NHC won't proceed to the next remediation
+
+NHC will continue to handle the node as either unhealthy when the duration expires, or as healthy in case no unhealthy condition matches anymore.

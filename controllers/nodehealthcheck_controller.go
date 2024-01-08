@@ -236,7 +236,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// check nodes health
-	notMatchingNodes, matchingNodes, requeueAfter := r.checkNodeConditions(selectedNodes, nhc)
+	notMatchingNodes, soonMatchingNodes, matchingNodes, requeueAfter := r.checkNodeConditions(selectedNodes, nhc)
 	finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
 
 	// TODO consider setting Disabled condition?
@@ -259,11 +259,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Delete orphaned CRs: they have no node, and Succeeded and NodeNameChangeExpected conditions set to True.
 	// This happens e.g. on cloud providers with Machine Deletion remediation: the broken node will be deleted and
 	// a new node created, with a new name, and no relationship to the old node
-	if err = r.deleteOrphanedRemediationCRs(nhc, append(notMatchingNodes, matchingNodes...), resourceManager, log); err != nil {
+	if err = r.deleteOrphanedRemediationCRs(nhc, append(notMatchingNodes, append(soonMatchingNodes, matchingNodes...)...), resourceManager, log); err != nil {
 		return result, err
 	}
 
-	// delete remediation CRs for healthy nodes
+	// Delete remediation CRs for healthy nodes
+	// Don't do this for nodes which soon match unhealthy conditions, because they might just have switched from one unhealthy condition to another,
+	// but the timeout of the new condition didn't expire yet.
+	// (e.g. from Ready=Unknown to Ready=False)
 	healthyCount := 0
 	for _, node := range notMatchingNodes {
 		log.Info("handling healthy node", "node", node.GetName())
@@ -314,6 +317,15 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
 	nhc.Status.HealthyNodes = &healthyCount
+
+	// log currently unhealthy nodes with only soon unhealthy conditions left
+	for _, node := range soonMatchingNodes {
+		for _, unhealthy := range nhc.Status.UnhealthyNodes {
+			if unhealthy.Name == node.GetName() {
+				log.Info("Ignoring node, because it was unhealthy, and is likely to be unhealthy again.", "node", node.GetName())
+			}
+		}
+	}
 
 	// we are done in case we don't have unhealthy nodes
 	if len(matchingNodes) == 0 {
@@ -377,11 +389,16 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 	return clusterUpgrading
 }
 
-func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (notMatchingNodes []v1.Node, matchingNodes []v1.Node, requeueAfter *time.Duration) {
+func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (notMatchingNodes, soonMatchingNodes, matchingNodes []v1.Node, requeueAfter *time.Duration) {
 	for _, node := range nodes {
-		if matchesUnhealthyConditions, thisRequeueAfter := r.matchesUnhealthyConditions(nhc.Spec.UnhealthyConditions, node.Status.Conditions); !matchesUnhealthyConditions {
-			notMatchingNodes = append(notMatchingNodes, node)
-			requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
+		node := node
+		if matchesUnhealthyConditions, thisRequeueAfter := r.matchesUnhealthyConditions(nhc.Spec.UnhealthyConditions, &node); !matchesUnhealthyConditions {
+			if thisRequeueAfter != nil && *thisRequeueAfter > 0 {
+				soonMatchingNodes = append(soonMatchingNodes, node)
+				requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
+			} else {
+				notMatchingNodes = append(notMatchingNodes, node)
+			}
 		} else if r.MHCChecker.NeedIgnoreNode(&node) {
 			// consider terminating nodes being handled by MHC as healthy, from NHC point of view
 			notMatchingNodes = append(notMatchingNodes, node)
@@ -392,9 +409,9 @@ func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *re
 	return
 }
 
-func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []remediationv1alpha1.UnhealthyCondition, nodeConditions []v1.NodeCondition) (bool, *time.Duration) {
+func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []remediationv1alpha1.UnhealthyCondition, node *v1.Node) (bool, *time.Duration) {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
-	for _, nc := range nodeConditions {
+	for _, nc := range node.Status.Conditions {
 		nodeConditionByType[nc.Type] = nc
 	}
 
@@ -408,11 +425,13 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []
 			now := currentTime()
 			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 				// unhealthy condition duration expired, node is unhealthy
+				r.Log.Info("Node matches unhealthy condition", "node", node.GetName(), "condition type", c.Type, "condition status", c.Status)
 				return true, nil
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
-				thisExpiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now) + 1*time.Second
-				expiresAfter = utils.MinRequeueDuration(expiresAfter, &thisExpiresAfter)
+				thisExpiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now)
+				r.Log.Info("Node is going to match unhealthy condition", "node", node.GetName(), "condition type", c.Type, "condition status", c.Status, "duration left", thisExpiresAfter)
+				expiresAfter = utils.MinRequeueDuration(expiresAfter, pointer.Duration(thisExpiresAfter+1*time.Second))
 			}
 		}
 	}
