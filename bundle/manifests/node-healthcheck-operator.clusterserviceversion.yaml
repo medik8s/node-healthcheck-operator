@@ -485,6 +485,8 @@ spec:
               priorityClassName: system-cluster-critical
               securityContext:
                 runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
               serviceAccountName: node-healthcheck-controller-manager
               terminationGracePeriodSeconds: 10
               tolerations:
@@ -557,6 +559,8 @@ spec:
                   readOnly: true
               securityContext:
                 runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
               tolerations:
               - effect: NoSchedule
                 key: node-role.kubernetes.io/master
