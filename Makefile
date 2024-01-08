@@ -69,16 +69,19 @@ export IMAGE_TAG
 # Image URL of the console plugin
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
 
+OPERATOR_NAME ?= node-healthcheck-operator
+OPERATOR_NAMESPACE ?= openshift-operators
+
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-bundle:$(IMAGE_TAG)
+BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-bundle:$(IMAGE_TAG)
 
 # INDEX_IMG defines the image:tag used for the index.
 # You can use it as an arg. (E.g make bundle-build INDEX_IMG=<some-registry>/<project-name-index>:<tag>)
-INDEX_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-index:$(IMAGE_TAG)
+INDEX_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-index:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
-IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator:$(IMAGE_TAG)
+IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME):$(IMAGE_TAG)
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -287,7 +290,7 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
-export CSV="./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml"
+export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
 .PHONY: bundle
 bundle: bundle-base ## Generate bundle manifests and metadata, then validate generated files.
@@ -360,11 +363,11 @@ bundle-push: ## Push the bundle image
 
 .PHONY: bundle-run
 bundle-run: operator-sdk ## Run bundle image
-	$(OPERATOR_SDK) -n openshift-operators run bundle $(BUNDLE_IMG)
+	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) run bundle $(BUNDLE_IMG)
 
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
-	$(OPERATOR_SDK) -n openshift-operators cleanup node-healthcheck-operator --delete-all
+	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(OPERATOR_NAME) --delete-all
 
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
