@@ -870,8 +870,8 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 
 				// get new CR
-				cr = newRemediationCRForNHCSecondRemediation(unhealthyNodeName, underTest)
-				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+				newCr := newRemediationCRForNHCSecondRemediation(unhealthyNodeName, underTest)
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)).To(Succeed())
 
 				Expect(*underTest.Status.HealthyNodes).To(Equal(2))
 				Expect(*underTest.Status.ObservedNodes).To(Equal(3))
@@ -879,10 +879,10 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
 				Expect(underTest.Status.UnhealthyNodes[0].Name).To(Equal(cr.GetName()))
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(2))
-				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
-				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.Name).To(Equal(cr.GetName()))
-				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.Namespace).To(Equal(cr.GetNamespace()))
-				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.UID).To(Equal(cr.GetUID()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(newCr.GroupVersionKind()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.Name).To(Equal(newCr.GetName()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.Namespace).To(Equal(newCr.GetNamespace()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.UID).To(Equal(newCr.GetUID()))
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Started).ToNot(BeNil())
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).To(BeNil())
 
@@ -897,12 +897,12 @@ var _ = Describe("Node Health Check CR", func() {
 				time.Sleep(17 * time.Second)
 
 				// get updated CR
-				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)).To(Succeed())
 				Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
 
 				// get updated NHC
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(newCr.GroupVersionKind()))
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].TimedOut).ToNot(BeNil())
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 
@@ -942,7 +942,13 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(0))
 				Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseEnabled))
 
-				// TODO test that all CRs are deleted!
+				// Ensure CRs are deleted
+				Eventually(func(g Gomega) {
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)
+					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				}, "2s", "200ms").Should(Succeed(), "CR wasn't deleted")
 			})
 
 			When("unhealthy condition changes", func() {
@@ -986,10 +992,9 @@ var _ = Describe("Node Health Check CR", func() {
 
 					By("ensuring CRs are deleted")
 					Eventually(func(g Gomega) {
-						// TODO this currently fails, already reported, will be handled in a separate PR
-						//err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
-						//g.Expect(errors.IsNotFound(err)).To(BeTrue())
-						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)
+						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						g.Expect(errors.IsNotFound(err)).To(BeTrue())
+						err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)
 						g.Expect(errors.IsNotFound(err)).To(BeTrue())
 					}, "2s", "200ms").Should(Succeed(), "CR wasn't deleted")
 				})

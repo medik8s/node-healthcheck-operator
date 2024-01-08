@@ -90,6 +90,7 @@ func GetAllRemediationTemplates(healthCheck client.Object) []*v1.ObjectReference
 		}
 		refs := make([]*v1.ObjectReference, len(nhc.Spec.EscalatingRemediations))
 		for i, rem := range nhc.Spec.EscalatingRemediations {
+			rem := rem
 			refs[i] = &rem.RemediationTemplate
 		}
 		return refs
