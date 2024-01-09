@@ -10,6 +10,8 @@ metadata:
     createdAt: ""
     description: Detect failed Nodes and trigger remediation with e.g. Self Node Remediation.
     olm.skipRange: '>=0.0.1'
+    operatorframework.io/suggested-namespace: openshift-workload-availability
+    operatorframework.io/suggested-namespace-template: '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"openshift-workload-availability","annotations":{"openshift.io/node-selector":""}}}'
     repository: https://github.com/medik8s/node-healthcheck-operator
     support: Medik8s
   name: node-healthcheck-operator.v0.0.0

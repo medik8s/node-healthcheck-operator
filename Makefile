@@ -21,8 +21,11 @@ ENVTEST_K8S_VERSION = 1.26
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 DEFAULT_VERSION := 0.0.1
 # Let CI set VERSION based on git tags. But heads up, VERSION should not have the 'v' prefix!
-VERSION ?= $(DEFAULT_VERSION)
-export VERSION
+export VERSION ?= $(DEFAULT_VERSION)
+# For the replaces field in the CSV, mandatory to be set for versioned builds! Should also not have the 'v' prefix.
+export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
+# Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
+export SKIP_RANGE_LOWER ?= "0.1.0"
 
 CHANNELS = stable
 export CHANNELS
@@ -69,16 +72,19 @@ export IMAGE_TAG
 # Image URL of the console plugin
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
 
+OPERATOR_NAME ?= node-healthcheck-operator
+OPERATOR_NAMESPACE ?= openshift-workload-availability
+
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-bundle:$(IMAGE_TAG)
+BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-bundle:$(IMAGE_TAG)
 
 # INDEX_IMG defines the image:tag used for the index.
 # You can use it as an arg. (E.g make bundle-build INDEX_IMG=<some-registry>/<project-name-index>:<tag>)
-INDEX_IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator-index:$(IMAGE_TAG)
+INDEX_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-index:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
-IMG ?= $(IMAGE_REGISTRY)/node-healthcheck-operator:$(IMAGE_TAG)
+IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME):$(IMAGE_TAG)
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -287,7 +293,7 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
-export CSV="./bundle/manifests/node-healthcheck-operator.clusterserviceversion.yaml"
+export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
 .PHONY: bundle
 bundle: bundle-base ## Generate bundle manifests and metadata, then validate generated files.
@@ -323,9 +329,19 @@ export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 bundle-update: ## update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 	# set skipRange
-	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ${CSV}
+	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'|;" ${CSV}
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
 	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
+
+	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
+		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
+			echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
+			exit 1; \
+		else \
+			# add replaces field when building versioned bundle \
+			sed -r -i "/olm.skipRange:.*/ a\    replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
+		fi \
+	fi
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-validate
@@ -341,6 +357,8 @@ bundle-reset: ## Revert all version or build date related changes
 	VERSION=0.0.1 $(MAKE) manifests bundle
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
+	# delete replaces field
+	sed -r -i "/replaces:.*/d" ${CSV}
 
 .PHONY: bundle-build
 bundle-build: bundle bundle-update ## Build the bundle image.
@@ -360,11 +378,11 @@ bundle-push: ## Push the bundle image
 
 .PHONY: bundle-run
 bundle-run: operator-sdk ## Run bundle image
-	$(OPERATOR_SDK) -n openshift-operators run bundle $(BUNDLE_IMG)
+	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) run bundle $(BUNDLE_IMG)
 
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
-	$(OPERATOR_SDK) -n openshift-operators cleanup node-healthcheck-operator --delete-all
+	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(OPERATOR_NAME) --delete-all
 
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:

@@ -18,3 +18,9 @@ namePrefix: node-healthcheck-
 # Workaround: rename the deployment (by modifying namePrefix above)
 commonLabels:
   app.kubernetes.io/name: node-healthcheck-operator
+
+# always apply seccompProfile patch, since we don't support old OCP / k8s versions anymore
+patches:
+  - path: seccomp_patch.yaml
+    target:
+      kind: Deployment

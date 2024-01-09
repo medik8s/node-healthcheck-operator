@@ -1,10 +1,8 @@
-name: Publish Container Images
+name: Post Submit
 on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
@@ -12,7 +10,7 @@ permissions:
 
 jobs:
   push_to_registry:
-    name: Build and push images to quay.io/medik8s
+    name: Build and push unversioned images to quay.io/medik8s
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
@@ -32,47 +30,13 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
           registry: quay.io
 
-      - name: Build and push CSV 0.0.1 + latest images, for pushes
-        if: ${{ github.ref_type != 'tag' }}
+      - name: Build and push CSV version v0.0.1 with latest images
         run: make container-build-k8s container-push
 
-      - name: Build and push versioned CSV and images, for tags
-        if: ${{ github.ref_type == 'tag' }}
-        # remove leading 'v' from tag!
-        run: export VERSION=$(echo $GITHUB_REF_NAME | sed 's/v//') && make container-build-k8s container-push
-
-      - name: Create release with manifests
-        if: ${{ github.ref_type == 'tag' }}
-        # https://github.com/marketplace/actions/github-release-create-update-and-upload-assets
-        uses: meeDamian/github-release@2.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          draft: true
-          body: |
-            # Node HealthCheck Operator ${{ github.ref_name }}
-            
-            ## Notable Changes
-            
-            * TODO
-
-            ## Release Artifacts
-            
-            ### Images
-
-            * Operator: quay.io/medik8s/node-healthcheck-operator:${{ github.ref_name }}
-            * Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:${{ github.ref_name }}
-            * Catalog aka Index: quay.io/medik8s/node-healthcheck-operator-index:${{ github.ref_name }}  
-            
-            ### Source code and OLM manifests
-
-            Please find the source code and the OLM manifests in the `Assets` section below.
-
-          gzip: folders
-          files: >
-            Manifests:bundle/
-
       - name: Build and push index image with versioned NHC + SNR images
-        if: ${{ github.ref_type != 'tag' }}
+        # broken atm because of mandatory previous release...
+        # we need to skip replaces field when version = 9.9.9-ci
+        if: false
         run: |
           # get script from github
           NAME=build-nhc-snr.sh
