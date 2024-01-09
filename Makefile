@@ -339,7 +339,7 @@ bundle-update: ## update container image in the metadata
 			exit 1; \
 		else \
 			# add replaces field when building versioned bundle \
-			sed -r -i "/olm.skipRange:.*/ a\    replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
+			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
 		fi \
 	fi
 	$(MAKE) bundle-validate
