@@ -375,6 +375,11 @@ bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metri
 	$(KUSTOMIZE) build config/manifests/metrics | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
+.PHONY: bundle-metrics-ocp
+bundle-metrics-ocp: bundle-base ## Generate bundle manifests and metadata with metric relates manifests, then validate generated files.
+	$(KUSTOMIZE) build config/manifests/metrics-ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(MAKE) bundle-validate
+
 # Apply version or build date related changes in the bundle
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
@@ -413,6 +418,10 @@ bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
 
 .PHONY: bundle-build-metrics
 bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for k8s.
+	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+
+.PHONY: bundle-build-metrics-ocp
+bundle-build-metrics-ocp: bundle-metrics-ocp bundle-update ## Build the bundle image for OCP/OKD predisposed for user workload Prometheus monitoring.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
@@ -470,6 +479,10 @@ container-build-k8s: ## Build containers
 .PHONY: container-build-metrics
 container-build-metrics: ## Build containers
 	make docker-build bundle-build-metrics
+
+.PHONY: container-build-metrics-ocp
+container-build-metrics-ocp: ## Build containers
+	make docker-build bundle-build-metrics-ocp
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
