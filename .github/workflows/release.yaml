@@ -57,7 +57,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true
           body: |
-            # Node HealthCheck Operator ${{ env.VERSION }}
+            # Node HealthCheck Operator v${{ env.VERSION }}
             
             ## Notable Changes
             
@@ -67,8 +67,8 @@ jobs:
             
             ### Images
 
-            * Operator: quay.io/medik8s/node-healthcheck-operator:${{ env.VERSION }}
-            * Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:${{ env.VERSION }}
+            * Operator: quay.io/medik8s/node-healthcheck-operator:v${{ env.VERSION }}
+            * Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:v${{ env.VERSION }}
             
             ### Source code and OLM manifests
 
