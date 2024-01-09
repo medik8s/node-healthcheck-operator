@@ -8,6 +8,9 @@ on:
      previous_version:
        description: "The previous version, used for the CVS's `replaces` field, without the leading `v`"
        required: true
+     skip_range_lower:
+       description: "Lower bound for the skipRange field in the CSV, should be set to the oldest supported version, without the leading `v`"
+       required: true
 
 permissions:
   contents: write
@@ -19,11 +22,13 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       PREVIOUS_VERSION: ${{ inputs.previous_version }}
+      SKIP_RANGE_LOWER: ${{ inputs.skip_range_lower }}
     steps:
       - name: Log inputs
         run: |
-          echo "Building version: $VERSION"
-          echo "which replaces version: $PREVIOUS_VERSION"
+          echo "Building version: ${VERSION},"
+          echo "which replaces version: ${PREVIOUS_VERSION}."
+          echo "Lower skip range bound: ${SKIP_RANGE_LOWER}."
 
       - name: Checkout code
         uses: actions/checkout@v3
@@ -43,7 +48,7 @@ jobs:
           registry: quay.io
 
       - name: Build and push versioned CSV and images
-        run: VERSION=$VERSION PREVIOUS_VERSION=$PREVIOUS_VERSION make container-build-k8s container-push
+        run: VERSION=$VERSION PREVIOUS_VERSION=$PREVIOUS_VERSION SKIP_RANGE_LOWER=$SKIP_RANGE_LOWER make container-build-k8s container-push
 
       - name: Create release with manifests
         # https://github.com/marketplace/actions/github-release-create-update-and-upload-assets

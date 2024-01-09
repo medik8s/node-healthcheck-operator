@@ -24,6 +24,8 @@ DEFAULT_VERSION := 0.0.1
 export VERSION ?= $(DEFAULT_VERSION)
 # For the replaces field in the CSV, mandatory to be set for versioned builds! Should also not have the 'v' prefix.
 export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
+# Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
+export SKIP_RANGE_LOWER ?= "0.1.0"
 
 CHANNELS = stable
 export CHANNELS
@@ -327,7 +329,7 @@ export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 bundle-update: ## update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 	# set skipRange
-	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.1.0 <${VERSION}'|;" ${CSV}
+	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'|;" ${CSV}
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
 	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
 
