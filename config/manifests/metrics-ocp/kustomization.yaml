@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../base
+- ../../optional/prometheus-ocp
+- ../../optional/console-plugin
+
+patches:
+  - path: deployment_patch.yaml
+    target:
+      kind: Deployment
+      name: controller-manager
+  - path: auth_proxy_service_patch.yaml
+    target:
+      kind: Service
+      name: controller-manager-metrics-service
