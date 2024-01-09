@@ -6,9 +6,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonlabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -43,8 +46,8 @@ func modifyKubelet(clientSet *kubernetes.Clientset, node *v1.Node, namespace str
 
 func WaitForNodeHealthyCondition(k8sClient ctrl.Client, node *v1.Node, status v1.ConditionStatus) time.Time {
 	var transitionTime time.Time
-	Eventually(func() v1.ConditionStatus {
-		Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
+	Eventually(func(g Gomega) v1.ConditionStatus {
+		g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(node), node)).To(Succeed())
 		for _, cond := range node.Status.Conditions {
 			if cond.Type == v1.NodeReady {
 				transitionTime = cond.LastTransitionTime.Time
@@ -54,4 +57,25 @@ func WaitForNodeHealthyCondition(k8sClient ctrl.Client, node *v1.Node, status v1
 		return v1.ConditionStatus("failure")
 	}, nodeRebootedTimeout, 1*time.Second).Should(Equal(status))
 	return transitionTime
+}
+
+func GetWorkerNodes(k8sClient ctrl.Client) []v1.Node {
+	workers := &v1.NodeList{}
+	selector := labels.NewSelector()
+	reqCpRole, _ := labels.NewRequirement(commonlabels.ControlPlaneRole, selection.DoesNotExist, []string{})
+	reqMRole, _ := labels.NewRequirement(commonlabels.MasterRole, selection.DoesNotExist, []string{})
+	selector = selector.Add(*reqCpRole, *reqMRole)
+	Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
+	Expect(len(workers.Items)).To(BeNumerically(">=", 3))
+	return workers.Items
+}
+
+func GetControlPlaneNode(k8sClient ctrl.Client) *v1.Node {
+	cpNodes := &v1.NodeList{}
+	selector := labels.NewSelector()
+	reqCpRole, _ := labels.NewRequirement(commonlabels.ControlPlaneRole, selection.Exists, []string{})
+	selector = selector.Add(*reqCpRole)
+	Expect(k8sClient.List(context.Background(), cpNodes, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
+	Expect(len(cpNodes.Items)).To(BeNumerically(">=", 3))
+	return &cpNodes.Items[0]
 }

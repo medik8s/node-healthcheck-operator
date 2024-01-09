@@ -27,7 +27,7 @@ const (
 	mhcNamespace = "openshift-machine-api"
 )
 
-var _ = Describe("e2e", Label("MHC", labelOcpOnlyValue), func() {
+var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 	var nodeUnderTest *v1.Node
 	var machineNameUnderTest string
 	var mhc *v1beta1.MachineHealthCheck
