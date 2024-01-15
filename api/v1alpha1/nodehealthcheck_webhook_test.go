@@ -188,8 +188,21 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 					},
 				},
 				Status: NodeHealthCheckStatus{
-					InFlightRemediations: map[string]metav1.Time{
-						"test": metav1.Now(),
+					UnhealthyNodes: []*UnhealthyNode{
+						{
+							Name: "test",
+							Remediations: []*Remediation{
+								{
+									Resource: v1.ObjectReference{
+										Kind: "test",
+										Name: "test",
+									},
+									Started:  metav1.Now(),
+									TimedOut: nil,
+								},
+							},
+							ConditionsHealthyTimestamp: nil,
+						},
 					},
 				},
 			}
@@ -235,6 +248,57 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 			It("should be denied", func() {
 				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "escalating remediations")
+			})
+		})
+	})
+
+	Context("Test isRemediating", func() {
+		var nhc *NodeHealthCheck
+
+		BeforeEach(func() {
+			nhc = &NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+			}
+		})
+
+		When("unhealthy node isn't remediated yet", func() {
+			BeforeEach(func() {
+				nhc.Status.UnhealthyNodes = []*UnhealthyNode{
+					{
+						Name:                       "test",
+						Remediations:               nil,
+						ConditionsHealthyTimestamp: nil,
+					},
+				}
+			})
+			It("should return false", func() {
+				Expect(nhc.isRemediating()).To(BeFalse())
+			})
+		})
+
+		When("unhealthy node is remediated", func() {
+			BeforeEach(func() {
+				nhc.Status.UnhealthyNodes = []*UnhealthyNode{
+					{
+						Name: "test",
+						Remediations: []*Remediation{
+							{
+								Resource: v1.ObjectReference{
+									Kind: "test",
+									Name: "test",
+								},
+								Started:  metav1.Now(),
+								TimedOut: nil,
+							},
+						},
+						ConditionsHealthyTimestamp: nil,
+					},
+				}
+			})
+			It("should return true", func() {
+				Expect(nhc.isRemediating()).To(BeTrue())
 			})
 		})
 	})

@@ -194,5 +194,10 @@ func (nhc *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) (bool
 }
 
 func (nhc *NodeHealthCheck) isRemediating() bool {
-	return len(nhc.Status.InFlightRemediations) > 0 || len(nhc.Status.UnhealthyNodes) > 0
+	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
+		if len(unhealthyNode.Remediations) > 0 {
+			return true
+		}
+	}
+	return false
 }
