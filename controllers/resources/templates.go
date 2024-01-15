@@ -3,6 +3,7 @@ package resources
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -112,8 +113,16 @@ func (m *manager) ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (v
 }
 
 func (m *manager) handleTemplateError(templateError error) (valid bool, reason, message string, err error) {
-	cause := errors.Cause(templateError)
-	if apierrors.IsNotFound(cause) || meta.IsNoMatchError(cause) {
+
+	// When the template doesn't exist, we can get different kind of errors, e.g. NotFound or NoMatch error.
+	// Also check the error string in order to catch this error, which is thrown when the api group doesn't exist:
+	// failed to get API group resources: unable to retrieve the complete list of server APIs: <invalid group>: the server could not find the requested resource
+	isTemplateNotFoundError := func(err error) bool {
+		return apierrors.IsNotFound(err) || meta.IsNoMatchError(err) ||
+			strings.Contains(err.Error(), "could not find") || strings.Contains(err.Error(), "not found")
+	}
+
+	if isTemplateNotFoundError(templateError) {
 		return false,
 			remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
 			fmt.Sprintf("Remediation template not found: %q", templateError.Error()),
