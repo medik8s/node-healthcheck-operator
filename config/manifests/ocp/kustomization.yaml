@@ -1,3 +1,19 @@
 resources:
 - ../base
 - ../../optional/console-plugin
+
+patches:
+  - path: clusterserviceversion_patch.yaml
+    target:
+      kind: ClusterServiceVersion
+
+images:
+- name: quay.io/medik8s/node-healthcheck-operator
+  newName: BUILD_REGISTRY-OPERATOR_NAME
+  newTag: vCI_VERSION
+- name: quay.io/brancz/kube-rbac-proxy
+  newName: registry.redhat.io/openshift4/ose-kube-rbac-proxy
+  newTag: vRBAC_PROXY_OCP_VERSION
+- name: quay.io/medik8s/node-remediation-console
+  newName: BUILD_REGISTRY-CONSOLE_OPERATOR_NAME
+  newTag: vCI_VERSION
