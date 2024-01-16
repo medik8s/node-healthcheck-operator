@@ -70,6 +70,7 @@ const (
 
 var (
 	clusterUpgradeRequeueAfter       = 1 * time.Minute
+	templateNotFoundRequeueAfter     = 15 * time.Second
 	logWhenCRPendingDeletionDuration = 10 * time.Second
 	currentTime                      = func() time.Time { return time.Now() }
 )
@@ -141,7 +142,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// get nhc
 	nhc := &remediationv1alpha1.NodeHealthCheck{}
 	err := r.Get(ctx, req.NamespacedName, nhc)
-	result = ctrl.Result{}
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("NodeHealthCheck CR not found", "name", req.Name)
@@ -154,18 +154,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	leaseHolderIdent := fmt.Sprintf("NodeHealthCheck-%s", nhc.GetName())
 	leaseManager, err := resources.NewLeaseManager(r.Client, leaseHolderIdent, log)
 	if err != nil {
-		return ctrl.Result{}, err
+		return result, err
 	}
 	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
 	nhcOrig := nhc.DeepCopy()
-	var finalRequeueAfter *time.Duration
 	defer func() {
-		finalRequeueAfter = utils.MinRequeueDuration(&result.RequeueAfter, finalRequeueAfter)
-		if finalRequeueAfter != nil {
-			result.RequeueAfter = *finalRequeueAfter
-		}
 		patchErr := r.patchStatus(ctx, log, nhc, nhcOrig)
 		if patchErr != nil {
 			log.Error(err, "failed to update status")
@@ -212,7 +207,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		if reason == remediationv1alpha1.ConditionReasonDisabledTemplateNotFound {
 			// requeue for checking back if template exists later
-			result.RequeueAfter = 15 * time.Second
+			result.RequeueAfter = templateNotFoundRequeueAfter
 		}
 		return result, nil
 	}
@@ -237,7 +232,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// check nodes health
 	notMatchingNodes, soonMatchingNodes, matchingNodes, requeueAfter := r.checkNodeConditions(selectedNodes, nhc)
-	finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
+	updateRequeueAfter(&result, requeueAfter)
 
 	// TODO consider setting Disabled condition?
 	if r.isClusterUpgrading() {
@@ -306,7 +301,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 					} else {
 						logIn = logWhenCRPendingDeletionDuration + time.Second
 					}
-					finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, &logIn)
+					updateRequeueAfter(&result, &logIn)
 				}
 			}
 			if doLog {
@@ -361,7 +356,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			log.Error(err, "failed to start remediation")
 			return result, err
 		}
-		finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
+		updateRequeueAfter(&result, requeueAfter)
 
 		// check if we need to alert about a very old remediation CR
 		remediationCRs, err := resourceManager.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
@@ -372,7 +367,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			if isAlert {
 				metrics.ObserveNodeHealthCheckOldRemediationCR(node.Name, node.Namespace)
 			}
-			finalRequeueAfter = utils.MinRequeueDuration(finalRequeueAfter, requeueAfter)
+			updateRequeueAfter(&result, requeueAfter)
 		}
 	}
 
@@ -851,4 +846,13 @@ func getCondition(remediationCR *unstructured.Unstructured, conditionType string
 		}
 	}
 	return nil
+}
+
+func updateRequeueAfter(result *ctrl.Result, newRequeueAfter *time.Duration) {
+	if newRequeueAfter == nil {
+		return
+	}
+	if result.RequeueAfter == 0 || *newRequeueAfter < result.RequeueAfter {
+		result.RequeueAfter = *newRequeueAfter
+	}
 }
