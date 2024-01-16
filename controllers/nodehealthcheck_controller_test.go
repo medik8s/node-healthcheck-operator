@@ -1316,7 +1316,50 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(k8sClient.Status().Update(context.Background(), pdb)).To(Succeed())
 				})
 
-				When("unhealthy node is not disrupted already", func() {
+				createGuardPod := func(isReady bool) {
+					pod := &v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "some-name",
+							Namespace: pdb.Namespace,
+							Labels:    pdbSelector,
+						},
+						Spec: v1.PodSpec{
+							Containers: []v1.Container{
+								{
+									Name:  "test",
+									Image: "test",
+								},
+							},
+							NodeName: "unhealthy-control-plane-node-1",
+						},
+					}
+					Expect(k8sClient.Create(context.Background(), pod)).To(Succeed())
+					DeferCleanup(func() {
+						Expect(k8sClient.Delete(context.Background(), pod, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})).To(Succeed())
+					})
+
+					// update pod status
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pod), pod)).To(Succeed())
+					status := v1.ConditionTrue
+					if !isReady {
+						status = v1.ConditionFalse
+					}
+					pod.Status.Conditions = []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: status,
+						},
+					}
+					Expect(k8sClient.Status().Update(context.Background(), pod)).To(Succeed())
+				}
+
+				When("unhealthy node is not disrupted already (guard pod is ready)", func() {
+
+					BeforeEach(func() {
+						// create ready guard pod
+						createGuardPod(true)
+					})
+
 					It("doesn't create a remediation CR for control plane node", func() {
 						cr := newRemediationCRForNHC("unhealthy-control-plane-node-1", underTest)
 						crList := &unstructured.UnstructuredList{Object: cr.Object}
@@ -1337,40 +1380,11 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 				})
 
-				When("unhealthy node is disrupted already", func() {
+				When("unhealthy node is disrupted already (guard pod is not ready)", func() {
 
 					BeforeEach(func() {
-						// create disrupted pod
-						pod := &v1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "some-name",
-								Namespace: pdb.Namespace,
-								Labels:    pdbSelector,
-							},
-							Spec: v1.PodSpec{
-								Containers: []v1.Container{
-									{
-										Name:  "test",
-										Image: "test",
-									},
-								},
-								NodeName: "unhealthy-control-plane-node-1",
-							},
-						}
-						Expect(k8sClient.Create(context.Background(), pod)).To(Succeed())
-						DeferCleanup(func() {
-							Expect(k8sClient.Delete(context.Background(), pod)).To(Succeed())
-						})
-
-						// update pod status
-						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pod), pod)).To(Succeed())
-						pod.Status.Conditions = []v1.PodCondition{
-							{
-								Type:   v1.PodReady,
-								Status: v1.ConditionFalse,
-							},
-						}
-						Expect(k8sClient.Status().Update(context.Background(), pod)).To(Succeed())
+						// create unready pod
+						createGuardPod(false)
 					})
 
 					It("does create a remediation CR for control plane node", func() {
@@ -1390,6 +1404,24 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 				})
 
+				When("unhealthy node has no guard pod (node doesn't run etcd or guard pod was deleted)", func() {
+
+					It("does create a remediation CR for control plane node", func() {
+						cr := newRemediationCRForNHC("unhealthy-control-plane-node-1", underTest)
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+						Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+						Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+						Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+						Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+						Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
+							And(
+								HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
+								HaveField("Remediations", Not(BeNil())),
+							),
+						))
+					})
+				})
 			})
 
 		})
