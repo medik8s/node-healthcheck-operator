@@ -564,8 +564,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 			if startedRemediation == nil {
 				// should not have happened, seems last status update failed
-				// retry asap
-				return pointer.Duration(1 * time.Second), nil
+				return nil, errors.New("failed to find started remediation in status for handling overdue lease")
 			}
 
 			// update status (important to do this after CR update, else we won't retry that update in case of error)
@@ -615,13 +614,12 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 	if startedRemediation == nil {
 		// should not have happened, seems last status update failed
-		// retry asap
-		return pointer.Duration(1 * time.Second), nil
+		return nil, errors.New("failed to find started remediation in status for handling timeout")
 	}
 
 	if startedRemediation.TimedOut != nil {
 		// timeout handled already: should not have happened, but ok. Just reconcile again asap for trying the next template
-		return pointer.Duration(1 * time.Second), nil
+		return nil, errors.New("unexpected timout found on started remediation in status")
 	}
 
 	now := metav1.Time{Time: currentTime()}
