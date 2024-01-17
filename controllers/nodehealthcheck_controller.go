@@ -846,6 +846,7 @@ func getCondition(remediationCR *unstructured.Unstructured, conditionType string
 	return nil
 }
 
+// updateRequeueAfter updates the requeueAfter field of the result if newRequeueAfter is lower than the current value.
 func updateRequeueAfter(result *ctrl.Result, newRequeueAfter *time.Duration) {
 	if newRequeueAfter == nil {
 		return
