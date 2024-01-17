@@ -291,6 +291,7 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	cp config/metadata/dependencies.yaml bundle/metadata/
 	$(MAKE) bundle-validate
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
