@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	commonannotations "github.com/medik8s/common/pkg/annotations"
 	commonconditions "github.com/medik8s/common/pkg/conditions"
+	"github.com/medik8s/common/pkg/etcd"
 	"github.com/medik8s/common/pkg/lease"
 	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
@@ -133,6 +134,10 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;update;patch;watch;create;delete
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;create
+
+// for the etcd check of github.com/medik8s/common/pkg/etcd
+// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -672,13 +677,20 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 	// check all remediation CRs. If there already is one for another control plane node, skip remediation
 	controlPlaneRemediationCRs, err := rm.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
 		_, isControlPlane := cr.GetLabels()[RemediationControlPlaneLabelKey]
-		return isControlPlane && cr.GetName() != node.GetName()
+		return isControlPlane
 	})
 	if err != nil {
 		return false, err
 	}
+	// if there is a control plane remediation CR for this node already, we can continue with the remediation process
+	for _, cr := range controlPlaneRemediationCRs {
+		if cr.GetName() == node.GetName() {
+			return true, nil
+		}
+		r.Log.Info("ongoing control plane remediation", "node", cr.GetName())
+	}
+	// if there is a control plane remediation CR for another cp node, don't start remediation for this node
 	if len(controlPlaneRemediationCRs) > 0 {
-		r.Log.Info("ongoing control plane remediation")
 		return false, nil
 	}
 
@@ -687,12 +699,11 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 		// etcd quorum PDB is only installed in OpenShift
 		return true, nil
 	}
-	if allowed, err := utils.IsEtcdDisruptionAllowed(ctx, r.Client, r.Log, node); err != nil {
+	var allowed bool
+	if allowed, err = etcd.IsEtcdDisruptionAllowed(ctx, r.Client, r.Log, node); err != nil {
 		return false, err
-	} else if allowed {
-		return true, nil
 	}
-	return false, nil
+	return allowed, nil
 }
 
 func (r *NodeHealthCheckReconciler) patchStatus(ctx context.Context, log logr.Logger, nhc, nhcOrig *remediationv1alpha1.NodeHealthCheck) error {

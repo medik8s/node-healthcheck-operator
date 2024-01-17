@@ -266,8 +266,8 @@ github.com/mattn/go-runewidth v0.0.2/go.mod h1:LwmH8dsx7+W8Uxz3IHJYH5QSwggIsqBzp
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
 github.com/matttproud/golang_protobuf_extensions v1.0.4 h1:mmDVorXM7PCGKw94cs5zkfA9PSy5pEvNWRP0ET0TIVo=
 github.com/matttproud/golang_protobuf_extensions v1.0.4/go.mod h1:BSXmuO+STAnVfrANrmjBb36TMTDstsz7MSK+HVaYKv4=
-github.com/medik8s/common v1.8.0 h1:7TOH+XQEvBEMpTZEewVtUzCpjGosaklWPt8E4gC2PNk=
-github.com/medik8s/common v1.8.0/go.mod h1:ZT/3hfMXJLmZEcqmxRWB5LGC8Wl+qKGGQ4zM8hOE7PY=
+github.com/medik8s/common v1.13.0 h1:M6R2DjJt5dB1uNGPrGxPBiJj9CX0FESUbMm0G04Q3iQ=
+github.com/medik8s/common v1.13.0/go.mod h1:Dfbu7aAj4NcYeUPA7BYzcK/JwT+QeU4GlZcJ/p+hXQY=
 github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
 github.com/mitchellh/mapstructure v1.1.2/go.mod h1:FVVH3fgwuzCH5S8UJGiWEs2h04kUh9fWfEaFds41c1Y=
 github.com/moby/spdystream v0.2.0 h1:cjW1zVyyoiM0T7b6UoySUFqzXMoqRckQtXwGPiBhOM8=
