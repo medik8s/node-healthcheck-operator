@@ -81,6 +81,8 @@ var (
 		Namespace:  MachineNamespace,
 		Name:       InfraRemediationTemplateName,
 	}
+
+	infraRemediationTemplate *unstructured.Unstructured
 )
 
 var cfg *rest.Config
@@ -151,7 +153,8 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(InfraRemediationKind))).To(Succeed())
 	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(InfraRemediationKind))).To(Succeed())
 	time.Sleep(time.Second)
-	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraRemediationTemplateName))).To(Succeed())
+	infraRemediationTemplate = newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraRemediationTemplateName)
+	Expect(k8sClient.Create(context.Background(), infraRemediationTemplate)).To(Succeed())
 
 	testKind := "Metal3Remediation"
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
