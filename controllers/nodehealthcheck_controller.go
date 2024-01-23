@@ -229,6 +229,11 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		r.Recorder.Eventf(nhc, v1.EventTypeNormal, utils.EventReasonEnabled, enabledMessage)
 	}
 
+	// add watches for template and remediation CRs
+	if err = r.addWatches(resourceManager, nhc); err != nil {
+		return result, err
+	}
+
 	// select nodes using the nhc.selector
 	selectedNodes, err := resourceManager.GetNodes(nhc.Spec.Selector)
 	if err != nil {
@@ -281,13 +286,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			resources.UpdateStatusNodeHealthy(node.GetName(), nhc)
 			healthyCount++
 			continue
-		}
-
-		// add watch in case we were restarted, otherwise we might miss CR deletion events
-		for _, cr := range remediationCRs {
-			if err := r.addWatch(&cr); err != nil {
-				return result, errors.Wrapf(err, "failed to add watch for %s", cr.GroupVersionKind().String())
-			}
 		}
 
 		// set conditions healthy timestamp
@@ -482,11 +480,6 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
 	for _, cr := range orphanedRemediationCRs {
 
-		// add watch in case we were restarted, otherwise we might miss CR deletion events
-		if err := r.addWatch(&cr); err != nil {
-			return errors.Wrapf(err, "failed to add watch for %s", cr.GroupVersionKind().String())
-		}
-
 		// do some housekeeping first. When the CRs are deleted, we never get back here...
 		if err := rm.CleanUp(cr.GetName()); err != nil {
 			log.Error(err, "failed to clean up orphaned node", "node", cr.GetName())
@@ -586,13 +579,6 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 	// always update status, in case patching it failed during last reconcile
 	resources.UpdateStatusRemediationStarted(node, nhc, remediationCR)
-
-	// Adding a watch for 2 usecases:
-	// - watch for conditions (e.g. "Succeeded" for escalating remediations)
-	// - watch for removed finalizers / CR deletion, for potentially start the next control plane node remediation
-	if err = r.addWatch(remediationCR); err != nil {
-		return nil, errors.Wrapf(err, "failed to add watch for %s", remediationCR.GroupVersionKind().String())
-	}
 
 	// ensure to provide correct metrics in case the CR existed already after a pod restart
 	metrics.ObserveNodeHealthCheckRemediationCreated(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
@@ -797,7 +783,38 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 
 }
 
-func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstructured) error {
+func (r *NodeHealthCheckReconciler) addWatches(rm resources.Manager, nhc *remediationv1alpha1.NodeHealthCheck) error {
+
+	addWatches := func(ref v1.ObjectReference) error {
+		template := rm.GenerateTemplate(&ref)
+		if err := r.addRemediationTemplateCRWatch(template); err != nil {
+			r.Log.Error(err, "failed to add watch for template CR", "kind", template.GetKind())
+			return err
+		}
+		rem := rm.GenerateRemediationCRBase(template.GroupVersionKind())
+		if err := r.addRemediationCRWatch(rem); err != nil {
+			r.Log.Error(err, "failed to add watch for remediation CR", "kind", rem.GetKind())
+			return err
+		}
+		return nil
+	}
+
+	if nhc.Spec.RemediationTemplate != nil {
+		if err := addWatches(*nhc.Spec.RemediationTemplate); err != nil {
+			return err
+		}
+	} else {
+		for _, rem := range nhc.Spec.EscalatingRemediations {
+			if err := addWatches(rem.RemediationTemplate); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *NodeHealthCheckReconciler) addRemediationCRWatch(remediationCR *unstructured.Unstructured) error {
 	r.watchesLock.Lock()
 	defer r.watchesLock.Unlock()
 
@@ -810,9 +827,9 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 		source.Kind(r.cache, remediationCR),
 		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(r.Log)),
 		predicate.Funcs{
-			// we are just interested in update and delete events for now:
-			// update: for conditions
-			// delete: when control plane node CRs are deleted for remediation the next control plane node
+			// we are just interested in update and delete events for now
+			// remediation CR update: watch conditions
+			// remediation CR deletion: clean up
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
 			GenericFunc: func(_ event.GenericEvent) bool { return false },
 		},
@@ -820,7 +837,34 @@ func (r *NodeHealthCheckReconciler) addWatch(remediationCR *unstructured.Unstruc
 		return err
 	}
 	r.watches[key] = struct{}{}
-	r.Log.Info("added watch for CR", "kind", remediationCR.GetKind())
+	r.Log.Info("added watch for remediation CRs", "kind", remediationCR.GetKind())
+	return nil
+}
+
+func (r *NodeHealthCheckReconciler) addRemediationTemplateCRWatch(templateCR *unstructured.Unstructured) error {
+	r.watchesLock.Lock()
+	defer r.watchesLock.Unlock()
+
+	key := templateCR.GroupVersionKind().String()
+	if _, exists := r.watches[key]; exists {
+		// already watching
+		return nil
+	}
+	if err := r.controller.Watch(
+		source.Kind(r.cache, templateCR),
+		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationTemplateCRMapperFunc(r.Client, r.Log)),
+		predicate.Funcs{
+			// we are just interested in update and delete events for now
+			// template CR updates: validate
+			// template CR deletion: update NHC status
+			CreateFunc:  func(_ event.CreateEvent) bool { return false },
+			GenericFunc: func(_ event.GenericEvent) bool { return false },
+		},
+	); err != nil {
+		return err
+	}
+	r.watches[key] = struct{}{}
+	r.Log.Info("added watch for remediation template CRs", "kind", templateCR.GetKind())
 	return nil
 }
 
