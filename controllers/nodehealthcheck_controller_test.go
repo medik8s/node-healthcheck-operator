@@ -223,29 +223,47 @@ var _ = Describe("Node Health Check CR", func() {
 		testReconcile := func() {
 
 			When("Nodes are candidates for remediation but remediation template is broken", func() {
-				BeforeEach(func() {
-					setupObjects(1, 2, true)
 
-					if underTest.Spec.RemediationTemplate != nil {
-						underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
-					} else {
-						underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind = "dummyTemplate"
-					}
-				})
-
-				It("should set corresponding condition", func() {
-					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
-					Expect(underTest.Status.Reason).To(
-						And(
-							ContainSubstring("failed to get"),
-							ContainSubstring("dummyTemplate"),
-						))
-					Expect(underTest.Status.Conditions).To(ContainElement(
+				expectTemplateNotFound := func(nhc *v1alpha1.NodeHealthCheck, expectedError string) {
+					ExpectWithOffset(1, underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+					ExpectWithOffset(1, underTest.Status.Reason).To(ContainSubstring(expectedError))
+					ExpectWithOffset(1, underTest.Status.Conditions).To(ContainElement(
 						And(
 							HaveField("Type", v1alpha1.ConditionTypeDisabled),
 							HaveField("Status", metav1.ConditionTrue),
 							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateNotFound),
 						)))
+				}
+
+				Context("with invalid kind", func() {
+					BeforeEach(func() {
+						setupObjects(1, 2, true)
+
+						if underTest.Spec.RemediationTemplate != nil {
+							underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
+						} else {
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind = "dummyTemplate"
+						}
+					})
+
+					It("should set corresponding condition", func() {
+						expectTemplateNotFound(underTest, "failed to get")
+					})
+				})
+				Context("with missing namespace", func() {
+					BeforeEach(func() {
+						setupObjects(1, 2, true)
+
+						if underTest.Spec.RemediationTemplate != nil {
+							underTest.Spec.RemediationTemplate.Namespace = ""
+						} else {
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Namespace = ""
+						}
+					})
+
+					It("should set corresponding condition", func() {
+						expectTemplateNotFound(underTest, "no namespace is provided")
+					})
 				})
 			})
 

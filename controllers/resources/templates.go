@@ -71,15 +71,31 @@ func (m *manager) GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstruct
 		// TODO catch this early in Reconciler
 		return nil, fmt.Errorf("remediation template must set for MHC %s", mhc.GetName())
 	}
-	template, err := m.getTemplate(mhc.Spec.RemediationTemplate)
+	template, err := m.getTemplateWithFallbackNamespace(mhc.Spec.RemediationTemplate, mhc.GetNamespace())
 	return template, err
 }
 
 func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Unstructured, error) {
+	return m.getTemplateWithFallbackNamespace(templateRef, "")
+}
+
+func (m *manager) getTemplateWithFallbackNamespace(templateRef *v1.ObjectReference, crNamespace string) (*unstructured.Unstructured, error) {
 	template := new(unstructured.Unstructured)
 	template.SetGroupVersionKind(templateRef.GroupVersionKind())
 	template.SetName(templateRef.Name)
 	template.SetNamespace(templateRef.Namespace)
+
+	// ensure namespace is set if needed
+	if isNamespaced, err := m.IsObjectNamespaced(template); err != nil {
+		return nil, errors.Wrapf(err, "failed to check if remediation template %q is namespaced", template.GetName())
+	} else if isNamespaced && template.GetNamespace() == "" {
+		if crNamespace == "" {
+			return nil, errors.Errorf("remediation template %q not found, it is namespaced, but no namespace is provided", template.GetName())
+		}
+		m.log.Info("Remediation template requires namespace, but it is missing. Falling back to CR's namespace", "template", template.GetName(), "CR namespace", crNamespace)
+		template.SetNamespace(crNamespace)
+	}
+
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(template), template); err != nil {
 		return nil, errors.Wrapf(err, "failed to get external remediation template %s/%s", template.GetNamespace(), template.GetName())
 	}
