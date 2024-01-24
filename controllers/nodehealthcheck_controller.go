@@ -27,6 +27,7 @@ import (
 	commonannotations "github.com/medik8s/common/pkg/annotations"
 	commonconditions "github.com/medik8s/common/pkg/conditions"
 	"github.com/medik8s/common/pkg/etcd"
+	commonevents "github.com/medik8s/common/pkg/events"
 	"github.com/medik8s/common/pkg/lease"
 	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
@@ -189,7 +190,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  remediationv1alpha1.ConditionReasonDisabledMHC,
 				Message: "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts",
 			})
-			r.Recorder.Eventf(nhc, v1.EventTypeWarning, utils.EventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
+			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonDisabled, "Custom MachineHealthCheck(s) detected, disabling NodeHealthCheck to avoid conflicts")
 		}
 		// stop reconciling
 		return result, nil
@@ -208,7 +209,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Reason:  reason,
 				Message: message,
 			})
-			r.Recorder.Eventf(nhc, v1.EventTypeWarning, utils.EventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
+			commonevents.WarningEventf(r.Recorder, nhc, utils.EventReasonDisabled, "Disabling NHC. Reason: %s, Message: %s", reason, message)
 		}
 		if reason == remediationv1alpha1.ConditionReasonDisabledTemplateNotFound {
 			// requeue for checking back if template exists later
@@ -226,7 +227,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Reason:  remediationv1alpha1.ConditionReasonEnabled,
 			Message: enabledMessage,
 		})
-		r.Recorder.Eventf(nhc, v1.EventTypeNormal, utils.EventReasonEnabled, enabledMessage)
+		commonevents.NormalEvent(r.Recorder, nhc, utils.EventReasonEnabled, enabledMessage)
 	}
 
 	// select nodes using the nhc.selector
@@ -243,7 +244,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if r.isClusterUpgrading() {
 		msg := "Postponing potential remediations because of ongoing cluster upgrade"
 		log.Info(msg)
-		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationSkipped, msg)
+		commonevents.NormalEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 		result.RequeueAfter = clusterUpgradeRequeueAfter
 		return result, nil
 	}
@@ -252,7 +253,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// some actors want to pause remediation.
 		msg := "Postponing potential remediations because of pause requests"
 		log.Info(msg)
-		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationSkipped, msg)
+		commonevents.NormalEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 		return result, nil
 	}
 
@@ -341,7 +342,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	} else if *nhc.Status.HealthyNodes < minHealthy {
 		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
 		log.Info(msg)
-		r.Recorder.Event(nhc, v1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
+		commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 		skipRemediation = true
 	}
 
@@ -519,7 +520,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
 		} else if !isAllowed {
 			log.Info("skipping remediation for preventing control plane / etcd quorum loss", "node", node.GetName())
-			r.Recorder.Event(nhc, v1.EventTypeWarning, utils.EventReasonRemediationSkipped, fmt.Sprintf("skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName()))
+			commonevents.WarningEventf(r.Recorder, nhc, utils.EventReasonRemediationSkipped, "Skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName())
 			return nil, nil
 		}
 	}
@@ -529,7 +530,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	if err != nil {
 		if _, ok := err.(resources.NoTemplateLeftError); ok {
 			log.Error(err, "Remediation timed out, and no template left to try")
-			r.Recorder.Event(nhc, v1.EventTypeWarning, eventReasonNoTemplateLeft, fmt.Sprintf("Remediation timed out, and no template left to try. %s", err.Error()))
+			commonevents.WarningEventf(r.Recorder, nhc, eventReasonNoTemplateLeft, "Remediation timed out, and no template left to try. %s", err.Error())
 			// there is nothing we can do about this
 			return nil, nil
 		}
@@ -598,7 +599,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	metrics.ObserveNodeHealthCheckRemediationCreated(node.GetName(), remediationCR.GetNamespace(), remediationCR.GetKind())
 
 	if created {
-		r.Recorder.Event(nhc, v1.EventTypeNormal, utils.EventReasonRemediationCreated, fmt.Sprintf("Created remediation object for node %s", node.Name))
+		commonevents.NormalEventf(r.Recorder, nhc, utils.EventReasonRemediationCreated, "Created remediation object for node %s", node.Name)
 		var requeueIn *time.Duration
 		if timeout != nil {
 			// come back when timeout expires
