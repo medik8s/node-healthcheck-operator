@@ -393,7 +393,7 @@ func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
 func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (notMatchingNodes, soonMatchingNodes, matchingNodes []v1.Node, requeueAfter *time.Duration) {
 	for _, node := range nodes {
 		node := node
-		if matchesUnhealthyConditions, thisRequeueAfter := r.matchesUnhealthyConditions(nhc.Spec.UnhealthyConditions, &node); !matchesUnhealthyConditions {
+		if matchesUnhealthyConditions, thisRequeueAfter := r.matchesUnhealthyConditions(nhc, &node); !matchesUnhealthyConditions {
 			if thisRequeueAfter != nil && *thisRequeueAfter > 0 {
 				soonMatchingNodes = append(soonMatchingNodes, node)
 				requeueAfter = utils.MinRequeueDuration(requeueAfter, thisRequeueAfter)
@@ -410,14 +410,14 @@ func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *re
 	return
 }
 
-func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []remediationv1alpha1.UnhealthyCondition, node *v1.Node) (bool, *time.Duration) {
+func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(nhc *remediationv1alpha1.NodeHealthCheck, node *v1.Node) (bool, *time.Duration) {
 	nodeConditionByType := make(map[v1.NodeConditionType]v1.NodeCondition)
 	for _, nc := range node.Status.Conditions {
 		nodeConditionByType[nc.Type] = nc
 	}
 
 	var expiresAfter *time.Duration
-	for _, c := range conditionTests {
+	for _, c := range nhc.Spec.UnhealthyConditions {
 		n, exists := nodeConditionByType[c.Type]
 		if !exists {
 			continue
@@ -427,6 +427,7 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(conditionTests []
 			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 				// unhealthy condition duration expired, node is unhealthy
 				r.Log.Info("Node matches unhealthy condition", "node", node.GetName(), "condition type", c.Type, "condition status", c.Status)
+				commonevents.NormalEventf(r.Recorder, nhc, utils.EventReasonDetectedUnhealthy, "Node matches unhealthy condition. Node %q, condition type %q, condition status %q", node.GetName(), c.Type, c.Status)
 				return true, nil
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires

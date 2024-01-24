@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1769,10 +1770,12 @@ var _ = Describe("Node Health Check CR", func() {
 	Context("Unhealthy condition checks", func() {
 
 		var (
-			r                   = &NodeHealthCheckReconciler{}
-			unhealthyConditions []v1alpha1.UnhealthyCondition
-			nodeConditions      []v1.NodeCondition
-			node                *v1.Node
+			r = &NodeHealthCheckReconciler{
+				Recorder: record.NewFakeRecorder(1),
+			}
+			nhc            = newNodeHealthCheck()
+			nodeConditions []v1.NodeCondition
+			node           *v1.Node
 
 			condType1         = v1.NodeConditionType("type1")
 			condType2         = v1.NodeConditionType("type2")
@@ -1795,7 +1798,7 @@ var _ = Describe("Node Health Check CR", func() {
 				fakeTime = nil
 			})
 
-			unhealthyConditions = []v1alpha1.UnhealthyCondition{
+			nhc.Spec.UnhealthyConditions = []v1alpha1.UnhealthyCondition{
 				{
 					Type:     condType1,
 					Status:   condStatusMatch,
@@ -1811,6 +1814,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		JustBeforeEach(func() {
 			node = &v1.Node{}
+			node.Name = "test-node"
 			node.Status.Conditions = nodeConditions
 		})
 
@@ -1830,7 +1834,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
@@ -1847,7 +1851,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
@@ -1870,7 +1874,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeTrue(), "expected not healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
@@ -1892,7 +1896,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
