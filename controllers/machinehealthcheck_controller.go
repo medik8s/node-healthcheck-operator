@@ -207,7 +207,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 		} else if len(remainingCRs) > 0 {
 			result.Requeue = true
 		}
-		// TODO consider to align with NHC, where nodes count as healtht only when all CRs are actuallt gone (e.g. remediator removed finalizer)
+		// TODO consider to align with NHC, where nodes count as healthy only when all CRs are actually gone (e.g. remediator removed finalizer)
 		healthyCount++
 	}
 
