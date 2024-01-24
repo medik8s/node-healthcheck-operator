@@ -1,14 +1,21 @@
 # SHELL defines bash so all the inline scripts here will work as expected.
 SHELL := /bin/bash
 
-OPERATOR_SDK_VERSION = v1.31.0
-OPM_VERSION = v1.26.3
-CONTROLLER_GEN_VERSION = v0.12.0
-KUSTOMIZE_VERSION = v5.0.0
+# https://pkg.go.dev/github.com/operator-framework/operator-sdk?tab=versions
+OPERATOR_SDK_VERSION = v1.33.0
+# https://pkg.go.dev/github.com/operator-framework/operator-registry?tab=versions
+OPM_VERSION = v1.36.0
+# https://pkg.go.dev/sigs.k8s.io/controller-tools?tab=versions
+CONTROLLER_GEN_VERSION = v0.14.0
+# https://pkg.go.dev/sigs.k8s.io/kustomize/kustomize/v5?tab=versions
+KUSTOMIZE_VERSION = v5.3.0
 # update for major version updates to KUSTOMIZE_VERSION!
 KUSTOMIZE_API_VERSION = v5
-ENVTEST_VERSION = v0.0.0-20230519160631-e7b94074ad38 # no tagged versions :/
-GOIMPORTS_VERSION = v0.9.1
+# https://pkg.go.dev/sigs.k8s.io/controller-runtime/tools/setup-envtest/env?tab=versions
+ENVTEST_VERSION = v0.0.0-20240123110158-b88ed7a3602b
+# https://pkg.go.dev/golang.org/x/tools/cmd/goimports?tab=versions
+GOIMPORTS_VERSION = v0.17.0
+# https://pkg.go.dev/github.com/slintes/sort-imports?tab=versions
 SORT_IMPORTS_VERSION = v0.2.1
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
