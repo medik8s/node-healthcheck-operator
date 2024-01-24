@@ -884,7 +884,8 @@ func TestGetTargetsFromMHC(t *testing.T) {
 						Labels: map[string]string{},
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{},
@@ -1137,7 +1138,8 @@ func TestNeedsRemediation(t *testing.T) {
 						UID:    "uid",
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -1358,7 +1360,8 @@ func TestNeedsRemediation(t *testing.T) {
 						UID:    "uid",
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -1486,7 +1489,8 @@ func TestNeedsRemediation(t *testing.T) {
 						UID:    "uid",
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -1685,7 +1689,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -1752,7 +1757,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -1823,7 +1829,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -1944,7 +1951,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -2529,7 +2537,8 @@ func newNodeForMHC(name string, ready bool) *corev1.Node {
 			UID:    uuid.NewUUID(),
 		},
 		TypeMeta: metav1.TypeMeta{
-			Kind: "Node",
+			Kind:       "Node",
+			APIVersion: "v1",
 		},
 		Status: corev1.NodeStatus{
 			Conditions: []corev1.NodeCondition{

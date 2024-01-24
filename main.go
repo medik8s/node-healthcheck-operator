@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/openshift/api/console/v1alpha1"
@@ -102,15 +103,28 @@ func main() {
 
 	printVersion()
 
+	// TLS options for metric and webhook servers:
+	// disable HTTP/2 for mitigating relevant CVEs unless configured otherwise
+	var tlsOpts []func(*tls.Config)
+	if !enableHTTP2 {
+		tlsOpts = append(tlsOpts, func(c *tls.Config) {
+			c.NextProtos = []string{"http/1.1"}
+		})
+		setupLog.Info("HTTP/2 for metrics and webhook server disabled")
+	} else {
+		setupLog.Info("HTTP/2 for metrics and webhook server enabled")
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
-		// HEADS UP: once controller runtime is updated and this changes to metrics.Options{},
-		// and in case you configure TLS / SecureServing, disable HTTP/2 in it for mitigating related CVEs!
-		MetricsBindAddress:     metricsAddr,
+		Metrics: server.Options{
+			BindAddress: metricsAddr,
+			TLSOpts:     tlsOpts,
+		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
-		WebhookServer:          getWebhookServer(enableHTTP2, setupLog),
+		WebhookServer:          getWebhookServer(tlsOpts, setupLog),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -209,10 +223,11 @@ func main() {
 	}
 }
 
-func getWebhookServer(enableHTTP2 bool, log logr.Logger) webhook.Server {
+func getWebhookServer(tlsOpts []func(*tls.Config), log logr.Logger) webhook.Server {
 
 	options := webhook.Options{
-		Port: 9443,
+		Port:    9443,
+		TLSOpts: tlsOpts,
 	}
 
 	// check if OLM injected certs
@@ -230,18 +245,6 @@ func getWebhookServer(enableHTTP2 bool, log logr.Logger) webhook.Server {
 		options.KeyName = WebhookKeyName
 	} else {
 		log.Info("OLM injected certs for webhooks not found")
-	}
-
-	// disable http/2 for mitigating relevant CVEs unless configured otherwise
-	if !enableHTTP2 {
-		options.TLSOpts = []func(*tls.Config){
-			func(c *tls.Config) {
-				c.NextProtos = []string{"http/1.1"}
-			},
-		}
-		setupLog.Info("HTTP/2 for webhooks disabled")
-	} else {
-		setupLog.Info("HTTP/2 for webhooks enabled")
 	}
 
 	return webhook.NewServer(options)
