@@ -152,8 +152,10 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 				}, "5m", "5s").Should(Succeed(), "CR not deleted")
 
 				By("ensuring lease removed")
-				err := k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
-				Expect(k8serrors.IsNotFound(err)).To(BeTrue(), "lease not deleted")
+				Eventually(func(g Gomega) {
+					err := k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+					g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+				}, "1m", "5s").Should(Succeed(), "lease not deleted")
 
 			})
 		})
