@@ -224,8 +224,11 @@ spec:
     specifies the mechanism/controller to be used.
 
     ### Failure handling: External Remediators
-    NHC is part of the Medik8s team that has different remediators for handling node failure,
-    e.g., “Self Node Remediation” (SNR), "Fence Agents Remediation" (FAR), "Machine Deletion Remediation" (MDR)
+    The Medik8s team developed few remediators for handling node failure:
+    - Self Node Remediation (SNR)
+    - Fence Agents Remediation (FAR)
+    - Machine Deletion Remediation (MDR)
+
     By default NHC depends and use SNR operator, which is installed automatically, as its default remediator.
 
     #### Self Node Remediation (SNR)
@@ -242,7 +245,7 @@ spec:
     and then evicting workloads from the unhealthy node.
 
     #### Machine Deletion Remediation (MDR)
-    MDR reprovisions unhealthy nodes by deleting the hosted Machine (using the Machine API).
+    MDR is limited to OpenShift, and it uses Machine API for reprovisioning unhealthy nodes by deleting their machines.
   displayName: Node Health Check Operator
   icon:
   - base64data: base64EncodedIcon
