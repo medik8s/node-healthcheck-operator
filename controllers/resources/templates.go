@@ -80,10 +80,7 @@ func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Un
 }
 
 func (m *manager) getTemplateWithFallbackNamespace(templateRef *v1.ObjectReference, crNamespace string) (*unstructured.Unstructured, error) {
-	template := new(unstructured.Unstructured)
-	template.SetGroupVersionKind(templateRef.GroupVersionKind())
-	template.SetName(templateRef.Name)
-	template.SetNamespace(templateRef.Namespace)
+	template := m.GenerateTemplate(templateRef)
 
 	// ensure namespace is set if needed
 	if isNamespaced, err := m.IsObjectNamespaced(template); err != nil {
@@ -106,6 +103,14 @@ func (m *manager) getTemplateWithFallbackNamespace(templateRef *v1.ObjectReferen
 		return nil, brokenTemplateError{fmt.Sprintf("invalid template %s/%s, didn't find spec.template.spec", template.GetNamespace(), template.GetName())}
 	}
 	return template, nil
+}
+
+func (m *manager) GenerateTemplate(templateRef *v1.ObjectReference) *unstructured.Unstructured {
+	template := new(unstructured.Unstructured)
+	template.SetGroupVersionKind(templateRef.GroupVersionKind())
+	template.SetName(templateRef.Name)
+	template.SetNamespace(templateRef.Namespace)
+	return template
 }
 
 // ValidateTemplates only returns an error when we don't know whether the template is valid or not, for triggering a requeue with backoff

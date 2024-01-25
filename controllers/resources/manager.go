@@ -26,6 +26,7 @@ import (
 type Manager interface {
 	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *time.Duration, error)
 	GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstructured.Unstructured, error)
+	GenerateTemplate(reference *corev1.ObjectReference) *unstructured.Unstructured
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured

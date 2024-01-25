@@ -222,12 +222,16 @@ var _ = Describe("Node Health Check CR", func() {
 
 		testReconcile := func() {
 
-			When("Nodes are candidates for remediation but remediation template is broken", func() {
+			When("Remediation template is broken", func() {
 
-				expectTemplateNotFound := func(nhc *v1alpha1.NodeHealthCheck, expectedError string) {
-					ExpectWithOffset(1, underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
-					ExpectWithOffset(1, underTest.Status.Reason).To(ContainSubstring(expectedError))
-					ExpectWithOffset(1, underTest.Status.Conditions).To(ContainElement(
+				BeforeEach(func() {
+					setupObjects(0, 2, true)
+				})
+
+				expectTemplateNotFound := func(g Gomega, nhc *v1alpha1.NodeHealthCheck, expectedError string) {
+					g.ExpectWithOffset(1, underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+					g.ExpectWithOffset(1, underTest.Status.Reason).To(ContainSubstring(expectedError))
+					g.ExpectWithOffset(1, underTest.Status.Conditions).To(ContainElement(
 						And(
 							HaveField("Type", v1alpha1.ConditionTypeDisabled),
 							HaveField("Status", metav1.ConditionTrue),
@@ -237,8 +241,6 @@ var _ = Describe("Node Health Check CR", func() {
 
 				Context("with invalid kind", func() {
 					BeforeEach(func() {
-						setupObjects(1, 2, true)
-
 						if underTest.Spec.RemediationTemplate != nil {
 							underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
 						} else {
@@ -247,13 +249,12 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 
 					It("should set corresponding condition", func() {
-						expectTemplateNotFound(underTest, "failed to get")
+						expectTemplateNotFound(Default, underTest, "failed to get")
 					})
 				})
+
 				Context("with missing namespace", func() {
 					BeforeEach(func() {
-						setupObjects(1, 2, true)
-
 						if underTest.Spec.RemediationTemplate != nil {
 							underTest.Spec.RemediationTemplate.Namespace = ""
 						} else {
@@ -262,7 +263,24 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 
 					It("should set corresponding condition", func() {
-						expectTemplateNotFound(underTest, "no namespace is provided")
+						expectTemplateNotFound(Default, underTest, "no namespace is provided")
+					})
+				})
+
+				Context("templated is deleted after NHC creation", func() {
+					It("should set corresponding condition", func() {
+						By("deleting template")
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(infraRemediationTemplate), infraRemediationTemplate)).To(Succeed())
+						Expect(k8sClient.Delete(context.Background(), infraRemediationTemplate)).To(Succeed())
+						DeferCleanup(func() {
+							By("recreating template")
+							infraRemediationTemplate.SetResourceVersion("")
+							Expect(k8sClient.Create(context.Background(), infraRemediationTemplate)).To(Succeed())
+						})
+						Eventually(func(g Gomega) {
+							g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+							expectTemplateNotFound(g, underTest, "failed to get")
+						}, "5s", "200ms").Should(Succeed(), "expected disabled NHC")
 					})
 				})
 			})
