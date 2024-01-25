@@ -231,8 +231,8 @@ spec:
     #### Self Node Remediation (SNR)
     SNR uses watchdog timers and heuristics to ensure nodes enter a safe state
     (no longer hosting workloads) within a known and finite period of time,
-    before signaling to the system that all Pods and VolumeAttachments on the
-    failed Node are no longer active and can be relocated elsewhere.
+    before signaling to the system that all Pods on the failed Node are no longer active
+    and can be relocated elsewhere.
     In the case of transient errors, the watchdog’s actions will also result in
     the node rebooting and rejoining the cluster - restoring capacity.
 
