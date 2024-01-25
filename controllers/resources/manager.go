@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonevents "github.com/medik8s/common/pkg/events"
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -231,7 +232,7 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
-	m.recorder.Eventf(owner, corev1.EventTypeNormal, utils.EventReasonRemediationRemoved, "Deleted remediation CR of kind %s with name %s", remediationCR.GetKind(), remediationCR.GetName())
+	commonevents.NormalEventf(m.recorder, owner, utils.EventReasonRemediationRemoved, "Deleted remediation CR of kind %s with name %s", remediationCR.GetKind(), remediationCR.GetName())
 	return true, nil
 }
 

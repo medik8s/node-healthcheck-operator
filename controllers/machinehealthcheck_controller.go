@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonevents "github.com/medik8s/common/pkg/events"
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -227,7 +228,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 		msg := fmt.Sprintf("Skipped remediation because the number of not started or unhealthy machines selected by the selector exceeds maxUnhealthy (total: %v, unhealthy: %v, maxUnhealthy: %v)",
 			totalTargets, unhealthyCount, mhc.Spec.MaxUnhealthy)
 		log.Info(msg)
-		r.Recorder.Event(mhc, corev1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
+		commonevents.WarningEvent(r.Recorder, mhc, utils.EventReasonRemediationSkipped, msg)
 		metrics.ObserveMachineHealthCheckShortCircuitEnabled(mhc.Name, mhc.Namespace)
 
 		// Remediation not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy
@@ -296,7 +297,7 @@ func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target) (
 			if t.Node != nil {
 				nodeName = t.Node.GetName()
 			}
-			r.Recorder.Eventf(t.Node, corev1.EventTypeNormal, utils.EventReasonDetectedUnhealthy,
+			commonevents.NormalEventf(r.Recorder, t.MHC, utils.EventReasonDetectedUnhealthy,
 				"Machine %v has unhealthy node %v", t.Machine.GetName(), nodeName,
 			)
 			overallRequeueIn = *utils.MinRequeueDuration(&overallRequeueIn, &requeueIn)
@@ -416,8 +417,8 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 		return errors.Wrapf(err, "failed to create remediation CR")
 	}
 	if created {
-		r.Recorder.Event(target.MHC, corev1.EventTypeNormal, utils.EventReasonRemediationCreated,
-			fmt.Sprintf("Created remediation object for machine %s with node %s", target.Machine.GetName(), target.Node.GetName()))
+		commonevents.NormalEventf(r.Recorder, target.MHC, utils.EventReasonRemediationCreated,
+			"Created remediation object for machine %s with node %s", target.Machine.GetName(), target.Node.GetName())
 	}
 	return nil
 }
