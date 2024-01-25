@@ -2,12 +2,14 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	commonlabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	coordv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +34,7 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 	var machineNameUnderTest string
 	var mhc *v1beta1.MachineHealthCheck
 	var workers *v1.NodeList
+	var leaseName string
 
 	BeforeEach(func() {
 
@@ -83,6 +86,8 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 			var err error
 			_, machineNameUnderTest, err = controllerutils.GetMachineNamespaceName(nodeUnderTest)
 			Expect(err).ToNot(HaveOccurred(), "failed to get machine name from node")
+
+			leaseName = fmt.Sprintf("%s-%s", "node", nodeUnderTest.Name)
 		}
 	})
 
@@ -124,6 +129,10 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 					fetchRemediationResourceByName(machineNameUnderTest, mhcNamespace, remediationGVR), waitTime, "500ms").
 					Should(Succeed())
 
+				By("ensuring lease exist")
+				lease := &coordv1.Lease{}
+				Expect(k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)).To(Succeed(), "lease not created")
+
 				By("ensuring status is set")
 				Eventually(func(g Gomega) {
 					mhc = getMachineHealthCheck()
@@ -141,6 +150,13 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 					g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(mhc), mhc)).To(Succeed())
 					g.Expect(*mhc.Status.CurrentHealthy).To(BeNumerically("==", len(workers.Items)))
 				}, "5m", "5s").Should(Succeed(), "CR not deleted")
+
+				By("ensuring lease removed")
+				Eventually(func(g Gomega) {
+					err := k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+					g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+				}, "1m", "5s").Should(Succeed(), "lease not deleted")
+
 			})
 		})
 	})

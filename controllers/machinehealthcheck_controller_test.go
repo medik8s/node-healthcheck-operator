@@ -405,7 +405,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 			remediationCR:       remediationCR,
 			remediationTemplate: remediationTemplateCR,
 			expected: expectedReconcile{
-				result: reconcile.Result{},
+				result: reconcile.Result{Requeue: true},
 				error:  false,
 			},
 			expectedEvents: []string{utils.EventReasonRemediationRemoved},

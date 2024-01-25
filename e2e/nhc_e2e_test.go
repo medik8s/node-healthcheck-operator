@@ -164,7 +164,6 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					escTimeout        metav1.Duration
 					nodeUnhealthyTime time.Time
 					//lease params
-					leaseNs   = "medik8s-leases"
 					leaseName string
 					lease     *coordv1.Lease
 				)

@@ -84,6 +84,9 @@ var (
 
 	// The ns test pods are started in
 	testNsName = "nhc-test"
+
+	// The ns where leases will be created
+	leaseNs = "medik8s-leases"
 )
 
 var _ = BeforeSuite(func() {

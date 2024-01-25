@@ -202,11 +202,13 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	healthyCount := 0
 	for _, healthyTarget := range healthy {
 		log.Info("handling healthy target", "target", healthyTarget.String())
-		_, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc)
-		if err != nil {
+		if remainingCRs, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc); err != nil {
 			log.Error(err, "failed to handle healthy target", "target", healthyTarget.String())
 			return result, err
+		} else if len(remainingCRs) > 0 {
+			result.Requeue = true
 		}
+		// TODO consider to align with NHC, where nodes count as healthy only when all CRs are actually gone (e.g. remediator removed finalizer)
 		healthyCount++
 	}
 
@@ -246,7 +248,8 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return reconcile.Result{}, nil
 		}
 
-		return reconcile.Result{Requeue: true}, nil
+		result.Requeue = true
+		return result, nil
 	}
 
 	log.Info("Remediations are allowed", "total targets", totalTargets, "max unhealthy", mhc.Spec.MaxUnhealthy, "unhealthy targets", unhealthyCount)
@@ -262,12 +265,15 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if len(errList) > 0 {
 		requeueError := utilerrors.NewAggregate(errList)
 		log.V(3).Info("Reconciling: there were errors, requeuing", "errors", requeueError)
-		return reconcile.Result{}, requeueError
+		return result, requeueError
 	}
 
 	if requeueIn > 0 {
 		log.V(3).Info("Reconciling: some targets might go unhealthy. Ensuring a requeue happens", "requeue in", requeueIn.String())
-		return reconcile.Result{RequeueAfter: requeueIn}, nil
+		if !result.Requeue {
+			result.RequeueAfter = requeueIn
+		}
+		return result, nil
 	}
 
 	log.V(3).Info("Reconciling: no more targets meet unhealthy criteria")
