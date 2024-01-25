@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM quay.io/centos/centos:stream8 AS builder
+FROM quay.io/centos/centos:stream9 AS builder
 RUN yum install git golang -y
 
 WORKDIR /workspace
@@ -10,10 +10,8 @@ COPY go.sum go.sum
 
 # Ensure correct Go version
 RUN export GO_VERSION=$(grep -E "go [[:digit:]]\.[[:digit:]][[:digit:]]" go.mod | awk '{print $2}') && \
-      go install golang.org/dl/go${GO_VERSION}@latest && \
-      ~/go/bin/go${GO_VERSION} download && \
-      /bin/cp -f ~/go/bin/go${GO_VERSION} /usr/bin/go && \
-      go version
+    go get go@${GO_VERSION} && \
+    go version
 
 # Copy the go source
 COPY vendor/ vendor/
@@ -30,7 +28,7 @@ COPY .git/ .git/
 # Build
 RUN ./hack/build.sh
 
-FROM registry.access.redhat.com/ubi8/ubi-micro:latest
+FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 USER 65532:65532

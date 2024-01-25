@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"sync"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -152,6 +153,12 @@ func (m *mapper) getMapper() meta.RESTMapper {
 // addKnownGroupAndReload reloads the mapper with updated information about missing API group.
 // versions can be specified for partial updates, for instance for v1beta1 version only.
 func (m *mapper) addKnownGroupAndReload(groupName string, versions ...string) error {
+	// versions will here be [""] if the forwarded Version value of
+	// GroupVersionResource (in calling method) was not specified.
+	if len(versions) == 1 && versions[0] == "" {
+		versions = nil
+	}
+
 	// If no specific versions are set by user, we will scan all available ones for the API group.
 	// This operation requires 2 requests: /api and /apis, but only once. For all subsequent calls
 	// this data will be taken from cache.
@@ -160,8 +167,10 @@ func (m *mapper) addKnownGroupAndReload(groupName string, versions ...string) er
 		if err != nil {
 			return err
 		}
-		for _, version := range apiGroup.Versions {
-			versions = append(versions, version.Version)
+		if apiGroup != nil {
+			for _, version := range apiGroup.Versions {
+				versions = append(versions, version.Version)
+			}
 		}
 	}
 
@@ -248,17 +257,12 @@ func (m *mapper) findAPIGroupByName(groupName string) (*metav1.APIGroup, error) 
 	m.mu.Unlock()
 
 	// Looking in the cache again.
-	{
-		m.mu.RLock()
-		group, ok := m.apiGroups[groupName]
-		m.mu.RUnlock()
-		if ok {
-			return group, nil
-		}
-	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	// If there is still nothing, return an error.
-	return nil, fmt.Errorf("failed to find API group %q", groupName)
+	// Don't return an error here if the API group is not present.
+	// The reloaded RESTMapper will take care of returning a NoMatchError.
+	return m.apiGroups[groupName], nil
 }
 
 // fetchGroupVersionResources fetches the resources for the specified group and its versions.
@@ -270,7 +274,7 @@ func (m *mapper) fetchGroupVersionResources(groupName string, versions ...string
 		groupVersion := schema.GroupVersion{Group: groupName, Version: version}
 
 		apiResourceList, err := m.client.ServerResourcesForGroupVersion(groupVersion.String())
-		if err != nil {
+		if err != nil && !apierrors.IsNotFound(err) {
 			failedGroups[groupVersion] = err
 		}
 		if apiResourceList != nil {
@@ -280,7 +284,8 @@ func (m *mapper) fetchGroupVersionResources(groupName string, versions ...string
 	}
 
 	if len(failedGroups) > 0 {
-		return nil, &discovery.ErrGroupDiscoveryFailed{Groups: failedGroups}
+		err := ErrResourceDiscoveryFailed(failedGroups)
+		return nil, &err
 	}
 
 	return groupVersionResources, nil
