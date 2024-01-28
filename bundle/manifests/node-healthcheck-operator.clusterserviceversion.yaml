@@ -223,13 +223,13 @@ spec:
     Remediation” API to instantiate the configured remediation template which
     specifies the mechanism/controller to be used.
 
-    ### Failure handling: External Remediators
-    The Medik8s team developed few remediators for handling node failure:
+    ### Failure handling: External remediators
+    There are multiple remediators for handling node failure that we recommend:
     - Self Node Remediation (SNR)
     - Fence Agents Remediation (FAR)
     - Machine Deletion Remediation (MDR)
 
-    By default NHC depends and use SNR operator, which is installed automatically, as its default remediator.
+    By default NHC depends and uses SNR operator, which is installed automatically, as its default remediator.
 
     #### Self Node Remediation (SNR)
     SNR uses watchdog timers and heuristics to ensure nodes enter a safe state
@@ -240,7 +240,7 @@ spec:
     the node rebooting and rejoining the cluster - restoring capacity.
 
     #### Fence Agents Remediation (FAR)
-    FAR uses well-known agents to fence and remediate unhealthy nodes.
+    FAR uses well-known agents to fence unhealthy nodes, and eventually FAR remediates the nodes.
     The remediation includes rebooting the unhealthy node using a fence agent,
     and then evicting workloads from the unhealthy node.
 
