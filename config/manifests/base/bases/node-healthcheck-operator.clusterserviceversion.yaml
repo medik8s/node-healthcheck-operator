@@ -189,7 +189,7 @@ spec:
     - Fence Agents Remediation (FAR)
     - Machine Deletion Remediation (MDR)
 
-    By default NHC depends and uses SNR operator, which is installed automatically, as its default remediator.
+    SNR is installed automatically when installing NHC.
 
     #### Self Node Remediation (SNR)
     SNR uses watchdog timers and heuristics to ensure nodes enter a safe state
