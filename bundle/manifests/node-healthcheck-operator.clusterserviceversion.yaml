@@ -223,15 +223,29 @@ spec:
     Remediation” API to instantiate the configured remediation template which
     specifies the mechanism/controller to be used.
 
-    ### Failure handling: Self Node Remediation
-    By default NHC depends on the “Self Node Remediation” (SNR) operator, which
-    is installed automatically.
+    ### Failure handling: External remediators
+    There are multiple remediators for handling node failure that we recommend:
+    - Self Node Remediation (SNR)
+    - Fence Agents Remediation (FAR)
+    - Machine Deletion Remediation (MDR)
+
+    SNR is installed automatically when installing NHC.
+
+    #### Self Node Remediation (SNR)
     SNR uses watchdog timers and heuristics to ensure nodes enter a safe state
     (no longer hosting workloads) within a known and finite period of time,
-    before signaling to the system that all Pods and VolumeAttachments on the
-    failed Node are no longer active and can be relocated elsewhere.
+    before signaling to the system that all Pods on the failed Node are no longer active
+    and can be relocated elsewhere.
     In the case of transient errors, the watchdog’s actions will also result in
     the node rebooting and rejoining the cluster - restoring capacity.
+
+    #### Fence Agents Remediation (FAR)
+    FAR uses well-known agents to fence unhealthy nodes, and eventually FAR remediates the nodes.
+    The remediation includes rebooting the unhealthy node using a fence agent,
+    and then evicting workloads from the unhealthy node.
+
+    #### Machine Deletion Remediation (MDR)
+    MDR is limited to OpenShift, and it uses Machine API for reprovisioning unhealthy nodes by deleting their machines.
   displayName: Node Health Check Operator
   icon:
   - base64data: base64EncodedIcon
