@@ -33,18 +33,17 @@ jobs:
       run: make container-build
 
   e2e-k8s:
-    # disabled until fixed...
-    if: false
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
       IMAGE_REGISTRY: kind-registry:5000
-      VERSION: 9.9.9-ci
       DEPLOY_NAMESPACE: k8s-test
       # see https://github.com/kubernetes-sigs/kind/tags
-      KIND_VERSION: v0.18.0
+      KIND_VERSION: v0.20.0
       # see https://hub.docker.com/r/kindest/node/tags for available versions!
-      K8S_VERSION: v1.26.3
+      K8S_VERSION: v1.27.3
+      # https://github.com/operator-framework/operator-lifecycle-manager/releases
+      OLM_VERSION: v0.26.0
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -97,7 +96,7 @@ jobs:
 
     - name: Install OLM
       run: |
-        curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.22.0/install.sh | bash -s v0.22.0
+        curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/${OLM_VERSION}/install.sh | bash -s ${OLM_VERSION}
 
     - name: Build NHC
       run: |
@@ -114,7 +113,7 @@ jobs:
         operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/medik8s/self-node-remediation-operator-bundle:latest
         
         # deploy NHC
-        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:v${VERSION}
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
         
         # wait a bit for OLM creating CSV etc
         sleep 1m
