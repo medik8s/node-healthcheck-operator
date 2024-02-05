@@ -110,7 +110,10 @@ jobs:
         kubectl create ns ${DEPLOY_NAMESPACE}
         
         # deploy SNR first
-        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/medik8s/self-node-remediation-operator-bundle:latest
+        # HEADS UP: using a custom build of SNR here which uses `systemctl start kubelet` as "reboot" command,
+        # everything else does not work with kind.
+        # See https://github.com/slintes/self-node-remediation/commit/a8aa0f73a240509cbd446fae048b15ed11a20eea
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/slintes/self-node-remediation-operator-bundle:v0.1.0-start-kubelet
         
         # deploy NHC
         operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
@@ -143,7 +146,7 @@ jobs:
     - name: Run NHC e2e
       run: |
         echo "running e2e test"
-        OPERATOR_NS=${DEPLOY_NAMESPACE} LABEL_FILTER="!OCP-ONLY" make test-e2e
+        OPERATOR_NS=${DEPLOY_NAMESPACE} SNR_STRATEGY=OutOfServiceTaint LABEL_FILTER="!OCP-ONLY" make test-e2e
         echo "finished e2e test"
 
     - name: Debug
