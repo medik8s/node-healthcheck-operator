@@ -126,7 +126,7 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 				By("ensuring remediation CR exists")
 				waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
 				Eventually(
-					fetchRemediationResourceByName(machineNameUnderTest, mhcNamespace, remediationGVR), waitTime, "500ms").
+					ensureRemediationResourceExists(machineNameUnderTest, mhcNamespace, remediationGVR), waitTime, "500ms").
 					Should(Succeed())
 
 				By("ensuring lease exist")

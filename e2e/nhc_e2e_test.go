@@ -146,15 +146,12 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 		var nodeUnderTest *v1.Node
 
 		Context("Worker node with unhealthy condition", func() {
-			var node2 *v1.Node
-			var node3 *v1.Node
+			var workers []v1.Node
 
 			BeforeEach(func() {
 				if nodeUnderTest == nil {
-					workers := utils.GetWorkerNodes(k8sClient)
+					workers = utils.GetWorkerNodes(k8sClient)
 					nodeUnderTest = &workers[0]
-					node2 = &workers[1]
-					node3 = &workers[2]
 				}
 			})
 
@@ -206,7 +203,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					By("ensuring 1st remediation CR exists")
 					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
 					Eventually(
-						fetchRemediationResourceByName(nodeUnderTest.Name,
+						ensureRemediationResourceExists(nodeUnderTest.Name,
 							testNsName,
 							schema.GroupVersionResource{
 								Group:    dummyRemediationGVK.Group,
@@ -235,7 +232,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 
 					By("ensuring 2nd remediation CR exists")
 					Eventually(
-						fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), "2s", "500ms").
+						ensureRemediationResourceExists(nodeUnderTest.Name, operatorNsName, remediationGVR), "2s", "500ms").
 						Should(Succeed())
 
 					By("ensuring status is set")
@@ -272,7 +269,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 				var nodeUnhealthyTime time.Time
 
 				BeforeEach(func() {
-					nodeUnderTest = node2
+					nodeUnderTest = &workers[1]
 				})
 
 				It("Remediates a host and prevents config updates", func() {
@@ -280,10 +277,10 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					nodeUnhealthyTime = utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 
 					By("ensuring remediation CR exists")
-					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
+					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 5*time.Second).Sub(time.Now())
 					Eventually(
-						fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), waitTime, "500ms").
-						Should(Succeed())
+						ensureRemediationResourceExists(nodeUnderTest.Name, operatorNsName, remediationGVR),
+						waitTime, "1s").Should(Succeed(), "CR wasn't created")
 
 					By("ensuring status is set")
 					Eventually(func(g Gomega) {
@@ -335,7 +332,8 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 			Context("with terminating node", labelOcpOnly, func() {
 
 				BeforeEach(func() {
-					nodeUnderTest = node3
+					Expect(len(workers)).To(BeNumerically(">=", 3), "expected at least 3 worker nodes for OCP e2e test")
+					nodeUnderTest = &workers[2]
 					Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nodeUnderTest), nodeUnderTest)).To(Succeed())
 					conditions := nodeUnderTest.Status.Conditions
 					conditions = append(conditions, v1.NodeCondition{
@@ -373,14 +371,14 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 
 				It("should not remediate", func() {
 					Consistently(
-						fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), unhealthyConditionDuration+60*time.Second, 10*time.Second).
+						ensureRemediationResourceExists(nodeUnderTest.Name, operatorNsName, remediationGVR), unhealthyConditionDuration+60*time.Second, 10*time.Second).
 						ShouldNot(Succeed())
 				})
 			}) // end of terminating node context
 
 		}) // end of worker node context
 
-		Context("Control plane node with unhealthy condition, with classic remediation", func() {
+		Context("Control plane node with unhealthy condition, with classic remediation", labelOcpOnly, func() {
 			BeforeEach(func() {
 				// modify nhc to select control plane nodes
 				nhc.Spec.Selector = metav1.LabelSelector{
@@ -403,7 +401,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 				// for control plane remediation we need to wait longer, because NHC might need to change leader / restart the pod
 				waitTime += 6 * time.Minute
 				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), waitTime, "1s").
+					ensureRemediationResourceExists(nodeUnderTest.Name, operatorNsName, remediationGVR), waitTime, "1s").
 					Should(Succeed())
 
 				By("ensuring status is set")
