@@ -513,9 +513,9 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		if isAllowed, err := r.isControlPlaneRemediationAllowed(ctx, node, nhc, rm); err != nil {
 			return nil, errors.Wrapf(err, "failed to check if control plane remediation is allowed")
 		} else if !isAllowed {
-			log.Info("skipping remediation for preventing control plane / etcd quorum loss", "node", node.GetName())
-			commonevents.WarningEventf(r.Recorder, nhc, utils.EventReasonRemediationSkipped, "Skipping remediation of %s for preventing control plane / etcd quorum loss", node.GetName())
-			return nil, nil
+			log.Info("skipping remediation for preventing control plane / etcd quorum loss, going to retry in a minute", "node", node.GetName())
+			commonevents.WarningEventf(r.Recorder, nhc, utils.EventReasonRemediationSkipped, "Skipping remediation of %s for preventing control plane / etcd quorum loss, going to retry in a minute", node.GetName())
+			return pointer.Duration(1 * time.Minute), nil
 		}
 	}
 

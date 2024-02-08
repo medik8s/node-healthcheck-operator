@@ -65,14 +65,21 @@ func IsEtcdDisruptionAllowed(ctx context.Context, cl client.Client, log logr.Log
 	}
 	for _, pod := range podList.Items {
 		if pod.Spec.NodeName == node.Name {
+			// Track if the pod has a ready condition with status True or Unknown
+			// Consider Unknown as being ready to be on the safe side and prevent disruption of nodes which are about to be ready
+			// Missing ready condition also means the pod is not ready
+			isPodReady := false
 			for _, condition := range pod.Status.Conditions {
-				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionFalse {
-					log.Info("Node is already disrupted, thus disrupting it (again) won't violate the etcd quorum", "Node", node.Name, "Guard pod", pod.Name)
-					return true, nil
+				if condition.Type == corev1.PodReady && (condition.Status == corev1.ConditionTrue || condition.Status == corev1.ConditionUnknown) {
+					isPodReady = true
 				}
 			}
-			log.Info("Node is not disrupted, and disrupting it will violate the etcd quorum", "Node", node.Name, "Guard pod", pod.Name)
-			return false, nil
+			if isPodReady {
+				log.Info("Node is not disrupted, and disrupting it will violate the etcd quorum", "Node", node.Name, "Guard pod", pod.Name)
+				return false, nil
+			}
+			log.Info("Node is already disrupted, thus disrupting it (again) won't violate the etcd quorum", "Node", node.Name, "Guard pod", pod.Name)
+			return true, nil
 		}
 	}
 	// Node is either already disrupted (and guard pod is missing) or it wasn't configured with etcd (to have a guard pod)
