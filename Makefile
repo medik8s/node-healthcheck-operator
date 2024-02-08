@@ -316,6 +316,8 @@ bundle-ocp: bundle-base ## Generate bundle manifests and metadata for OCP, then 
 	yq -i '.metadata.name = "${OPERATOR_NAME}.v${CI_VERSION}"' ${CSV}
 	# using `version: CI_VERSION` in kustomization does not work because version's value must be a semver
 	yq -i '.spec.version = "${CI_VERSION}"' ${CSV}
+	# add console-plugin annotation
+	yq -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
 	yq -i '.metadata.annotations."olm.skipRange" = ">=${SKIP_RANGE_LOWER} <${CI_VERSION}"' ${CSV}
 	# add replaces field
 	yq -i '.spec.replaces = "${OPERATOR_NAME}.v${PREVIOUS_VERSION}"' ${CSV}
