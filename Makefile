@@ -384,12 +384,16 @@ bundle-push: ## Push the bundle image
 	podman push ${BUNDLE_IMG}
 
 .PHONY: bundle-run
-bundle-run: operator-sdk ## Run bundle image
+bundle-run: operator-sdk create-ns ## Run bundle image
 	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) run bundle $(BUNDLE_IMG)
 
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
 	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(OPERATOR_NAME) --delete-all
+
+.PHONY: create-ns
+create-ns: ## Create namespace
+	$(KUBECTL) get ns $(OPERATOR_NAMESPACE) 2>&1> /dev/null || $(KUBECTL) create ns $(OPERATOR_NAMESPACE)
 
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
@@ -433,7 +437,7 @@ container-build-metrics: ## Build containers
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
-	make docker-push bundle-push #index-build index-push
+	make docker-push bundle-push index-build index-push
 
 .PHONY: build-and-run
 build-and-run: container-build container-push bundle-run
