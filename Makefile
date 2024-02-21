@@ -86,10 +86,6 @@ OPERATOR_NAMESPACE ?= openshift-workload-availability
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-bundle:$(IMAGE_TAG)
 
-# INDEX_IMG defines the image:tag used for the index.
-# You can use it as an arg. (E.g make bundle-build INDEX_IMG=<some-registry>/<project-name-index>:<tag>)
-INDEX_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-index:$(IMAGE_TAG)
-
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME):$(IMAGE_TAG)
 
@@ -395,18 +391,6 @@ bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
 create-ns: ## Create namespace
 	$(KUBECTL) get ns $(OPERATOR_NAMESPACE) 2>&1> /dev/null || $(KUBECTL) create ns $(OPERATOR_NAMESPACE)
 
-# Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
-# This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
-# https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
-.PHONY: index-build
-index-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool podman --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
-
-# Push the catalog image.
-.PHONY: index-push
-index-push: ## Push a catalog image.
-	podman push $(INDEX_IMG)
-
 .PHONY: test-e2e
 test-e2e: ## Run end to end tests
 	./hack/test-e2e.sh
@@ -436,8 +420,8 @@ container-build-metrics: ## Build containers
 	make docker-build bundle-build-metrics
 
 .PHONY: container-push
-container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
-	make docker-push bundle-push index-build index-push
+container-push:  ## Push containers
+	make docker-push bundle-push
 
 .PHONY: build-and-run
 build-and-run: container-build container-push bundle-run
