@@ -323,7 +323,7 @@ bundle-ocp: bundle-base ## Generate bundle manifests and metadata for OCP, then 
 	yq -i '.spec.replaces = "${OPERATOR_NAME}.v${PREVIOUS_VERSION}"' ${CSV}
 	# add OCP annotations
 	yq -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
-	# new infastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
+	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
 	yq -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
 	yq -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
 	yq -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
