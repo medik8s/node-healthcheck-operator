@@ -27,7 +27,7 @@ export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
 # Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
 export SKIP_RANGE_LOWER ?= "0.1.0"
 
-CHANNELS = stable
+CHANNELS ?= stable
 export CHANNELS
 DEFAULT_CHANNEL = stable
 export DEFAULT_CHANNEL
