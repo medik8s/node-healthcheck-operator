@@ -310,7 +310,6 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
-redIcon:=$(shell base64 --wrap=0 ./config/assets/nhc_red.png)
 
 .PHONY: bundle-ocp
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
@@ -341,7 +340,8 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
 	# update Channels for annotations.yaml file - EUS version
 	sed -r -i "s|channels.v1:.*|channels.v1: ${CHANNELS}|;" "${ANNOTATIONS}"
-	$(MAKE) bundle-update
+	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
+		$(MAKE) bundle-update
 
 
 .PHONY: bundle-k8s
