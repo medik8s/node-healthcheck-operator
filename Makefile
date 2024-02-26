@@ -72,6 +72,12 @@ export IMAGE_TAG
 # Image URL of the console plugin
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
 
+# Image URL of the kube-rbac-proxy
+RBAC_PROXY_IMAGE ?= quay.io/brancz/kube-rbac-proxy:v0.15.0
+
+# Image URL of the must-gather image, used as related image in the downstream CSV
+MUST_GATHER_IMAGE ?= quay.io/medik8s/must-gather:latest
+
 OPERATOR_NAME ?= node-healthcheck-operator
 OPERATOR_NAMESPACE ?= openshift-workload-availability
 
