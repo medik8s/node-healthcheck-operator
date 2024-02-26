@@ -17,8 +17,28 @@ goTest() {
   )
 }
 
+if [[ -n ${SNR_STRATEGY} ]]; then
+  echo "Using SNR strategy: ${SNR_STRATEGY}"
+  TEMPLATE_NAME=snr-${SNR_STRATEGY}-template
+  # to lower case
+  TEMPLATE_NAME=${TEMPLATE_NAME,,}
+  export SNRT_NAME=${TEMPLATE_NAME}
+  kubectl -n ${OPERATOR_NS} delete snrt ${SNRT_NAME} || true
+  cat <<EOF | kubectl create -f -
+apiVersion: self-node-remediation.medik8s.io/v1alpha1
+kind: SelfNodeRemediationTemplate
+metadata:
+  name: ${TEMPLATE_NAME}
+  namespace: ${OPERATOR_NS}
+spec:
+  template:
+    spec:
+      remediationStrategy: ${SNR_STRATEGY}
+EOF
+fi
+
 # no colors in CI
-if ! which tput &>/dev/null 2>&1 || [[ $(tput -T$TERM colors) -lt 8 ]] || [[ -n ${OPENSHIFT_CI} ]] ; then
+if ! which tput &>/dev/null 2>&1 || [[ $(tput -T$TERM colors) -lt 8 ]] || [[ -n ${CI} ]] ; then
   echo "Terminal does not seem to support colored output, disabling it"
   TEST_OPTS="${TEST_OPTS} -ginkgo.no-color"
 fi

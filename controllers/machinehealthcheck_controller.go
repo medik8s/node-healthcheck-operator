@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonevents "github.com/medik8s/common/pkg/events"
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -201,11 +202,13 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	healthyCount := 0
 	for _, healthyTarget := range healthy {
 		log.Info("handling healthy target", "target", healthyTarget.String())
-		_, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc)
-		if err != nil {
+		if remainingCRs, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc); err != nil {
 			log.Error(err, "failed to handle healthy target", "target", healthyTarget.String())
 			return result, err
+		} else if len(remainingCRs) > 0 {
+			result.Requeue = true
 		}
+		// TODO consider to align with NHC, where nodes count as healthy only when all CRs are actually gone (e.g. remediator removed finalizer)
 		healthyCount++
 	}
 
@@ -227,7 +230,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 		msg := fmt.Sprintf("Skipped remediation because the number of not started or unhealthy machines selected by the selector exceeds maxUnhealthy (total: %v, unhealthy: %v, maxUnhealthy: %v)",
 			totalTargets, unhealthyCount, mhc.Spec.MaxUnhealthy)
 		log.Info(msg)
-		r.Recorder.Event(mhc, corev1.EventTypeWarning, utils.EventReasonRemediationSkipped, msg)
+		commonevents.WarningEvent(r.Recorder, mhc, utils.EventReasonRemediationSkipped, msg)
 		metrics.ObserveMachineHealthCheckShortCircuitEnabled(mhc.Name, mhc.Namespace)
 
 		// Remediation not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy
@@ -245,7 +248,8 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return reconcile.Result{}, nil
 		}
 
-		return reconcile.Result{Requeue: true}, nil
+		result.Requeue = true
+		return result, nil
 	}
 
 	log.Info("Remediations are allowed", "total targets", totalTargets, "max unhealthy", mhc.Spec.MaxUnhealthy, "unhealthy targets", unhealthyCount)
@@ -261,12 +265,15 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if len(errList) > 0 {
 		requeueError := utilerrors.NewAggregate(errList)
 		log.V(3).Info("Reconciling: there were errors, requeuing", "errors", requeueError)
-		return reconcile.Result{}, requeueError
+		return result, requeueError
 	}
 
 	if requeueIn > 0 {
 		log.V(3).Info("Reconciling: some targets might go unhealthy. Ensuring a requeue happens", "requeue in", requeueIn.String())
-		return reconcile.Result{RequeueAfter: requeueIn}, nil
+		if !result.Requeue {
+			result.RequeueAfter = requeueIn
+		}
+		return result, nil
 	}
 
 	log.V(3).Info("Reconciling: no more targets meet unhealthy criteria")
@@ -296,7 +303,7 @@ func (r *MachineHealthCheckReconciler) checkHealth(targets []resources.Target) (
 			if t.Node != nil {
 				nodeName = t.Node.GetName()
 			}
-			r.Recorder.Eventf(t.Node, corev1.EventTypeNormal, utils.EventReasonDetectedUnhealthy,
+			commonevents.NormalEventf(r.Recorder, t.MHC, utils.EventReasonDetectedUnhealthy,
 				"Machine %v has unhealthy node %v", t.Machine.GetName(), nodeName,
 			)
 			overallRequeueIn = *utils.MinRequeueDuration(&overallRequeueIn, &requeueIn)
@@ -416,8 +423,8 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 		return errors.Wrapf(err, "failed to create remediation CR")
 	}
 	if created {
-		r.Recorder.Event(target.MHC, corev1.EventTypeNormal, utils.EventReasonRemediationCreated,
-			fmt.Sprintf("Created remediation object for machine %s with node %s", target.Machine.GetName(), target.Node.GetName()))
+		commonevents.NormalEventf(r.Recorder, target.MHC, utils.EventReasonRemediationCreated,
+			"Created remediation object for machine %s with node %s", target.Machine.GetName(), target.Node.GetName())
 	}
 	return nil
 }

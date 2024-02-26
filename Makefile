@@ -1,14 +1,21 @@
 # SHELL defines bash so all the inline scripts here will work as expected.
 SHELL := /bin/bash
 
-OPERATOR_SDK_VERSION = v1.31.0
-OPM_VERSION = v1.26.3
-CONTROLLER_GEN_VERSION = v0.12.0
+# https://pkg.go.dev/github.com/operator-framework/operator-sdk?tab=versions
+OPERATOR_SDK_VERSION = v1.33.0
+# https://pkg.go.dev/github.com/operator-framework/operator-registry?tab=versions
+OPM_VERSION = v1.36.0
+# https://pkg.go.dev/sigs.k8s.io/controller-tools?tab=versions
+CONTROLLER_GEN_VERSION = v0.14.0
 # update for major version updates to KUSTOMIZE_VERSION!
-KUSTOMIZE_VERSION = v5.0.0
 KUSTOMIZE_API_VERSION = v5
-ENVTEST_VERSION = v0.0.0-20230519160631-e7b94074ad38 # no tagged versions :/
-GOIMPORTS_VERSION = v0.9.1
+# https://pkg.go.dev/sigs.k8s.io/kustomize/kustomize/v5?tab=versions
+KUSTOMIZE_VERSION = v5.3.0
+# https://pkg.go.dev/sigs.k8s.io/controller-runtime/tools/setup-envtest/env?tab=versions
+ENVTEST_VERSION = v0.0.0-20240123110158-b88ed7a3602b
+# https://pkg.go.dev/golang.org/x/tools/cmd/goimports?tab=versions
+GOIMPORTS_VERSION = v0.17.0
+# https://pkg.go.dev/github.com/slintes/sort-imports?tab=versions
 SORT_IMPORTS_VERSION = v0.2.1
 # update for major version updates to YQ_VERSION!
 YQ_API_VERSION = v4
@@ -421,12 +428,16 @@ bundle-push: ## Push the bundle image
 	podman push ${BUNDLE_IMG}
 
 .PHONY: bundle-run
-bundle-run: operator-sdk ## Run bundle image
+bundle-run: operator-sdk create-ns ## Run bundle image
 	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) run bundle $(BUNDLE_IMG)
 
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
 	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(OPERATOR_NAME) --delete-all
+
+.PHONY: create-ns
+create-ns: ## Create namespace
+	$(KUBECTL) get ns $(OPERATOR_NAMESPACE) 2>&1> /dev/null || $(KUBECTL) create ns $(OPERATOR_NAMESPACE)
 
 # Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
@@ -470,7 +481,7 @@ container-build-metrics: ## Build containers
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
-	make docker-push bundle-push #index-build index-push
+	make docker-push bundle-push index-build index-push
 
 .PHONY: build-and-run
 build-and-run: container-build container-push bundle-run

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonevents "github.com/medik8s/common/pkg/events"
 	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +27,7 @@ import (
 type Manager interface {
 	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *time.Duration, error)
 	GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstructured.Unstructured, error)
+	GenerateTemplate(reference *corev1.ObjectReference) *unstructured.Unstructured
 	ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (valid bool, reason string, message string, err error)
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
@@ -230,7 +232,7 @@ func (m *manager) DeleteRemediationCR(remediationCR *unstructured.Unstructured, 
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
-	m.recorder.Eventf(owner, corev1.EventTypeNormal, utils.EventReasonRemediationRemoved, "Deleted remediation CR of kind %s with name %s", remediationCR.GetKind(), remediationCR.GetName())
+	commonevents.NormalEventf(m.recorder, owner, utils.EventReasonRemediationRemoved, "Deleted remediation CR of kind %s with name %s", remediationCR.GetKind(), remediationCR.GetName())
 	return true, nil
 }
 

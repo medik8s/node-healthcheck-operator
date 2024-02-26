@@ -66,7 +66,7 @@ func GetWorkerNodes(k8sClient ctrl.Client) []v1.Node {
 	reqMRole, _ := labels.NewRequirement(commonlabels.MasterRole, selection.DoesNotExist, []string{})
 	selector = selector.Add(*reqCpRole, *reqMRole)
 	Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
-	Expect(len(workers.Items)).To(BeNumerically(">=", 3))
+	Expect(len(workers.Items)).To(BeNumerically(">=", 2), "expected at least 2 worker nodes for e2e test")
 	return workers.Items
 }
 

@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -222,30 +223,66 @@ var _ = Describe("Node Health Check CR", func() {
 
 		testReconcile := func() {
 
-			When("Nodes are candidates for remediation but remediation template is broken", func() {
-				BeforeEach(func() {
-					setupObjects(1, 2, true)
+			When("Remediation template is broken", func() {
 
-					if underTest.Spec.RemediationTemplate != nil {
-						underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
-					} else {
-						underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind = "dummyTemplate"
-					}
+				BeforeEach(func() {
+					setupObjects(0, 2, true)
 				})
 
-				It("should set corresponding condition", func() {
-					Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
-					Expect(underTest.Status.Reason).To(
-						And(
-							ContainSubstring("failed to get"),
-							ContainSubstring("dummyTemplate"),
-						))
-					Expect(underTest.Status.Conditions).To(ContainElement(
+				expectTemplateNotFound := func(g Gomega, nhc *v1alpha1.NodeHealthCheck, expectedError string) {
+					g.ExpectWithOffset(1, underTest.Status.Phase).To(Equal(v1alpha1.PhaseDisabled))
+					g.ExpectWithOffset(1, underTest.Status.Reason).To(ContainSubstring(expectedError))
+					g.ExpectWithOffset(1, underTest.Status.Conditions).To(ContainElement(
 						And(
 							HaveField("Type", v1alpha1.ConditionTypeDisabled),
 							HaveField("Status", metav1.ConditionTrue),
 							HaveField("Reason", v1alpha1.ConditionReasonDisabledTemplateNotFound),
 						)))
+				}
+
+				Context("with invalid kind", func() {
+					BeforeEach(func() {
+						if underTest.Spec.RemediationTemplate != nil {
+							underTest.Spec.RemediationTemplate.Kind = "dummyTemplate"
+						} else {
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Kind = "dummyTemplate"
+						}
+					})
+
+					It("should set corresponding condition", func() {
+						expectTemplateNotFound(Default, underTest, "failed to get")
+					})
+				})
+
+				Context("with missing namespace", func() {
+					BeforeEach(func() {
+						if underTest.Spec.RemediationTemplate != nil {
+							underTest.Spec.RemediationTemplate.Namespace = ""
+						} else {
+							underTest.Spec.EscalatingRemediations[0].RemediationTemplate.Namespace = ""
+						}
+					})
+
+					It("should set corresponding condition", func() {
+						expectTemplateNotFound(Default, underTest, "no namespace is provided")
+					})
+				})
+
+				Context("templated is deleted after NHC creation", func() {
+					It("should set corresponding condition", func() {
+						By("deleting template")
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(infraRemediationTemplate), infraRemediationTemplate)).To(Succeed())
+						Expect(k8sClient.Delete(context.Background(), infraRemediationTemplate)).To(Succeed())
+						DeferCleanup(func() {
+							By("recreating template")
+							infraRemediationTemplate.SetResourceVersion("")
+							Expect(k8sClient.Create(context.Background(), infraRemediationTemplate)).To(Succeed())
+						})
+						Eventually(func(g Gomega) {
+							g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+							expectTemplateNotFound(g, underTest, "failed to get")
+						}, "5s", "200ms").Should(Succeed(), "expected disabled NHC")
+					})
 				})
 			})
 
@@ -1316,7 +1353,50 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(k8sClient.Status().Update(context.Background(), pdb)).To(Succeed())
 				})
 
-				When("unhealthy node is not disrupted already", func() {
+				createGuardPod := func(isReady bool) {
+					pod := &v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "some-name",
+							Namespace: pdb.Namespace,
+							Labels:    pdbSelector,
+						},
+						Spec: v1.PodSpec{
+							Containers: []v1.Container{
+								{
+									Name:  "test",
+									Image: "test",
+								},
+							},
+							NodeName: "unhealthy-control-plane-node-1",
+						},
+					}
+					Expect(k8sClient.Create(context.Background(), pod)).To(Succeed())
+					DeferCleanup(func() {
+						Expect(k8sClient.Delete(context.Background(), pod, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})).To(Succeed())
+					})
+
+					// update pod status
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pod), pod)).To(Succeed())
+					status := v1.ConditionTrue
+					if !isReady {
+						status = v1.ConditionFalse
+					}
+					pod.Status.Conditions = []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: status,
+						},
+					}
+					Expect(k8sClient.Status().Update(context.Background(), pod)).To(Succeed())
+				}
+
+				When("unhealthy node is not disrupted already (guard pod is ready)", func() {
+
+					BeforeEach(func() {
+						// create ready guard pod
+						createGuardPod(true)
+					})
+
 					It("doesn't create a remediation CR for control plane node", func() {
 						cr := newRemediationCRForNHC("unhealthy-control-plane-node-1", underTest)
 						crList := &unstructured.UnstructuredList{Object: cr.Object}
@@ -1337,40 +1417,11 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 				})
 
-				When("unhealthy node is disrupted already", func() {
+				When("unhealthy node is disrupted already (guard pod is not ready)", func() {
 
 					BeforeEach(func() {
-						// create disrupted pod
-						pod := &v1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "some-name",
-								Namespace: pdb.Namespace,
-								Labels:    pdbSelector,
-							},
-							Spec: v1.PodSpec{
-								Containers: []v1.Container{
-									{
-										Name:  "test",
-										Image: "test",
-									},
-								},
-								NodeName: "unhealthy-control-plane-node-1",
-							},
-						}
-						Expect(k8sClient.Create(context.Background(), pod)).To(Succeed())
-						DeferCleanup(func() {
-							Expect(k8sClient.Delete(context.Background(), pod)).To(Succeed())
-						})
-
-						// update pod status
-						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(pod), pod)).To(Succeed())
-						pod.Status.Conditions = []v1.PodCondition{
-							{
-								Type:   v1.PodReady,
-								Status: v1.ConditionFalse,
-							},
-						}
-						Expect(k8sClient.Status().Update(context.Background(), pod)).To(Succeed())
+						// create unready pod
+						createGuardPod(false)
 					})
 
 					It("does create a remediation CR for control plane node", func() {
@@ -1390,6 +1441,24 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 				})
 
+				When("unhealthy node has no guard pod (node doesn't run etcd or guard pod was deleted)", func() {
+
+					It("does create a remediation CR for control plane node", func() {
+						cr := newRemediationCRForNHC("unhealthy-control-plane-node-1", underTest)
+						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+						Expect(*underTest.Status.HealthyNodes).To(Equal(2))
+						Expect(*underTest.Status.ObservedNodes).To(Equal(3))
+						Expect(underTest.Status.InFlightRemediations).To(HaveLen(1))
+						Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+						Expect(underTest.Status.UnhealthyNodes).To(ContainElements(
+							And(
+								HaveField("Name", ContainSubstring("unhealthy-control-plane-node")),
+								HaveField("Remediations", Not(BeNil())),
+							),
+						))
+					})
+				})
 			})
 
 		})
@@ -1719,10 +1788,12 @@ var _ = Describe("Node Health Check CR", func() {
 	Context("Unhealthy condition checks", func() {
 
 		var (
-			r                   = &NodeHealthCheckReconciler{}
-			unhealthyConditions []v1alpha1.UnhealthyCondition
-			nodeConditions      []v1.NodeCondition
-			node                *v1.Node
+			r = &NodeHealthCheckReconciler{
+				Recorder: record.NewFakeRecorder(1),
+			}
+			nhc            = newNodeHealthCheck()
+			nodeConditions []v1.NodeCondition
+			node           *v1.Node
 
 			condType1         = v1.NodeConditionType("type1")
 			condType2         = v1.NodeConditionType("type2")
@@ -1745,7 +1816,7 @@ var _ = Describe("Node Health Check CR", func() {
 				fakeTime = nil
 			})
 
-			unhealthyConditions = []v1alpha1.UnhealthyCondition{
+			nhc.Spec.UnhealthyConditions = []v1alpha1.UnhealthyCondition{
 				{
 					Type:     condType1,
 					Status:   condStatusMatch,
@@ -1761,6 +1832,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 		JustBeforeEach(func() {
 			node = &v1.Node{}
+			node.Name = "test-node"
 			node.Status.Conditions = nodeConditions
 		})
 
@@ -1780,7 +1852,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
@@ -1797,7 +1869,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")
@@ -1820,7 +1892,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeTrue(), "expected not healthy")
 				Expect(expire).To(BeNil(), "expected expire to not be set")
 			})
@@ -1842,7 +1914,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			})
 			It("should not report match, should not report expiry", func() {
-				match, expire := r.matchesUnhealthyConditions(unhealthyConditions, node)
+				match, expire := r.matchesUnhealthyConditions(nhc, node)
 				Expect(match).To(BeFalse(), "expected healthy")
 				Expect(expire).ToNot(BeNil(), "expected expire to be set")
 				Expect(*expire).To(Equal(expireIn+expireBuffer), "expected expire in 1 second")

@@ -13,9 +13,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -403,7 +405,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 			remediationCR:       remediationCR,
 			remediationTemplate: remediationTemplateCR,
 			expected: expectedReconcile{
-				result: reconcile.Result{},
+				result: reconcile.Result{Requeue: true},
 				error:  false,
 			},
 			expectedEvents: []string{utils.EventReasonRemediationRemoved},
@@ -882,7 +884,8 @@ func TestGetTargetsFromMHC(t *testing.T) {
 						Labels: map[string]string{},
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{},
@@ -1135,7 +1138,8 @@ func TestNeedsRemediation(t *testing.T) {
 						UID:    "uid",
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -1356,7 +1360,8 @@ func TestNeedsRemediation(t *testing.T) {
 						UID:    "uid",
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -1484,7 +1489,8 @@ func TestNeedsRemediation(t *testing.T) {
 						UID:    "uid",
 					},
 					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
+						Kind:       "Node",
+						APIVersion: "v1",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -1683,7 +1689,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -1750,7 +1757,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -1821,7 +1829,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -1942,7 +1951,8 @@ func TestHealthCheckTargets(t *testing.T) {
 							UID:    "uid",
 						},
 						TypeMeta: metav1.TypeMeta{
-							Kind: "Node",
+							Kind:       "Node",
+							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{
@@ -2356,8 +2366,23 @@ func newFakeReconciler(initObjects ...runtime.Object) *MachineHealthCheckReconci
 
 func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObjects ...runtime.Object) *MachineHealthCheckReconciler {
 	initObjects = append(initObjects, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: MachineNamespace}})
+
+	// we need a rest mapper which knows about the scope of our test CRDs
+	rm := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{
+			Group:   InfraRemediationGroup,
+			Version: InfraRemediationVersion,
+		},
+	})
+	rm.Add(schema.GroupVersionKind{
+		Group:   InfraRemediationGroup,
+		Version: InfraRemediationVersion,
+		Kind:    InfraRemediationTemplateKind,
+	}, meta.RESTScopeNamespace)
+
 	fakeClient := fake.NewClientBuilder().
 		WithIndex(&machinev1.Machine{}, utils.MachineNodeNameIndex, indexMachineByNodeName).
+		WithRESTMapper(rm).
 		WithRuntimeObjects(initObjects...).
 		WithStatusSubresource(&machinev1.MachineHealthCheck{}).
 		Build()
@@ -2512,7 +2537,8 @@ func newNodeForMHC(name string, ready bool) *corev1.Node {
 			UID:    uuid.NewUUID(),
 		},
 		TypeMeta: metav1.TypeMeta{
-			Kind: "Node",
+			Kind:       "Node",
+			APIVersion: "v1",
 		},
 		Status: corev1.NodeStatus{
 			Conditions: []corev1.NodeCondition{

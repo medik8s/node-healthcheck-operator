@@ -3,6 +3,7 @@ package resources
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -70,15 +71,28 @@ func (m *manager) GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstruct
 		// TODO catch this early in Reconciler
 		return nil, fmt.Errorf("remediation template must set for MHC %s", mhc.GetName())
 	}
-	template, err := m.getTemplate(mhc.Spec.RemediationTemplate)
+	template, err := m.getTemplateWithFallbackNamespace(mhc.Spec.RemediationTemplate, mhc.GetNamespace())
 	return template, err
 }
 
 func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Unstructured, error) {
-	template := new(unstructured.Unstructured)
-	template.SetGroupVersionKind(templateRef.GroupVersionKind())
-	template.SetName(templateRef.Name)
-	template.SetNamespace(templateRef.Namespace)
+	return m.getTemplateWithFallbackNamespace(templateRef, "")
+}
+
+func (m *manager) getTemplateWithFallbackNamespace(templateRef *v1.ObjectReference, crNamespace string) (*unstructured.Unstructured, error) {
+	template := m.GenerateTemplate(templateRef)
+
+	// ensure namespace is set if needed
+	if isNamespaced, err := m.IsObjectNamespaced(template); err != nil {
+		return nil, errors.Wrapf(err, "failed to check if remediation template %q is namespaced", template.GetName())
+	} else if isNamespaced && template.GetNamespace() == "" {
+		if crNamespace == "" {
+			return nil, errors.Errorf("remediation template %q not found, it is namespaced, but no namespace is provided", template.GetName())
+		}
+		m.log.Info("Remediation template requires namespace, but it is missing. Falling back to CR's namespace", "template", template.GetName(), "CR namespace", crNamespace)
+		template.SetNamespace(crNamespace)
+	}
+
 	if err := m.Get(m.ctx, client.ObjectKeyFromObject(template), template); err != nil {
 		return nil, errors.Wrapf(err, "failed to get external remediation template %s/%s", template.GetNamespace(), template.GetName())
 	}
@@ -89,6 +103,14 @@ func (m *manager) getTemplate(templateRef *v1.ObjectReference) (*unstructured.Un
 		return nil, brokenTemplateError{fmt.Sprintf("invalid template %s/%s, didn't find spec.template.spec", template.GetNamespace(), template.GetName())}
 	}
 	return template, nil
+}
+
+func (m *manager) GenerateTemplate(templateRef *v1.ObjectReference) *unstructured.Unstructured {
+	template := new(unstructured.Unstructured)
+	template.SetGroupVersionKind(templateRef.GroupVersionKind())
+	template.SetName(templateRef.Name)
+	template.SetNamespace(templateRef.Namespace)
+	return template
 }
 
 // ValidateTemplates only returns an error when we don't know whether the template is valid or not, for triggering a requeue with backoff
@@ -112,8 +134,16 @@ func (m *manager) ValidateTemplates(nhc *remediationv1alpha1.NodeHealthCheck) (v
 }
 
 func (m *manager) handleTemplateError(templateError error) (valid bool, reason, message string, err error) {
-	cause := errors.Cause(templateError)
-	if apierrors.IsNotFound(cause) || meta.IsNoMatchError(cause) {
+
+	// When the template doesn't exist, we can get different kind of errors, e.g. NotFound or NoMatch error.
+	// Also check the error string in order to catch this error, which is thrown when the api group doesn't exist:
+	// failed to get API group resources: unable to retrieve the complete list of server APIs: <invalid group>: the server could not find the requested resource
+	isTemplateNotFoundError := func(err error) bool {
+		return apierrors.IsNotFound(err) || meta.IsNoMatchError(err) ||
+			strings.Contains(err.Error(), "could not find") || strings.Contains(err.Error(), "not found")
+	}
+
+	if isTemplateNotFoundError(templateError) {
 		return false,
 			remediationv1alpha1.ConditionReasonDisabledTemplateNotFound,
 			fmt.Sprintf("Remediation template not found: %q", templateError.Error()),

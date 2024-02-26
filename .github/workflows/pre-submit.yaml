@@ -33,18 +33,17 @@ jobs:
       run: make container-build
 
   e2e-k8s:
-    # disabled until fixed...
-    if: false
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
       IMAGE_REGISTRY: kind-registry:5000
-      VERSION: 9.9.9-ci
       DEPLOY_NAMESPACE: k8s-test
       # see https://github.com/kubernetes-sigs/kind/tags
-      KIND_VERSION: v0.18.0
+      KIND_VERSION: v0.20.0
       # see https://hub.docker.com/r/kindest/node/tags for available versions!
-      K8S_VERSION: v1.26.3
+      K8S_VERSION: v1.27.3
+      # https://github.com/operator-framework/operator-lifecycle-manager/releases
+      OLM_VERSION: v0.26.0
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -97,7 +96,7 @@ jobs:
 
     - name: Install OLM
       run: |
-        curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.22.0/install.sh | bash -s v0.22.0
+        curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/${OLM_VERSION}/install.sh | bash -s ${OLM_VERSION}
 
     - name: Build NHC
       run: |
@@ -111,10 +110,13 @@ jobs:
         kubectl create ns ${DEPLOY_NAMESPACE}
         
         # deploy SNR first
-        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/medik8s/self-node-remediation-operator-bundle:latest
+        # HEADS UP: using a custom build of SNR here which uses `systemctl start kubelet` as "reboot" command,
+        # everything else does not work with kind.
+        # See https://github.com/slintes/self-node-remediation/commit/a8aa0f73a240509cbd446fae048b15ed11a20eea
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/slintes/self-node-remediation-operator-bundle:v0.1.0-start-kubelet
         
         # deploy NHC
-        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:v${VERSION}
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
         
         # wait a bit for OLM creating CSV etc
         sleep 1m
@@ -144,7 +146,7 @@ jobs:
     - name: Run NHC e2e
       run: |
         echo "running e2e test"
-        OPERATOR_NS=${DEPLOY_NAMESPACE} LABEL_FILTER="!OCP-ONLY" make test-e2e
+        OPERATOR_NS=${DEPLOY_NAMESPACE} SNR_STRATEGY=OutOfServiceTaint LABEL_FILTER="!OCP-ONLY" make test-e2e
         echo "finished e2e test"
 
     - name: Debug
