@@ -398,7 +398,7 @@ bundle-scorecard: operator-sdk ## Run scorecard tests
 
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
-	VERSION=0.0.1 $(MAKE) manifests bundle
+	VERSION=0.0.1 $(MAKE) manifests bundle-k8s
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
 	# delete replaces field
