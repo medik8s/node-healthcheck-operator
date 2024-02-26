@@ -1,5 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
 resources:
 - bases/node-healthcheck-operator.clusterserviceversion.yaml
 - ../../default
 - ../../samples
 - ../../scorecard
+
+images:
+- name: controller
+  newName: quay.io/medik8s/node-healthcheck-operator
+  newTag: latest
+- name: kube-rbac-proxy
+  newName: quay.io/brancz/kube-rbac-proxy
+  newTag: v0.15.0

@@ -288,7 +288,7 @@ endef
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests
 	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMAGE)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	cp config/metadata/dependencies.yaml bundle/metadata/
@@ -301,12 +301,6 @@ redIcon:=$(shell base64 --wrap=0 ./config/assets/nhc_red.png)
 .PHONY: bundle-ocp
 bundle-ocp: bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	# Replace all the placeholder variables in the CSV
-	sed -r -i "s|BUILD_REGISTRY|${BUILD_REGISTRY}|g;" "${CSV}"
-	sed -r -i "s|CONSOLE_OPERATOR_NAME|${CONSOLE_OPERATOR_NAME}|g;" "${CSV}"
-	sed -r -i "s|OPERATOR_NAME|${OPERATOR_NAME}|g;" "${CSV}"
-	sed -r -i "s|CI_VERSION|${CI_VERSION}|g;" "${CSV}"
-	sed -r -i "s|RBAC_PROXY_OCP_VERSION|${RBAC_PROXY_OCP_VERSION}|g;" "${CSV}"
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
 	sed -r -i "s|base64EncodedIcon|${redIcon}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
@@ -333,7 +327,8 @@ bundle-ocp: bundle-base ## Generate bundle manifests and metadata for OCP, then 
 	yq -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
 	# update Channels for annotations.yaml file - EUS version
 	sed -r -i "s|channels.v1:.*|channels.v1: ${CHANNELS}|;" "${ANNOTATIONS}"
-	$(MAKE) bundle-validate
+	$(MAKE) bundle-update
+
 
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.

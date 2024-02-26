@@ -4,7 +4,6 @@ kind: ClusterServiceVersion
 metadata:
   name: dummy
   annotations:
-    containerImage: BUILD_REGISTRY-OPERATOR_NAME:vCI_VERSION
     support: Red Hat
 spec:
   maintainers:
