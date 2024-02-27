@@ -253,7 +253,7 @@ spec:
     for rebooting unhealthy nodes, and can be done by labeling the
     the target namespace accordingly before installing NHC.
     For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ .
-  displayName: Node Health Check Operator
+  displayName: Node Health Check Operator - Community Edition
   icon:
   - base64data: base64EncodedIcon
     mediatype: image/png
