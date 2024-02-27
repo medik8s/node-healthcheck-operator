@@ -331,9 +331,6 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	$(YQ) -i '.spec.version = "${CI_VERSION}"' ${CSV}
 	# add console-plugin annotation
 	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
-	$(YQ) -i '.metadata.annotations."olm.skipRange" = ">=${SKIP_RANGE_LOWER} <${CI_VERSION}"' ${CSV}
-	# add replaces field
-	$(YQ) -i '.spec.replaces = "${OPERATOR_NAME}.v${PREVIOUS_VERSION}"' ${CSV}
 	# add OCP annotations
 	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
 	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
