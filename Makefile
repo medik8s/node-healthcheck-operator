@@ -322,7 +322,6 @@ export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
-	sed -r -i "s|base64EncodedIcon|${redIcon}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
 	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${BUILD_REGISTRY}-${MUST_GATHER_NAME}:v${CI_VERSION}"}]' ${CSV}
