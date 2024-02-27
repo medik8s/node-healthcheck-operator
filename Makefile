@@ -88,7 +88,7 @@ RBAC_PROXY_IMAGE ?= quay.io/brancz/kube-rbac-proxy:v0.15.0
 # Image URL of the must-gather image, used as related image in the downstream CSV
 MUST_GATHER_IMAGE ?= quay.io/medik8s/must-gather:latest
 
-OPERATOR_NAME ?= node-healthcheck-operator
+OPERATOR_NAME = node-healthcheck-operator
 OPERATOR_NAMESPACE ?= openshift-workload-availability
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
