@@ -324,7 +324,7 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
-	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${BUILD_REGISTRY}-${MUST_GATHER_NAME}:v${CI_VERSION}"}]' ${CSV}
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
 	# update version in metadata.name (we can not replace CSV's name field via kustomize, so we do it here)
 	$(YQ) -i '.metadata.name = "${OPERATOR_NAME}.v${CI_VERSION}"' ${CSV}
 	# using `version: CI_VERSION` in kustomization does not work because version's value must be a semver

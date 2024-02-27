@@ -27,18 +27,17 @@ export PREVIOUS_VERSION="0.6.1"
 ### Fixes vars ###
 ##################
 
-export BUILD_REGISTRY="registry-proxy.engineering.redhat.com/rh-osbs/red-hat-workload-availability"
-export OPERATOR_NAME="node-healthcheck-operator"
-export CONSOLE_OPERATOR_NAME="node-remediation-console"
-export MUST_GATHER_NAME="node-healthcheck-must-gather-rhel8"
-export ANNOTATIONS="bundle/metadata/annotations.yaml"
+BUILD_REGISTRY="registry-proxy.engineering.redhat.com/rh-osbs/red-hat-workload-availability"
+COMPONENT_NAME="node-healthcheck-operator"
+CONSOLE_OPERATOR_NAME="node-remediation-console"
+MUST_GATHER_NAME="node-healthcheck-must-gather-rhel8"
 
 # cd into project dir
 cd "../.."
 
 # Override Makefile variables
 export VERSION=${CI_VERSION}
-export IMG=${BUILD_REGISTRY}-${OPERATOR_NAME}:v${CI_VERSION}
+export IMG=${BUILD_REGISTRY}-${COMPONENT_NAME}:v${CI_VERSION}
 export CONSOLE_PLUGIN_IMAGE=${BUILD_REGISTRY}-${CONSOLE_OPERATOR_NAME}:v${CI_VERSION}
 export RBAC_PROXY_IMAGE="registry.redhat.io/openshift4/ose-kube-rbac-proxy:v${RBAC_PROXY_OCP_VERSION}"
 export MUST_GATHER_IMAGE=${BUILD_REGISTRY}-${MUST_GATHER_NAME}:v${CI_VERSION}
