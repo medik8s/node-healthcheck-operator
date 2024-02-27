@@ -341,8 +341,6 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
-	# update Channels for annotations.yaml file - EUS version
-	sed -r -i "s|channels.v1:.*|channels.v1: ${CHANNELS}|;" "${ANNOTATIONS}"
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
 		$(MAKE) bundle-update
 
