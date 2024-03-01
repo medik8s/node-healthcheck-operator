@@ -10,7 +10,7 @@ spec:
     spec:
       containers:
       - name: kube-rbac-proxy
-        image: quay.io/brancz/kube-rbac-proxy:v0.15.0
+        image: kube-rbac-proxy
         args:
         - "--secure-listen-address=0.0.0.0:8443"
         - "--http2-disable"

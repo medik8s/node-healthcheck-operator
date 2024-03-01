@@ -43,7 +43,6 @@ metadata:
       ]
     capabilities: Basic Install
     categories: OpenShift Optional
-    console.openshift.io/plugins: '["node-remediation-console-plugin"]'
     containerImage: quay.io/medik8s/node-healthcheck-operator:v0.0.1
     createdAt: ""
     description: Detect failed Nodes and trigger remediation with e.g. Self Node Remediation.
@@ -246,7 +245,15 @@ spec:
 
     #### Machine Deletion Remediation (MDR)
     MDR is limited to OpenShift, and it uses Machine API for reprovisioning unhealthy nodes by deleting their machines.
-  displayName: Node Health Check Operator
+    
+    ### Notes
+    In case Pod Security Admission is used, please allow Pods to run
+    in the "privileged" Pod Security Standard policy.
+    This is required by the dependent Self Node Remediation operator
+    for rebooting unhealthy nodes, and can be done by labeling the
+    the target namespace accordingly before installing NHC.
+    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ .
+  displayName: Node Health Check Operator - Community Edition
   icon:
   - base64data: base64EncodedIcon
     mediatype: image/png
@@ -526,83 +533,6 @@ spec:
               - effect: NoExecute
                 key: node-role.kubernetes.io/infra
                 operator: Exists
-      - label:
-          app.kubernetes.io/component: node-remediation-console-plugin
-          app.kubernetes.io/name: node-healthcheck-operator
-        name: node-healthcheck-node-remediation-console-plugin
-        spec:
-          replicas: 1
-          selector:
-            matchLabels:
-              app.kubernetes.io/component: node-remediation-console-plugin
-              app.kubernetes.io/name: node-healthcheck-operator
-          strategy: {}
-          template:
-            metadata:
-              labels:
-                app.kubernetes.io/component: node-remediation-console-plugin
-                app.kubernetes.io/name: node-healthcheck-operator
-            spec:
-              affinity:
-                nodeAffinity:
-                  preferredDuringSchedulingIgnoredDuringExecution:
-                  - preference:
-                      matchExpressions:
-                      - key: node-role.kubernetes.io/infra
-                        operator: Exists
-                    weight: 3
-                  - preference:
-                      matchExpressions:
-                      - key: node-role.kubernetes.io/master
-                        operator: Exists
-                    weight: 1
-                  - preference:
-                      matchExpressions:
-                      - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
-                    weight: 1
-              containers:
-              - image: quay.io/medik8s/node-remediation-console:latest
-                name: node-remediation-console-plugin
-                ports:
-                - containerPort: 9443
-                  name: nrc-server
-                  protocol: TCP
-                resources:
-                  requests:
-                    cpu: 10m
-                    memory: 50Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-                volumeMounts:
-                - mountPath: /var/serving-cert
-                  name: nrc-plugin-cert
-                  readOnly: true
-              securityContext:
-                runAsNonRoot: true
-                seccompProfile:
-                  type: RuntimeDefault
-              tolerations:
-              - effect: NoSchedule
-                key: node-role.kubernetes.io/master
-                operator: Exists
-              - effect: NoSchedule
-                key: node-role.kubernetes.io/control-plane
-                operator: Exists
-              - effect: NoSchedule
-                key: node-role.kubernetes.io/infra
-                operator: Exists
-              - effect: NoExecute
-                key: node-role.kubernetes.io/infra
-                operator: Exists
-              volumes:
-              - name: nrc-plugin-cert
-                secret:
-                  defaultMode: 420
-                  secretName: nrc-plugin-cert
       permissions:
       - rules:
         - apiGroups:

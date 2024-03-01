@@ -1,3 +1,8 @@
 resources:
 - ../base
 - ../../optional/console-plugin
+
+patches:
+  - path: clusterserviceversion_patch.yaml
+    target:
+      kind: ClusterServiceVersion

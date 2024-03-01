@@ -7,16 +7,19 @@ OPERATOR_SDK_VERSION = v1.33.0
 OPM_VERSION = v1.36.0
 # https://pkg.go.dev/sigs.k8s.io/controller-tools?tab=versions
 CONTROLLER_GEN_VERSION = v0.14.0
-# https://pkg.go.dev/sigs.k8s.io/kustomize/kustomize/v5?tab=versions
-KUSTOMIZE_VERSION = v5.3.0
 # update for major version updates to KUSTOMIZE_VERSION!
 KUSTOMIZE_API_VERSION = v5
+# https://pkg.go.dev/sigs.k8s.io/kustomize/kustomize/v5?tab=versions
+KUSTOMIZE_VERSION = v5.3.0
 # https://pkg.go.dev/sigs.k8s.io/controller-runtime/tools/setup-envtest/env?tab=versions
 ENVTEST_VERSION = v0.0.0-20240123110158-b88ed7a3602b
 # https://pkg.go.dev/golang.org/x/tools/cmd/goimports?tab=versions
 GOIMPORTS_VERSION = v0.17.0
 # https://pkg.go.dev/github.com/slintes/sort-imports?tab=versions
 SORT_IMPORTS_VERSION = v0.2.1
+# update for major version updates to YQ_VERSION!
+YQ_API_VERSION = v4
+YQ_VERSION = v4.41.1
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.26
@@ -34,7 +37,7 @@ export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
 # Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
 export SKIP_RANGE_LOWER ?= "0.1.0"
 
-CHANNELS = stable
+CHANNELS ?= stable
 export CHANNELS
 DEFAULT_CHANNEL = stable
 export DEFAULT_CHANNEL
@@ -79,7 +82,13 @@ export IMAGE_TAG
 # Image URL of the console plugin
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
 
-OPERATOR_NAME ?= node-healthcheck-operator
+# Image URL of the kube-rbac-proxy
+RBAC_PROXY_IMAGE ?= quay.io/brancz/kube-rbac-proxy:v0.15.0
+
+# Image URL of the must-gather image, used as related image in the downstream CSV
+MUST_GATHER_IMAGE ?= quay.io/medik8s/must-gather:latest
+
+OPERATOR_NAME = node-healthcheck-operator
 OPERATOR_NAMESPACE ?= openshift-workload-availability
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
@@ -246,6 +255,11 @@ SORT_IMPORTS = $(shell pwd)/bin/sort-imports
 sort-imports: ## Download sort-imports locally if necessary.
 	$(call go-install-tool,$(SORT_IMPORTS),github.com/slintes/sort-imports@$(SORT_IMPORTS_VERSION))
 
+YQ = $(shell pwd)/bin/yq
+.PHONY: yq
+yq: ## Download yq locally if necessary.
+	$(call go-install-tool,$(YQ),github.com/mikefarah/yq/$(YQ_API_VERSION)@$(YQ_VERSION))
+
 .PHONY: operator-sdk
 OPERATOR_SDK = ./bin/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
@@ -295,17 +309,37 @@ endef
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests
 	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMAGE)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	cp config/metadata/dependencies.yaml bundle/metadata/
 	$(MAKE) bundle-validate
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
-.PHONY: bundle
-bundle: bundle-base ## Generate bundle manifests and metadata, then validate generated files.
+
+.PHONY: bundle-ocp
+bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	$(MAKE) bundle-validate
+	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
+	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
+	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
+	# add console-plugin annotation
+	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
+	# add OCP annotations
+	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
+	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
+	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
+		$(MAKE) bundle-update
+
 
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
@@ -361,14 +395,14 @@ bundle-scorecard: operator-sdk ## Run scorecard tests
 
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
-	VERSION=0.0.1 $(MAKE) manifests bundle
+	VERSION=0.0.1 $(MAKE) manifests bundle-k8s
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
 	# delete replaces field
 	sed -r -i "/replaces:.*/d" ${CSV}
 
 .PHONY: bundle-build
-bundle-build: bundle bundle-update ## Build the bundle image.
+bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s

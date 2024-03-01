@@ -27,7 +27,7 @@ jobs:
       run: make manager
 
     - name: Test
-      run: make test
+      run: make manifests bundle-k8s bundle-reset test
 
     - name: Test container build
       run: make container-build
