@@ -8,6 +8,9 @@ WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
 
+# use latest Go z release
+ENV GOTOOLCHAIN=auto
+
 # Ensure correct Go version
 RUN export GO_VERSION=$(grep -E "go [[:digit:]]\.[[:digit:]][[:digit:]]" go.mod | awk '{print $2}') && \
     go get go@${GO_VERSION} && \
