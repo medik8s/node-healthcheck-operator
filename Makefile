@@ -344,7 +344,7 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 			echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
 			exit 1; \
 		else \
-		  	# preferring sed here, in order to have "replaces" near "version"
+		  	# preferring sed here, in order to have "replaces" near "version" \
 			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
 		fi \
 	fi
