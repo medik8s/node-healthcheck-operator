@@ -337,6 +337,18 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
+
+	# add replaces field when building versioned bundle
+	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
+		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
+			echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
+			exit 1; \
+		else \
+		  	# preferring sed here, in order to have "replaces" near "version"
+			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
+		fi \
+	fi
+
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
 		$(MAKE) bundle-update
 
@@ -373,16 +385,6 @@ bundle-update: ## update container image in the metadata
 	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'|;" ${CSV}
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
 	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
-
-	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
-		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
-			echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
-			exit 1; \
-		else \
-			# add replaces field when building versioned bundle \
-			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
-		fi \
-	fi
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-validate
