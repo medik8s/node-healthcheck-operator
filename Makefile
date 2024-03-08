@@ -24,6 +24,9 @@ YQ_VERSION = v4.41.1
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.26
 
+# OCP Version: for Red Hat bundle community
+OCP_VERSION = 4.12
+
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
@@ -317,27 +320,13 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
-
-.PHONY: bundle-ocp
-bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
-	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
-	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
-	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
-	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
+.PHONY: add-console-plugin-annotation
+add-console-plugin-annotation: ## Add console-plugin annotation to the CSV
 	# add console-plugin annotation
 	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
-	# add OCP annotations
-	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
-	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
 
+.PHONY: add-replaces-field
+add-replaces-field: ## Add replaces field to the CSV
 	# add replaces field when building versioned bundle
 	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
 		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
@@ -349,6 +338,34 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 		fi \
 	fi
 
+.PHONY: bundle-ocp
+bundle-okd: yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
+	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(MAKE) add-console-plugin-annotation
+	$(MAKE) add-replaces-field
+	echo -e "\n  # Annotations for OCP\n  com.redhat.openshift.versions: \"v${OCP_VERSION}\"" >> bundle/metadata/annotations.yaml
+	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_blue.png)" \
+		$(MAKE) bundle-update
+
+.PHONY: bundle-ocp
+bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
+	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
+	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
+	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
+	$(MAKE) add-console-plugin-annotation
+	# add OCP annotations
+	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
+	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
+	$(MAKE) add-replaces-field
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
 		$(MAKE) bundle-update
 
