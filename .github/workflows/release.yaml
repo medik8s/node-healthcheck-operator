@@ -2,12 +2,21 @@ name: Release
 on:
   workflow_dispatch:
    inputs:
+     operation:
+       description: "The operation to perform."
+       required: true
+       type: choice
+       default: "build_and_push_images"
+       options:
+         - build_and_push_images
+         - make_okd_community_bundle
+         - make_k8s_community_bundle
      version:
        description: "The version to release, without the leading `v`"
        required: true
-     #previous_version:
-     #  description: "The previous version, used for the CVS's `replaces` field, without the leading `v`"
-     #  required: true
+     previous_version:
+       description: "The previous version, used for the CVS's `replaces` field, without the leading `v`"
+       required: false
      skip_range_lower:
        description: "Lower bound for the skipRange field in the CSV, should be set to the oldest supported version, without the leading `v`"
        required: true
@@ -17,6 +26,7 @@ permissions:
 
 jobs:
   push_to_registry:
+    if: ${{ inputs.operation == 'build_and_push_images' }}
     name: Build and push images to quay.io/medik8s
     runs-on: ubuntu-22.04
     env:
@@ -77,3 +87,22 @@ jobs:
           gzip: folders
           files: >
             Manifests:bundle/
+  make_k8s_community_bundle:
+    if: inputs.operation == 'make_k8s_community_bundle'
+    uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+      skip_range_lower: ${{ inputs.skip_range_lower }}
+      community: 'K8S'
+      make_targets: "bundle-k8s bundle-update"
+  make_okd_community_bundle:
+    if: inputs.operation == 'make_okd_community_bundle'
+    uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+      previous_version: ${{ inputs.previous_version }}
+      skip_range_lower: ${{ inputs.skip_range_lower }}
+      community: 'OKD'
+      make_targets: "bundle-okd"
