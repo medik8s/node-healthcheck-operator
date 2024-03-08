@@ -1,0 +1,43 @@
+name: Release community bundle
+on:
+  workflow_dispatch:
+    inputs:
+        version:
+          description: "The version to release, without the leading `v`"
+          required: true
+          type: string
+        previous_version:
+          description: "The previous version, used for the CVS's `replaces` field, without the leading `v`"
+          required: false
+          type: string
+        skip_range_lower:
+          description: "Lower bound for the skipRange field in the CSV, should be set to the oldest supported version, without the leading `v`"
+          required: false
+        community:
+          description: "The community to release the bundle to"
+          required: true
+          type: choice
+          default: "K8S"
+          options:
+            - K8S
+            - OKD
+
+jobs:
+  make_k8s_community_bundle:
+    if: inputs.community == 'K8S'
+    uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+      community: ${{ inputs.community }}
+      make_targets: "bundle-k8s bundle-update"
+  make_okd_community_bundle:
+    if: inputs.community == 'OKD'
+    uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+      previous_version: ${{ inputs.previous_version }}
+      skip_range_lower: ${{ inputs.skip_range_lower }}
+      community: ${{ inputs.community }}
+      make_targets: "bundle-okd"
