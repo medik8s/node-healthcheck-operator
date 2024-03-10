@@ -35,6 +35,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -171,7 +172,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}()
 
 	// Return early if the object is paused
-	if utils.HasMHCPausedAnnotation(mhc) {
+	if annotationutils.HasMHCPausedAnnotation(mhc) {
 		log.Info("Reconciliation is paused")
 		return result, nil
 	}
@@ -414,7 +415,7 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 	if target.Node != nil && target.Node.ResourceVersion != "" {
 		nodeName = &target.Node.Name
 	}
-	created, _, err := rm.CreateRemediationCR(remediationCR, target.MHC, nodeName, utils.DefaultRemediationDuration, 0)
+	created, _, _, err := rm.CreateRemediationCR(remediationCR, target.MHC, nodeName, utils.DefaultRemediationDuration, 0)
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do

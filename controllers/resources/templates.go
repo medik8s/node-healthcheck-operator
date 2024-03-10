@@ -53,7 +53,8 @@ func (m *manager) GetCurrentTemplateWithTimeout(node *v1.Node, nhc *remediationv
 				// remove Template suffix
 				Kind: rem.RemediationTemplate.GroupVersionKind().Kind[:len(rem.RemediationTemplate.GroupVersionKind().Kind)-len("Template")],
 			}
-			return r.Resource.GroupVersionKind() == gvk && r.TimedOut != nil
+			isTemplateMatch := len(r.TemplateName) == 0 || r.TemplateName == rem.RemediationTemplate.Name
+			return r.Resource.GroupVersionKind() == gvk && r.TimedOut != nil && isTemplateMatch
 		})
 		if startedRemediation == nil {
 			// not started, or ongoing, but not timed out

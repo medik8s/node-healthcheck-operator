@@ -289,6 +289,11 @@ type Remediation struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	TimedOut *metav1.Time `json:"timedOut,omitempty"`
+
+	// TemplateName is required when using several templates of the same kind
+	// +optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	TemplateName string `json:"templateName,omitempty"`
 }
 
 //+kubebuilder:object:root=true

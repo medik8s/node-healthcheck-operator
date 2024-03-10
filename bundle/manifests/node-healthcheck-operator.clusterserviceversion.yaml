@@ -194,6 +194,10 @@ spec:
       - description: Started is the creation time of the remediation CR
         displayName: Started
         path: unhealthyNodes[0].remediations[0].started
+      - description: TemplateName is required when using several templates of the
+          same kind
+        displayName: Template Name
+        path: unhealthyNodes[0].remediations[0].templateName
       - description: TimedOut is the time when the remediation timed out. Applicable
           for escalating remediations only.
         displayName: Timed Out

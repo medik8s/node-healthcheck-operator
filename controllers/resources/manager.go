@@ -2,6 +2,9 @@ package resources
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
 )
 
 type Manager interface {
@@ -33,7 +37,7 @@ type Manager interface {
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCRForNode(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
 	GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
-	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, error)
+	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, *unstructured.Unstructured, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
 	ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
@@ -123,8 +127,14 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 	// can't go wrong, we already checked for correct spec
 	templateSpec, _, _ := unstructured.NestedMap(template.Object, "spec", "template", "spec")
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
+	crName := name
+	if annotationutils.HasMultipleTemplatesAnnotation(template) {
+		//first part would be the node name and second part is a unique suffix seperated by '_'
+		crName = generateUniqueRemediationName(name)
+		remediationCR.SetAnnotations(map[string]string{annotationutils.NodeNameAnnotation: name, annotationutils.TemplateNameAnnotation: template.GetName()})
+	}
 
-	remediationCR.SetName(name)
+	remediationCR.SetName(crName)
 	remediationCR.SetNamespace(template.GetNamespace())
 	remediationCR.SetResourceVersion("")
 	remediationCR.SetFinalizers(nil)
@@ -168,32 +178,39 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 }
 
 // CreateRemediationCR creates the given remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease and an error
-func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, error) {
+func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, *unstructured.Unstructured, error) {
+	var err error
+	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]) == 0 {
+		err = m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR)
+	} else {
+		remediationCR, err = m.fetchCRWithNodeNameAnnotation(remediationCR)
+	}
+
 	// check if CR already exists
-	if err := m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR); err == nil {
+	if err == nil {
 		if !IsOwner(remediationCR, owner) {
 			m.log.Info("external remediation CR already exists, but it's not owned by us", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace(), "owners", remediationCR.GetOwnerReferences())
-			return false, nil, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
+			return false, nil, remediationCR, RemediationCRNotOwned{msg: "CR exists but isn't owned by current NHC"}
 		}
 		m.log.Info("external remediation CR already exists", "CR name", remediationCR.GetName(), "kind", remediationCR.GetKind(), "namespace", remediationCR.GetNamespace())
 		if nodeName == nil {
 			// we can't create a node lease, there is no known node (e.g. for failed Machines)
-			return false, nil, nil
+			return false, nil, remediationCR, nil
 		}
 		duration, err := m.leaseManager.ManageLease(m.ctx, *nodeName, currentRemediationDuration, previousRemediationsDuration)
-		return false, &duration, err
+		return false, &duration, remediationCR, err
 	} else if !apierrors.IsNotFound(err) {
 		m.log.Error(err, "failed to check for existing external remediation object")
-		return false, nil, err
+		return false, nil, remediationCR, err
 	}
 
 	var requeue *time.Duration
 	if nodeName != nil {
-		m.log.Info("Attempting to obtain Node Lease", "Node name", remediationCR.GetName())
+		m.log.Info("Attempting to obtain Node Lease", "Node name", *nodeName)
 		var err error
 		requeue, err = m.leaseManager.ObtainNodeLease(m.ctx, *nodeName, currentRemediationDuration)
 		if err != nil {
-			return false, requeue, err
+			return false, requeue, remediationCR, err
 		}
 	}
 
@@ -205,10 +222,10 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 
 	if err := m.Create(m.ctx, remediationCR); err != nil {
 		m.log.Error(err, "failed to create an external remediation object")
-		return false, nil, err
+		return false, nil, remediationCR, err
 	}
 
-	return true, requeue, nil
+	return true, requeue, remediationCR, nil
 
 }
 
@@ -241,25 +258,23 @@ func (m *manager) UpdateRemediationCR(remediationCR *unstructured.Unstructured) 
 }
 
 func (m *manager) ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error) {
-	// gather all GVKs
-	gvks := make([]schema.GroupVersionKind, len(remediationTemplates))
-	for i, template := range remediationTemplates {
-		gvks[i] = template.GroupVersionKind()
-	}
-
 	// get CRs
 	remediationCRs := make([]unstructured.Unstructured, 0)
-	for _, gvk := range gvks {
-		baseRemediationCR := m.GenerateRemediationCRBase(gvk)
+	for _, template := range remediationTemplates {
+		baseRemediationCR := m.GenerateRemediationCRBase(template.GroupVersionKind())
 		crList := &unstructured.UnstructuredList{Object: baseRemediationCR.Object}
-		err := m.List(m.ctx, crList)
-		if err != nil && !apierrors.IsNotFound(err) {
+
+		if err := m.List(m.ctx, crList); err != nil && !apierrors.IsNotFound(err) {
 			return nil, errors.Wrapf(err,
 				"failed to get all remediation objects with kind %s and apiVersion %s",
 				baseRemediationCR.GroupVersionKind(),
 				baseRemediationCR.GetAPIVersion())
 		} else {
-			remediationCRs = append(remediationCRs, crList.Items...)
+			for _, cr := range crList.Items {
+				if m.isMatchNodeTemplate(cr, m.extractNodeName(cr), template.Name) {
+					remediationCRs = append(remediationCRs, cr)
+				}
+			}
 		}
 	}
 
@@ -296,7 +311,7 @@ func IsOwner(remediationCR *unstructured.Unstructured, owner client.Object) bool
 
 func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, error) {
 	remediationCRs, err := m.ListRemediationCRs(utils.GetAllRemediationTemplates(owner), func(cr unstructured.Unstructured) bool {
-		return cr.GetName() == crName && IsOwner(&cr, owner)
+		return (cr.GetName() == crName || m.extractNodeName(cr) == nodeName) && IsOwner(&cr, owner)
 	})
 	if err != nil {
 		m.log.Error(err, "failed to get remediation CRs for healthy node", "node", nodeName)
@@ -345,6 +360,49 @@ func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.Owne
 	return createOwnerRef(machine), ns, nil
 }
 
+func (m *manager) fetchCRWithNodeNameAnnotation(remediationCR *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	nodeName := remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]
+	templateName := remediationCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]
+
+	resourceList := &unstructured.UnstructuredList{Object: m.GenerateRemediationCRBase(remediationCR.GroupVersionKind()).Object}
+	if err := m.List(m.ctx, resourceList); err == nil {
+		for _, cr := range resourceList.Items {
+			if m.isMatchNodeTemplate(cr, nodeName, templateName) {
+				return &cr, nil
+			}
+		}
+	} else {
+		m.log.Error(err, "failed fetching CRs List")
+		return nil, err
+	}
+	return remediationCR, apierrors.NewNotFound(
+		schema.GroupResource(metav1.GroupResource{Group: remediationCR.GroupVersionKind().Group, Resource: remediationCR.GetKind()}),
+		remediationCR.GetName(),
+	)
+}
+
+func (m *manager) isMatchNodeTemplate(cr unstructured.Unstructured, nodeName string, templateName string) bool {
+	if cr.GetAnnotations() == nil {
+		return cr.GetName() == nodeName
+	}
+	annotations := cr.GetAnnotations()
+	if _, isMultiSupported := annotations[annotationutils.TemplateNameAnnotation]; !isMultiSupported {
+		return cr.GetName() == nodeName
+	}
+	return annotations[annotationutils.TemplateNameAnnotation] == templateName && annotations[annotationutils.NodeNameAnnotation] == nodeName
+}
+
+func (m *manager) extractNodeName(cr unstructured.Unstructured) string {
+	if cr.GetAnnotations() == nil {
+		return cr.GetName()
+	}
+	annotations := cr.GetAnnotations()
+	if _, isMultiSupported := annotations[annotationutils.TemplateNameAnnotation]; !isMultiSupported {
+		return cr.GetName()
+	}
+	return annotations[annotationutils.NodeNameAnnotation]
+}
+
 func createOwnerRef(obj client.Object) *metav1.OwnerReference {
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	apiVersion, kind := gvk.ToAPIVersionAndKind()
@@ -356,4 +414,16 @@ func createOwnerRef(obj client.Object) *metav1.OwnerReference {
 		Controller:         pointer.Bool(false),
 		BlockOwnerDeletion: nil,
 	}
+}
+
+func generateUniqueRemediationName(name string) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	length := 6
+	bytes := make([]byte, length)
+	for i := range bytes {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		bytes[i] = charset[n.Int64()]
+	}
+	uniqueSuffix := string(bytes)
+	return fmt.Sprintf("%s-%s", name, uniqueSuffix)
 }
