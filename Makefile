@@ -403,7 +403,7 @@ bundle-reset: ## Revert all version or build date related changes
 	# delete replaces field
 	sed -r -i "/replaces:.*/d" ${CSV}
 
-.PHONY: bundle-build
+.PHONY: bundle-build-ocp
 bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
@@ -461,7 +461,7 @@ deploy-snr:
 
 .PHONY: container-build
 container-build: ## Build containers
-	make docker-build bundle-build
+	make docker-build bundle-build-ocp
 
 .PHONY: container-build-k8s
 container-build-k8s: ## Build containers
