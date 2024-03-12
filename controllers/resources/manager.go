@@ -183,7 +183,7 @@ func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, 
 	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]) == 0 {
 		err = m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR)
 	} else {
-		remediationCR, err = m.fetchCRWithNodeNameAnnotation(remediationCR)
+		remediationCR, err = m.getCRWithNodeNameAnnotation(remediationCR)
 	}
 
 	// check if CR already exists
@@ -360,7 +360,7 @@ func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.Owne
 	return createOwnerRef(machine), ns, nil
 }
 
-func (m *manager) fetchCRWithNodeNameAnnotation(remediationCR *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+func (m *manager) getCRWithNodeNameAnnotation(remediationCR *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 	nodeName := remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]
 	templateName := remediationCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]
 
