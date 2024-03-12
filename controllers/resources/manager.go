@@ -129,7 +129,7 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
 	crName := name
 	if annotationutils.HasMultipleTemplatesAnnotation(template) {
-		//first part would be the node name and second part is a unique suffix seperated by '_'
+		//first part would be the node name and second part is a unique suffix seperated by '-'
 		crName = generateUniqueRemediationName(name)
 		remediationCR.SetAnnotations(map[string]string{annotationutils.NodeNameAnnotation: name, annotationutils.TemplateNameAnnotation: template.GetName()})
 	}
