@@ -247,7 +247,6 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				},
 			}
 		})
-		//validateError := func(validate func(new runtime.Object) (admission.Warnings, error), old *NodeHealthCheck, substrings ...string) {
 		validateError := func(validate func(ctx context.Context, old runtime.Object, new runtime.Object) (warnings admission.Warnings, err error), old, new *NodeHealthCheck, substrings ...string) {
 			warnings, err := validate(context.Background(), old, new)
 			ExpectWithOffset(1, warnings).To(BeEmpty())
