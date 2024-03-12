@@ -177,7 +177,7 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 	return remediationCRBase
 }
 
-// CreateRemediationCR creates the given remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease and an error
+// CreateRemediationCR creates the given remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease, a *unstructured.Unstructured of the created/existing CR and an error
 func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, *unstructured.Unstructured, error) {
 	var err error
 	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]) == 0 {
