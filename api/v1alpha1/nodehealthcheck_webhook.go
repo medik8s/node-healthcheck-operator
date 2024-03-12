@@ -183,9 +183,9 @@ func (v *customValidator) validateEscalatingRemediationsUniqueRemediator(ctx con
 	for _, rem := range nhc.Spec.EscalatingRemediations {
 		kind := rem.RemediationTemplate.Kind
 		if _, exists := remediators[kind]; exists && !v.isMultipleTemplatesSupported(ctx, rem.RemediationTemplate) {
-			return fmt.Errorf("%s: duplicate template kind: %v", uniqueRemediatorError, rem.RemediationTemplate.Kind)
+			return fmt.Errorf("%s: duplicate template kind: %v", uniqueRemediatorError, kind)
 		}
-		remediators[rem.RemediationTemplate.Kind] = struct{}{}
+		remediators[kind] = struct{}{}
 	}
 	return nil
 }
