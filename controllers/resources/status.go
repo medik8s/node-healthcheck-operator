@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -24,7 +24,7 @@ func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.
 
 	var templateName string
 	if remediationCR.GetAnnotations() != nil {
-		templateName = remediationCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]
+		templateName = remediationCR.GetAnnotations()[annotations.TemplateNameAnnotation]
 	}
 	remediation := remediationv1alpha1.Remediation{
 		Resource: corev1.ObjectReference{

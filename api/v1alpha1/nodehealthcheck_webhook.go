@@ -33,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 const (
@@ -201,7 +201,7 @@ func (v *customValidator) isMultipleTemplatesSupported(ctx context.Context, nhcE
 	}
 
 	for _, actualTemplate := range templateList.Items {
-		if !annotationutils.HasMultipleTemplatesAnnotation(&actualTemplate) {
+		if !annotations.HasMultipleTemplatesAnnotation(&actualTemplate) {
 			return false
 		}
 	}

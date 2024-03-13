@@ -37,7 +37,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 const (
@@ -132,7 +132,7 @@ func TestReconcile(t *testing.T) {
 
 	machineHealthCheckPaused := newMachineHealthCheck("machineHealthCheck")
 	machineHealthCheckPaused.Annotations = make(map[string]string)
-	machineHealthCheckPaused.Annotations[annotationutils.MHCPausedAnnotation] = "test"
+	machineHealthCheckPaused.Annotations[annotations.MHCPausedAnnotation] = "test"
 
 	// remediationExternal
 	nodeUnhealthyForTooLong := newNodeForMHC("nodeUnhealthyForTooLong", false)

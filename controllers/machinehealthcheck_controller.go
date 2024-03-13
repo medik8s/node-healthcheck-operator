@@ -35,7 +35,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -172,7 +172,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}()
 
 	// Return early if the object is paused
-	if annotationutils.HasMHCPausedAnnotation(mhc) {
+	if annotations.HasMHCPausedAnnotation(mhc) {
 		log.Info("Reconciliation is paused")
 		return result, nil
 	}

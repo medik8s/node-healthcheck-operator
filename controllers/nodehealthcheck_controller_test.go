@@ -32,7 +32,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 const (
@@ -960,7 +960,7 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)).To(Succeed())
 					g.Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
 					g.Expect(newCr.GetName()).To(Equal(unhealthyNodeName))
-					g.Expect(newCr.GetAnnotations()).ToNot(HaveKey(Equal(annotationutils.NodeNameAnnotation)))
+					g.Expect(newCr.GetAnnotations()).ToNot(HaveKey(Equal(annotations.NodeNameAnnotation)))
 
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
@@ -979,8 +979,8 @@ var _ = Describe("Node Health Check CR", func() {
 					thirdCR = getRemediationCRForMultiKindSupportTemplate(multiSupportTemplateRef.Name)
 					g.Expect(thirdCR).ToNot(BeNil())
 					g.Expect(thirdCR.GetName()).ToNot(Equal(unhealthyNodeName))
-					g.Expect(thirdCR.GetAnnotations()[annotationutils.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
-					g.Expect(thirdCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]).To(Equal(multiSupportTemplateRef.Name))
+					g.Expect(thirdCR.GetAnnotations()[annotations.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
+					g.Expect(thirdCR.GetAnnotations()[annotations.TemplateNameAnnotation]).To(Equal(multiSupportTemplateRef.Name))
 					g.Expect(thirdCR.GetAnnotations()).ToNot(HaveKey(Equal("remediation.medik8s.io/nhc-timed-out")))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
@@ -990,8 +990,8 @@ var _ = Describe("Node Health Check CR", func() {
 					thirdCR = getRemediationCRForMultiKindSupportTemplate(multiSupportTemplateRef.Name)
 					g.Expect(thirdCR).ToNot(BeNil())
 					g.Expect(thirdCR.GetName()).ToNot(Equal(unhealthyNodeName))
-					g.Expect(thirdCR.GetAnnotations()[annotationutils.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
-					g.Expect(thirdCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]).To(Equal(multiSupportTemplateRef.Name))
+					g.Expect(thirdCR.GetAnnotations()[annotations.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
+					g.Expect(thirdCR.GetAnnotations()[annotations.TemplateNameAnnotation]).To(Equal(multiSupportTemplateRef.Name))
 					g.Expect(thirdCR.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
@@ -1001,8 +1001,8 @@ var _ = Describe("Node Health Check CR", func() {
 					forthCR = getRemediationCRForMultiKindSupportTemplate(secondMultiSupportTemplateRef.Name)
 					g.Expect(forthCR).ToNot(BeNil())
 					g.Expect(forthCR.GetName()).ToNot(Equal(unhealthyNodeName))
-					g.Expect(forthCR.GetAnnotations()[annotationutils.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
-					g.Expect(forthCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]).To(Equal(secondMultiSupportTemplateRef.Name))
+					g.Expect(forthCR.GetAnnotations()[annotations.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
+					g.Expect(forthCR.GetAnnotations()[annotations.TemplateNameAnnotation]).To(Equal(secondMultiSupportTemplateRef.Name))
 					g.Expect(forthCR.GetAnnotations()).ToNot(HaveKey(Equal("remediation.medik8s.io/nhc-timed-out")))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
@@ -2052,7 +2052,7 @@ func getRemediationCRForMultiKindSupportTemplate(templateName string) *unstructu
 		for _, cr := range resourceList.Items {
 			ann := cr.GetAnnotations()
 			if ann != nil {
-				if ann[annotationutils.TemplateNameAnnotation] == templateName {
+				if ann[annotations.TemplateNameAnnotation] == templateName {
 					return &cr
 				}
 			}

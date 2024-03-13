@@ -22,7 +22,7 @@ import (
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotationutils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 type Manager interface {
@@ -125,9 +125,9 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 	templateSpec, _, _ := unstructured.NestedMap(template.Object, "spec", "template", "spec")
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
 
-	if annotationutils.HasMultipleTemplatesAnnotation(template) {
+	if annotations.HasMultipleTemplatesAnnotation(template) {
 		remediationCR.SetGenerateName(name)
-		remediationCR.SetAnnotations(map[string]string{annotationutils.NodeNameAnnotation: name, annotationutils.TemplateNameAnnotation: template.GetName()})
+		remediationCR.SetAnnotations(map[string]string{annotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
 	} else {
 		remediationCR.SetName(name)
 	}
@@ -177,7 +177,7 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 // CreateRemediationCR creates the given remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease, a *unstructured.Unstructured of the created/existing CR and an error
 func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, *unstructured.Unstructured, error) {
 	var err error
-	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]) == 0 {
+	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[annotations.NodeNameAnnotation]) == 0 {
 		err = m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR)
 	} else {
 		remediationCR, err = m.getCRWithNodeNameAnnotation(remediationCR)
@@ -358,8 +358,8 @@ func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.Owne
 }
 
 func (m *manager) getCRWithNodeNameAnnotation(remediationCR *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	nodeName := remediationCR.GetAnnotations()[annotationutils.NodeNameAnnotation]
-	templateName := remediationCR.GetAnnotations()[annotationutils.TemplateNameAnnotation]
+	nodeName := remediationCR.GetAnnotations()[annotations.NodeNameAnnotation]
+	templateName := remediationCR.GetAnnotations()[annotations.TemplateNameAnnotation]
 
 	resourceList := &unstructured.UnstructuredList{Object: m.GenerateRemediationCRBase(remediationCR.GroupVersionKind()).Object}
 	if err := m.List(m.ctx, resourceList); err == nil {
@@ -382,22 +382,22 @@ func (m *manager) isMatchNodeTemplate(cr unstructured.Unstructured, nodeName str
 	if cr.GetAnnotations() == nil {
 		return cr.GetName() == nodeName
 	}
-	annotations := cr.GetAnnotations()
-	if _, isMultiSupported := annotations[annotationutils.TemplateNameAnnotation]; !isMultiSupported {
+	ann := cr.GetAnnotations()
+	if _, isMultiSupported := ann[annotations.TemplateNameAnnotation]; !isMultiSupported {
 		return cr.GetName() == nodeName
 	}
-	return annotations[annotationutils.TemplateNameAnnotation] == templateName && annotations[annotationutils.NodeNameAnnotation] == nodeName
+	return ann[annotations.TemplateNameAnnotation] == templateName && ann[annotations.NodeNameAnnotation] == nodeName
 }
 
 func (m *manager) extractNodeName(cr unstructured.Unstructured) string {
 	if cr.GetAnnotations() == nil {
 		return cr.GetName()
 	}
-	annotations := cr.GetAnnotations()
-	if _, isMultiSupported := annotations[annotationutils.TemplateNameAnnotation]; !isMultiSupported {
+	ann := cr.GetAnnotations()
+	if _, isMultiSupported := ann[annotations.TemplateNameAnnotation]; !isMultiSupported {
 		return cr.GetName()
 	}
-	return annotations[annotationutils.NodeNameAnnotation]
+	return ann[annotations.NodeNameAnnotation]
 }
 
 func createOwnerRef(obj client.Object) *metav1.OwnerReference {
