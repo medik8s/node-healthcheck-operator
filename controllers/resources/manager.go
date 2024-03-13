@@ -2,9 +2,6 @@ package resources
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -127,14 +124,14 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 	// can't go wrong, we already checked for correct spec
 	templateSpec, _, _ := unstructured.NestedMap(template.Object, "spec", "template", "spec")
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
-	crName := name
+
 	if annotationutils.HasMultipleTemplatesAnnotation(template) {
-		//first part would be the node name and second part is a unique suffix seperated by '-'
-		crName = generateUniqueRemediationName(name)
+		remediationCR.SetGenerateName(name)
 		remediationCR.SetAnnotations(map[string]string{annotationutils.NodeNameAnnotation: name, annotationutils.TemplateNameAnnotation: template.GetName()})
+	} else {
+		remediationCR.SetName(name)
 	}
 
-	remediationCR.SetName(crName)
 	remediationCR.SetNamespace(template.GetNamespace())
 	remediationCR.SetResourceVersion("")
 	remediationCR.SetFinalizers(nil)
@@ -414,16 +411,4 @@ func createOwnerRef(obj client.Object) *metav1.OwnerReference {
 		Controller:         pointer.Bool(false),
 		BlockOwnerDeletion: nil,
 	}
-}
-
-func generateUniqueRemediationName(name string) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	length := 6
-	bytes := make([]byte, length)
-	for i := range bytes {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		bytes[i] = charset[n.Int64()]
-	}
-	uniqueSuffix := string(bytes)
-	return fmt.Sprintf("%s-%s", name, uniqueSuffix)
 }
