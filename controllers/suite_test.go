@@ -54,7 +54,9 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+
 	// +kubebuilder:scaffold:imports
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -65,11 +67,13 @@ const (
 	MachineNamespace    = "openshift-machine-api"
 	leaseNs             = "medik8s-leases"
 
-	InfraRemediationGroup        = "test.medik8s.io"
-	InfraRemediationVersion      = "v1alpha1"
-	InfraRemediationKind         = "InfrastructureRemediation"
-	InfraRemediationTemplateKind = "InfrastructureRemediationTemplate"
-	InfraRemediationTemplateName = "infra-remediation-template"
+	InfraRemediationGroup             = "test.medik8s.io"
+	InfraRemediationVersion           = "v1alpha1"
+	InfraRemediationKind              = "InfrastructureRemediation"
+	InfraRemediationTemplateKind      = "InfrastructureRemediationTemplate"
+	InfraRemediationTemplateName      = "infra-remediation-template"
+	MultipleSupportTemplateName       = "multi-supported-template"
+	SecondMultipleSupportTemplateName = "second-multi-supported-template"
 )
 
 var (
@@ -83,6 +87,20 @@ var (
 	}
 
 	infraRemediationTemplate *unstructured.Unstructured
+
+	multiSupportTemplateRef = &v1.ObjectReference{
+		APIVersion: InfraRemediationAPIVersion,
+		Kind:       "MultiSupportTemplate",
+		Namespace:  MachineNamespace,
+		Name:       MultipleSupportTemplateName,
+	}
+
+	secondMultiSupportTemplateRef = &v1.ObjectReference{
+		APIVersion: multiSupportTemplateRef.APIVersion,
+		Kind:       multiSupportTemplateRef.Kind,
+		Namespace:  multiSupportTemplateRef.Namespace,
+		Name:       SecondMultipleSupportTemplateName,
+	}
 )
 
 var cfg *rest.Config
@@ -163,6 +181,17 @@ var _ = BeforeSuite(func() {
 
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, MachineNamespace, "ok"))).To(Succeed())
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCR(testKind, "default", "nok"))).To(Succeed())
+
+	multiSupportTestKind := "MultiSupport"
+	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(multiSupportTestKind))).To(Succeed())
+	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(multiSupportTestKind))).To(Succeed())
+	time.Sleep(time.Second)
+	multiSupportTemplate := newTestRemediationTemplateCR(multiSupportTestKind, MachineNamespace, MultipleSupportTemplateName)
+	multiSupportTemplate.SetAnnotations(map[string]string{annotations.MultipleTemplatesSupportedAnnotation: "true"})
+	Expect(k8sClient.Create(context.Background(), multiSupportTemplate)).To(Succeed())
+	secondMultiSupportTemplate := newTestRemediationTemplateCR(multiSupportTestKind, MachineNamespace, SecondMultipleSupportTemplateName)
+	secondMultiSupportTemplate.SetAnnotations(map[string]string{annotations.MultipleTemplatesSupportedAnnotation: "true"})
+	Expect(k8sClient.Create(context.Background(), secondMultiSupportTemplate)).To(Succeed())
 
 	upgradeChecker = &fakeClusterUpgradeChecker{
 		Err:       nil,

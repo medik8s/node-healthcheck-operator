@@ -487,6 +487,10 @@ spec:
                               CR
                             format: date-time
                             type: string
+                          templateName:
+                            description: TemplateName is required when using several
+                              templates of the same kind
+                            type: string
                           timedOut:
                             description: |-
                               TimedOut is the time when the remediation timed out.

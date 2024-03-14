@@ -17,18 +17,23 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 const (
@@ -39,7 +44,7 @@ const (
 	mandatoryRemediationError = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
 	mutualRemediationError    = "RemediationTemplate and EscalatingRemediations usage is mutual exclusive"
 	uniqueOrderError          = "EscalatingRemediation Order must be unique"
-	uniqueRemediatorError     = "Using multiple templates of same kind is not supported currently"
+	uniqueRemediatorError     = "Using multiple templates of same kind is not supported for this template"
 	minimumTimeoutError       = "EscalatingRemediation Timeout must be at least one minute"
 )
 
@@ -49,25 +54,30 @@ var nodehealthchecklog = logf.Log.WithName("nodehealthcheck-resource")
 func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(nhc).
+		WithValidator(&customValidator{mgr.GetClient()}).
 		Complete()
 }
 
 //+kubebuilder:webhook:path=/validate-remediation-medik8s-io-v1alpha1-nodehealthcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=remediation.medik8s.io,resources=nodehealthchecks,verbs=create;update;delete,versions=v1alpha1,name=vnodehealthcheck.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Validator = &NodeHealthCheck{}
+type customValidator struct {
+	client.Client
+}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (nhc *NodeHealthCheck) ValidateCreate() (warnings admission.Warnings, err error) {
+func (v *customValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+	nhc := obj.(*NodeHealthCheck)
 	nodehealthchecklog.Info("validate create", "name", nhc.Name)
-	return admission.Warnings{}, nhc.validate()
+	return admission.Warnings{}, v.validate(ctx, nhc)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (nhc *NodeHealthCheck) ValidateUpdate(old runtime.Object) (warnings admission.Warnings, err error) {
+func (v *customValidator) ValidateUpdate(ctx context.Context, old runtime.Object, new runtime.Object) (warnings admission.Warnings, err error) {
+	nhc := new.(*NodeHealthCheck)
 	nodehealthchecklog.Info("validate update", "name", nhc.Name)
 
 	// do the normal validation
-	if err := nhc.validate(); err != nil {
+	if err := v.validate(ctx, nhc); err != nil {
 		return admission.Warnings{}, err
 	}
 
@@ -81,7 +91,8 @@ func (nhc *NodeHealthCheck) ValidateUpdate(old runtime.Object) (warnings admissi
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (nhc *NodeHealthCheck) ValidateDelete() (warnings admission.Warnings, err error) {
+func (v *customValidator) ValidateDelete(_ context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+	nhc := obj.(*NodeHealthCheck)
 	nodehealthchecklog.Info("validate delete", "name", nhc.Name)
 	if nhc.isRemediating() {
 		return admission.Warnings{}, fmt.Errorf("deletion %s", OngoingRemediationError)
@@ -89,12 +100,12 @@ func (nhc *NodeHealthCheck) ValidateDelete() (warnings admission.Warnings, err e
 	return admission.Warnings{}, nil
 }
 
-func (nhc *NodeHealthCheck) validate() error {
+func (v *customValidator) validate(ctx context.Context, nhc *NodeHealthCheck) error {
 	aggregated := errors.NewAggregate([]error{
-		nhc.validateMinHealthy(),
-		nhc.validateSelector(),
-		nhc.validateMutualRemediations(),
-		nhc.validateEscalatingRemediations(),
+		v.validateMinHealthy(nhc),
+		v.validateSelector(nhc),
+		v.validateMutualRemediations(nhc),
+		v.validateEscalatingRemediations(ctx, nhc),
 	})
 
 	// everything else should have been covered by API server validation
@@ -103,7 +114,7 @@ func (nhc *NodeHealthCheck) validate() error {
 	return aggregated
 }
 
-func (nhc *NodeHealthCheck) validateMinHealthy() error {
+func (v *customValidator) validateMinHealthy(nhc *NodeHealthCheck) error {
 	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
 	if nhc.Spec.MinHealthy == nil {
 		return fmt.Errorf("MinHealthy must not be empty")
@@ -114,7 +125,7 @@ func (nhc *NodeHealthCheck) validateMinHealthy() error {
 	return nil
 }
 
-func (nhc *NodeHealthCheck) validateSelector() error {
+func (v *customValidator) validateSelector(nhc *NodeHealthCheck) error {
 	if len(nhc.Spec.Selector.MatchExpressions) == 0 && len(nhc.Spec.Selector.MatchLabels) == 0 {
 		return fmt.Errorf(missingSelectorError)
 	}
@@ -124,7 +135,7 @@ func (nhc *NodeHealthCheck) validateSelector() error {
 	return nil
 }
 
-func (nhc *NodeHealthCheck) validateMutualRemediations() error {
+func (v *customValidator) validateMutualRemediations(nhc *NodeHealthCheck) error {
 	if nhc.Spec.RemediationTemplate == nil && len(nhc.Spec.EscalatingRemediations) == 0 {
 		return fmt.Errorf(mandatoryRemediationError)
 	}
@@ -134,20 +145,20 @@ func (nhc *NodeHealthCheck) validateMutualRemediations() error {
 	return nil
 }
 
-func (nhc *NodeHealthCheck) validateEscalatingRemediations() error {
+func (v *customValidator) validateEscalatingRemediations(ctx context.Context, nhc *NodeHealthCheck) error {
 	if nhc.Spec.EscalatingRemediations == nil {
 		return nil
 	}
 
 	aggregated := errors.NewAggregate([]error{
-		nhc.validateEscalatingRemediationsUniqueOrder(),
-		nhc.validateEscalatingRemediationsTimeout(),
-		nhc.validateEscalatingRemediationsUniqueRemediator(),
+		v.validateEscalatingRemediationsUniqueOrder(nhc),
+		v.validateEscalatingRemediationsTimeout(nhc),
+		v.validateEscalatingRemediationsUniqueRemediator(ctx, nhc),
 	})
 	return aggregated
 }
 
-func (nhc *NodeHealthCheck) validateEscalatingRemediationsUniqueOrder() error {
+func (v *customValidator) validateEscalatingRemediationsUniqueOrder(nhc *NodeHealthCheck) error {
 	orders := make(map[int]struct{}, len(nhc.Spec.EscalatingRemediations))
 	for _, rem := range nhc.Spec.EscalatingRemediations {
 		if _, exists := orders[rem.Order]; exists {
@@ -158,7 +169,7 @@ func (nhc *NodeHealthCheck) validateEscalatingRemediationsUniqueOrder() error {
 	return nil
 }
 
-func (nhc *NodeHealthCheck) validateEscalatingRemediationsTimeout() error {
+func (v *customValidator) validateEscalatingRemediationsTimeout(nhc *NodeHealthCheck) error {
 	for _, rem := range nhc.Spec.EscalatingRemediations {
 		if rem.Timeout.Duration < 1*time.Minute {
 			return fmt.Errorf("%s: found timeout %v", minimumTimeoutError, rem.Timeout)
@@ -167,16 +178,35 @@ func (nhc *NodeHealthCheck) validateEscalatingRemediationsTimeout() error {
 	return nil
 }
 
-func (nhc *NodeHealthCheck) validateEscalatingRemediationsUniqueRemediator() error {
-	// this is a workaround until we designed a way to support multiple remediators of same kind
+func (v *customValidator) validateEscalatingRemediationsUniqueRemediator(ctx context.Context, nhc *NodeHealthCheck) error {
 	remediators := make(map[string]struct{}, len(nhc.Spec.EscalatingRemediations))
 	for _, rem := range nhc.Spec.EscalatingRemediations {
-		if _, exists := remediators[rem.RemediationTemplate.Kind]; exists {
-			return fmt.Errorf("%s: duplicate template kind: %v", uniqueRemediatorError, rem.RemediationTemplate.Kind)
+		kind := rem.RemediationTemplate.Kind
+		if _, exists := remediators[kind]; exists && !v.isMultipleTemplatesSupported(ctx, rem.RemediationTemplate) {
+			return fmt.Errorf("%s: duplicate template kind: %v", uniqueRemediatorError, kind)
 		}
-		remediators[rem.RemediationTemplate.Kind] = struct{}{}
+		remediators[kind] = struct{}{}
 	}
 	return nil
+}
+
+func (v *customValidator) isMultipleTemplatesSupported(ctx context.Context, nhcExpectedTemplate corev1.ObjectReference) bool {
+	templateCRBase := &unstructured.Unstructured{}
+	templateCRBase.SetGroupVersionKind(nhcExpectedTemplate.GroupVersionKind())
+	templateList := &unstructured.UnstructuredList{Object: templateCRBase.Object}
+
+	if err := v.Client.List(ctx, templateList); err != nil || len(templateList.Items) == 0 {
+		nodehealthchecklog.Error(err, "failed to fetch CR Templates", "template kind", nhcExpectedTemplate.GroupVersionKind().Kind)
+		return false
+	}
+
+	for _, actualTemplate := range templateList.Items {
+		if !annotations.HasMultipleTemplatesAnnotation(&actualTemplate) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (nhc *NodeHealthCheck) isRestrictedFieldUpdated(old *NodeHealthCheck) (bool, string) {

@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -9,13 +10,18 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var _ = Describe("NodeHealthCheck Validation", func() {
-
+	var mockValidatorClient = &mockClient{
+		listFunc: func(context.Context, client.ObjectList, ...client.ListOption) error { return nil },
+	}
+	var validator = &customValidator{mockValidatorClient}
 	Context("Creating or updating a NHC", func() {
 
 		var nhc *NodeHealthCheck
@@ -48,7 +54,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 
 		Context("with valid config and remediation template", func() {
 			It("should be allowed", func() {
-				Expect(nhc.validate()).To(Succeed())
+				Expect(validator.validate(context.Background(), nhc)).To(Succeed())
 			})
 		})
 
@@ -58,7 +64,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 
 			It("should be allowed", func() {
-				Expect(nhc.validate()).To(Succeed())
+				Expect(validator.validate(context.Background(), nhc)).To(Succeed())
 			})
 		})
 
@@ -69,7 +75,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 
 			It("should be denied", func() {
-				Expect(nhc.validate()).To(MatchError(ContainSubstring(minHealthyError)))
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(minHealthyError)))
 			})
 		})
 
@@ -88,7 +94,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 
 			It("should be denied", func() {
-				Expect(nhc.validate()).To(MatchError(ContainSubstring(invalidSelectorError)))
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(invalidSelectorError)))
 			})
 		})
 
@@ -99,7 +105,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 
 			It("should be denied", func() {
-				Expect(nhc.validate()).To(MatchError(ContainSubstring(missingSelectorError)))
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(missingSelectorError)))
 			})
 		})
 
@@ -109,7 +115,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhc.Spec.EscalatingRemediations = []EscalatingRemediation{}
 			})
 			It("should be denied", func() {
-				Expect(nhc.validate()).To(MatchError(ContainSubstring(mandatoryRemediationError)))
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(mandatoryRemediationError)))
 			})
 		})
 
@@ -120,7 +126,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhc.Spec.RemediationTemplate = templ
 			})
 			It("should be denied", func() {
-				Expect(nhc.validate()).To(MatchError(ContainSubstring(mutualRemediationError)))
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(mutualRemediationError)))
 			})
 		})
 
@@ -132,8 +138,8 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 					nhc.Spec.EscalatingRemediations[2].Order = 42
 				})
 				It("should be denied", func() {
-					Expect(nhc.validate()).To(MatchError(ContainSubstring(uniqueOrderError)))
-					Expect(nhc.validate()).To(MatchError(ContainSubstring("42")))
+					Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(uniqueOrderError)))
+					Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("42")))
 				})
 			})
 
@@ -143,21 +149,55 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 					nhc.Spec.EscalatingRemediations[0].Timeout = metav1.Duration{Duration: 42 * time.Second}
 				})
 				It("should be denied", func() {
-					Expect(nhc.validate()).To(MatchError(ContainSubstring(minimumTimeoutError)))
-					Expect(nhc.validate()).To(MatchError(ContainSubstring("42s")))
+					Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(minimumTimeoutError)))
+					Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("42s")))
 				})
 			})
 
 			Context("with duplicate remediator", func() {
+				var firstTemplate, secondTemplate unstructured.Unstructured
 				BeforeEach(func() {
 					setEscalatingRemediations(nhc)
 					nhc.Spec.EscalatingRemediations[1].RemediationTemplate = nhc.Spec.EscalatingRemediations[0].RemediationTemplate
 					nhc.Spec.EscalatingRemediations[1].RemediationTemplate.Name = "dummy"
+
+					//Set mock validator client
+					firstTemplate = unstructured.Unstructured{}
+					firstTemplate.SetKind(nhc.Spec.EscalatingRemediations[0].RemediationTemplate.Kind)
+					firstTemplate.SetName(nhc.Spec.EscalatingRemediations[0].RemediationTemplate.Name)
+					secondTemplate = *firstTemplate.DeepCopy()
+					secondTemplate.SetName(nhc.Spec.EscalatingRemediations[1].RemediationTemplate.Name)
+
+					mockValidatorClient.listFunc = func(ctx context.Context, templatesList client.ObjectList, opts ...client.ListOption) error {
+						listTemplate := templatesList.(*unstructured.UnstructuredList)
+						listTemplate.Items = []unstructured.Unstructured{firstTemplate, secondTemplate}
+						return nil
+					}
+
 				})
-				It("should be denied", func() {
-					Expect(nhc.validate()).To(MatchError(ContainSubstring(uniqueRemediatorError)))
-					Expect(nhc.validate()).To(MatchError(ContainSubstring(nhc.Spec.EscalatingRemediations[1].RemediationTemplate.Kind)))
+				When("remediator does not support multiple templates", func() {
+
+					It("should be denied", func() {
+						Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(uniqueRemediatorError)))
+						Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(nhc.Spec.EscalatingRemediations[1].RemediationTemplate.Kind)))
+					})
 				})
+
+				When("remediator DOES support multiple templates", func() {
+					BeforeEach(func() {
+						firstTemplate.SetAnnotations(map[string]string{"remediation.medik8s.io/multiple-templates-support": "true"})
+						secondTemplate.SetAnnotations(map[string]string{"remediation.medik8s.io/multiple-templates-support": "true"})
+						DeferCleanup(func() {
+							firstTemplate.SetAnnotations(nil)
+							secondTemplate.SetAnnotations(nil)
+						})
+					})
+
+					It("should be allowed", func() {
+						Expect(validator.validate(context.Background(), nhc)).To(Succeed())
+					})
+				})
+
 			})
 		})
 	})
@@ -207,9 +247,8 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				},
 			}
 		})
-
-		validateError := func(validate func(obj runtime.Object) (admission.Warnings, error), nhc *NodeHealthCheck, substrings ...string) {
-			warnings, err := validate(nhc)
+		validateError := func(validate func(ctx context.Context, old runtime.Object, new runtime.Object) (warnings admission.Warnings, err error), old, new *NodeHealthCheck, substrings ...string) {
+			warnings, err := validate(context.Background(), old, new)
 			ExpectWithOffset(1, warnings).To(BeEmpty())
 			matchers := make([]types.GomegaMatcher, 0)
 			for _, substring := range substrings {
@@ -226,7 +265,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhcNew.Spec.Selector.MatchExpressions[0].Key = "node-role.kubernetes.io/infra"
 			})
 			It("should be denied", func() {
-				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "selector")
+				validateError(validator.ValidateUpdate, nhcOld, nhcNew, OngoingRemediationError, "selector")
 			})
 		})
 
@@ -236,7 +275,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhcNew.Spec.RemediationTemplate.Name = "newName"
 			})
 			It("should be denied", func() {
-				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "remediation template")
+				validateError(validator.ValidateUpdate, nhcOld, nhcNew, OngoingRemediationError, "remediation template")
 			})
 		})
 
@@ -247,7 +286,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhcNew.Spec.EscalatingRemediations[0].Order = 42
 			})
 			It("should be denied", func() {
-				validateError(nhcNew.ValidateUpdate, nhcOld, OngoingRemediationError, "escalating remediations")
+				validateError(validator.ValidateUpdate, nhcOld, nhcNew, OngoingRemediationError, "escalating remediations")
 			})
 		})
 	})
@@ -338,4 +377,13 @@ func setEscalatingRemediations(nhc *NodeHealthCheck) {
 			Timeout: metav1.Duration{Duration: 1 * time.Minute},
 		},
 	}
+}
+
+type mockClient struct {
+	client.Client
+	listFunc func(context.Context, client.ObjectList, ...client.ListOption) error
+}
+
+func (m *mockClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return m.listFunc(ctx, list, opts...)
 }

@@ -57,6 +57,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -481,13 +482,16 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 
 	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
 	for _, cr := range orphanedRemediationCRs {
-
+		nodeName := cr.GetName()
+		if cr.GetAnnotations() != nil && len(cr.GetAnnotations()[annotations.NodeNameAnnotation]) > 0 {
+			nodeName = cr.GetAnnotations()[annotations.NodeNameAnnotation]
+		}
 		// do some housekeeping first. When the CRs are deleted, we never get back here...
-		if err := rm.CleanUp(cr.GetName()); err != nil {
+		if err := rm.CleanUp(nodeName); err != nil {
 			log.Error(err, "failed to clean up orphaned node", "node", cr.GetName())
 			return err
 		}
-		resources.UpdateStatusNodeHealthy(cr.GetName(), nhc)
+		resources.UpdateStatusNodeHealthy(nodeName, nhc)
 
 		if deleted, err := rm.DeleteRemediationCR(&cr, nhc); err != nil {
 			log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
@@ -518,7 +522,6 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 			return pointer.Duration(1 * time.Minute), nil
 		}
 	}
-
 	// generate remediation CR
 	currentTemplate, timeout, err := rm.GetCurrentTemplateWithTimeout(node, nhc)
 	if err != nil {
@@ -530,21 +533,21 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		}
 		return nil, errors.Wrapf(err, "failed to get current template")
 	}
-	remediationCR, err := rm.GenerateRemediationCRForNode(node, nhc, currentTemplate)
+	generatedRemediationCR, err := rm.GenerateRemediationCRForNode(node, nhc, currentTemplate)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to generate remediation CR")
 	}
 
 	if isControlPlaneNode {
-		labels := remediationCR.GetLabels()
+		labels := generatedRemediationCR.GetLabels()
 		labels[RemediationControlPlaneLabelKey] = ""
-		remediationCR.SetLabels(labels)
+		generatedRemediationCR.SetLabels(labels)
 	}
 
-	currentRemediationDuration, previousRemediationsDuration := utils.GetRemediationDuration(nhc, remediationCR)
+	currentRemediationDuration, previousRemediationsDuration := utils.GetRemediationDuration(nhc, generatedRemediationCR)
 
 	// create remediation CR
-	created, leaseRequeueIn, err := rm.CreateRemediationCR(remediationCR, nhc, &node.Name, currentRemediationDuration, previousRemediationsDuration)
+	created, leaseRequeueIn, remediationCR, err := rm.CreateRemediationCR(generatedRemediationCR, nhc, &node.Name, currentRemediationDuration, previousRemediationsDuration)
 
 	if err != nil {
 		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained
