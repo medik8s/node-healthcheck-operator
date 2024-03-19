@@ -322,7 +322,6 @@ export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
 .PHONY: add-console-plugin-annotation
 add-console-plugin-annotation: ## Add console-plugin annotation to the CSV
-	# add console-plugin annotation
 	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
 
 .PHONY: add-replaces-field
