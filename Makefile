@@ -24,9 +24,6 @@ YQ_VERSION = v4.41.1
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.26
 
-# OCP Version: for Red Hat bundle community
-OCP_VERSION = 4.12
-
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
@@ -320,6 +317,13 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
+.PHONY: ocp-version-check
+ocp-version-check: ## Check if OCP_VERSION is set
+	@if [ -z "${OCP_VERSION}" ]; then \
+		echo "Error: OCP_VERSION must be set for this build"; \
+		exit 1; \
+	fi
+
 .PHONY: add-console-plugin-annotation
 add-console-plugin-annotation: ## Add console-plugin annotation to the CSV
 	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
@@ -342,7 +346,7 @@ add-community-edition-to-display-name: ## Add the "Community Edition" suffix to 
 	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
 
 .PHONY: bundle-okd
-bundle-okd: yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
+bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) add-console-plugin-annotation
 	$(MAKE) add-replaces-field

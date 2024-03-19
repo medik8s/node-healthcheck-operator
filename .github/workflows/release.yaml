@@ -20,6 +20,9 @@ on:
      skip_range_lower:
        description: "Lower bound for the skipRange field in the CSV, should be set to the oldest supported version, without the leading `v`"
        required: true
+     ocp_version:
+       description: "The target OCP version for the release (mandatory for create_okd_release_pr option)"
+       required: false
 
 permissions:
   contents: write
@@ -33,6 +36,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       #PREVIOUS_VERSION: ${{ inputs.previous_version }}
       SKIP_RANGE_LOWER: ${{ inputs.skip_range_lower }}
+      OCP_VERSION: ${{ inputs.ocp_version }}
     steps:
       - name: Log inputs
         run: |
@@ -104,5 +108,6 @@ jobs:
       version: ${{ inputs.version }}
       previous_version: ${{ inputs.previous_version }}
       skip_range_lower: ${{ inputs.skip_range_lower }}
+      ocp_version: ${{ inputs.ocp_version }}
       community: 'OKD'
       make_targets: "bundle-okd"
