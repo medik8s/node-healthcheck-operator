@@ -337,11 +337,16 @@ add-replaces-field: ## Add replaces field to the CSV
 		fi \
 	fi
 
+.PHONY: add-community-edition-to-display-name
+add-community-edition-to-display-name: ## Add the "Community Edition" suffix to the display name
+	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
+
 .PHONY: bundle-okd
 bundle-okd: yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) add-console-plugin-annotation
 	$(MAKE) add-replaces-field
+	$(MAKE) add-community-edition-to-display-name
 	echo -e "\n  # Annotations for OCP\n  com.redhat.openshift.versions: \"v${OCP_VERSION}\"" >> bundle/metadata/annotations.yaml
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_blue.png)" \
 		$(MAKE) bundle-update
@@ -381,9 +386,7 @@ bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s commun
 	sed -r -i "/displayName: Node Health Check Operator/ i\    for rebooting unhealthy nodes, and can be done by labeling the" ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    the target namespace accordingly before installing NHC." ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ ." ${CSV}
-
-	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
-
+	$(MAKE) add-community-edition-to-display-name
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-metrics
