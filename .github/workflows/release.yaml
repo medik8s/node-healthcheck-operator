@@ -9,8 +9,8 @@ on:
        default: "build_and_push_images"
        options:
          - build_and_push_images
-         - make_okd_community_bundle
-         - make_k8s_community_bundle
+         - create_okd_release_pr
+         - create_k8s_release_pr
      version:
        description: "The version to release, without the leading `v`"
        required: true
@@ -87,8 +87,8 @@ jobs:
           gzip: folders
           files: >
             Manifests:bundle/
-  make_k8s_community_bundle:
-    if: inputs.operation == 'make_k8s_community_bundle'
+  create_k8s_release_pr:
+    if: inputs.operation == 'create_k8s_release_pr'
     uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
     secrets: inherit
     with:
@@ -96,8 +96,8 @@ jobs:
       skip_range_lower: ${{ inputs.skip_range_lower }}
       community: 'K8S'
       make_targets: "bundle-k8s bundle-update"
-  make_okd_community_bundle:
-    if: inputs.operation == 'make_okd_community_bundle'
+  create_okd_release_pr:
+    if: inputs.operation == 'create_okd_release_pr'
     uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
     secrets: inherit
     with:
