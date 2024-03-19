@@ -337,7 +337,7 @@ add-replaces-field: ## Add replaces field to the CSV
 		fi \
 	fi
 
-.PHONY: bundle-ocp
+.PHONY: bundle-okd
 bundle-okd: yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) add-console-plugin-annotation
