@@ -468,8 +468,8 @@ deploy-snr:
 
 ##@ Targets used by CI
 
-.PHONY: container-build
-container-build: ## Build containers
+.PHONY: container-build-ocp
+container-build-ocp: ## Build containers
 	make docker-build bundle-build-ocp
 
 .PHONY: container-build-k8s
