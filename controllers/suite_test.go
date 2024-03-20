@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	commonannotations "github.com/medik8s/common/pkg/annotations"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
@@ -54,9 +55,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
-
-	// +kubebuilder:scaffold:imports
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -187,10 +185,10 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient.Create(context.Background(), newTestRemediationCRD(multiSupportTestKind))).To(Succeed())
 	time.Sleep(time.Second)
 	multiSupportTemplate := newTestRemediationTemplateCR(multiSupportTestKind, MachineNamespace, MultipleSupportTemplateName)
-	multiSupportTemplate.SetAnnotations(map[string]string{annotations.MultipleTemplatesSupportedAnnotation: "true"})
+	multiSupportTemplate.SetAnnotations(map[string]string{commonannotations.MultipleTemplatesSupportedAnnotation: "true"})
 	Expect(k8sClient.Create(context.Background(), multiSupportTemplate)).To(Succeed())
 	secondMultiSupportTemplate := newTestRemediationTemplateCR(multiSupportTestKind, MachineNamespace, SecondMultipleSupportTemplateName)
-	secondMultiSupportTemplate.SetAnnotations(map[string]string{annotations.MultipleTemplatesSupportedAnnotation: "true"})
+	secondMultiSupportTemplate.SetAnnotations(map[string]string{commonannotations.MultipleTemplatesSupportedAnnotation: "true"})
 	Expect(k8sClient.Create(context.Background(), secondMultiSupportTemplate)).To(Succeed())
 
 	upgradeChecker = &fakeClusterUpgradeChecker{

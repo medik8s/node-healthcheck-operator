@@ -57,7 +57,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 )
 
@@ -483,8 +482,8 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
 	for _, cr := range orphanedRemediationCRs {
 		nodeName := cr.GetName()
-		if cr.GetAnnotations() != nil && len(cr.GetAnnotations()[annotations.NodeNameAnnotation]) > 0 {
-			nodeName = cr.GetAnnotations()[annotations.NodeNameAnnotation]
+		if cr.GetAnnotations() != nil && len(cr.GetAnnotations()[commonannotations.NodeNameAnnotation]) > 0 {
+			nodeName = cr.GetAnnotations()[commonannotations.NodeNameAnnotation]
 		}
 		// do some housekeeping first. When the CRs are deleted, we never get back here...
 		if err := rm.CleanUp(nodeName); err != nil {
