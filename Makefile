@@ -317,27 +317,19 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
+.PHONY: ocp-version-check
+ocp-version-check: ## Check if OCP_VERSION is set
+	@if [ -z "${OCP_VERSION}" ]; then \
+		echo "Error: OCP_VERSION must be set for this build"; \
+		exit 1; \
+	fi
 
-.PHONY: bundle-ocp
-bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
-	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
-	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
-	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
-	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
-	# add console-plugin annotation
+.PHONY: add-console-plugin-annotation
+add-console-plugin-annotation: ## Add console-plugin annotation to the CSV
 	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
-	# add OCP annotations
-	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
-	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
-	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
 
+.PHONY: add-replaces-field
+add-replaces-field: ## Add replaces field to the CSV
 	# add replaces field when building versioned bundle
 	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
 		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
@@ -349,6 +341,39 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 		fi \
 	fi
 
+.PHONY: add-community-edition-to-display-name
+add-community-edition-to-display-name: ## Add the "Community Edition" suffix to the display name
+	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
+
+.PHONY: bundle-okd
+bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
+	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(MAKE) add-console-plugin-annotation
+	$(MAKE) add-replaces-field
+	$(MAKE) add-community-edition-to-display-name
+	echo -e "\n  # Annotations for OCP\n  com.redhat.openshift.versions: \"v${OCP_VERSION}\"" >> bundle/metadata/annotations.yaml
+	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_blue.png)" \
+		$(MAKE) bundle-update
+
+.PHONY: bundle-ocp
+bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
+	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
+	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
+	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
+	$(MAKE) add-console-plugin-annotation
+	# add OCP annotations
+	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
+	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
+	$(MAKE) add-replaces-field
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
 		$(MAKE) bundle-update
 
@@ -365,9 +390,7 @@ bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s commun
 	sed -r -i "/displayName: Node Health Check Operator/ i\    for rebooting unhealthy nodes, and can be done by labeling the" ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    the target namespace accordingly before installing NHC." ${CSV}
 	sed -r -i "/displayName: Node Health Check Operator/ i\    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ ." ${CSV}
-
-	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
-
+	$(MAKE) add-community-edition-to-display-name
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-metrics
