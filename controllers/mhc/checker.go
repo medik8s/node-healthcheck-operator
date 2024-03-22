@@ -25,9 +25,9 @@ type Checker interface {
 }
 
 // NewMHCChecker creates a new Checker
-func NewMHCChecker(mgr manager.Manager, onOpenshift bool, mhcEvents chan<- event.GenericEvent) (Checker, error) {
+func NewMHCChecker(mgr manager.Manager, hasMachineAPI bool, mhcEvents chan<- event.GenericEvent) (Checker, error) {
 
-	if !onOpenshift {
+	if !hasMachineAPI {
 		return DummyChecker{}, nil
 	}
 

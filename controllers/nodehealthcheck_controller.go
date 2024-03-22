@@ -84,7 +84,7 @@ type NodeHealthCheckReconciler struct {
 	Recorder                    record.EventRecorder
 	ClusterUpgradeStatusChecker cluster.UpgradeChecker
 	MHCChecker                  mhc.Checker
-	OnOpenShift                 bool
+	Capabilities                cluster.Capabilities
 	MHCEvents                   chan event.GenericEvent
 	controller                  controller.Controller
 	watches                     map[string]struct{}
@@ -162,7 +162,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return result, err
 	}
-	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.OnOpenShift, leaseManager, r.Recorder)
+	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.Capabilities.HasMachineAPI, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
 	nhcOrig := nhc.DeepCopy()
@@ -683,8 +683,7 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 	}
 
 	// no ongoing control plane remediation, check etcd quorum
-	if !r.OnOpenShift {
-		// etcd quorum PDB is only installed in OpenShift
+	if !r.Capabilities.HasEtcdPDBQuorum {
 		return true, nil
 	}
 	var allowed bool

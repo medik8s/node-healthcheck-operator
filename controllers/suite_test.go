@@ -197,7 +197,7 @@ var _ = BeforeSuite(func() {
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
 		MHCEvents:                   mhcEvents,
-		OnOpenShift:                 true,
+		Capabilities:                cluster.Capabilities{HasEtcdPDBQuorum: true, HasMachineAPI: true},
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
