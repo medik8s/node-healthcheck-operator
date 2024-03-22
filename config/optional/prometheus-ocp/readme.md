@@ -4,7 +4,7 @@ Use the following steps to create a bundle predisposed for OpenShift User Worklo
 
 1. Configure the Monitoring stack, if not already done [2]
 2. Enable monitoring for user-defined projects [3]
-3. Ensure NHC bundle with monitoring supported (>= v0.8.0) is installed
+3. Ensure NHC bundle with monitoring supported (>= v0.8.0) is installed [4]
 4. Once the bundle is installed, create a new UWP token Secret from an existing `prometheus-user-workload-token` Secret
 
     IMPORTANT NOTE: use the operator's namespace (e.g. `openshift-workload-availability`).
@@ -13,7 +13,7 @@ Use the following steps to create a bundle predisposed for OpenShift User Worklo
     # Get the existing prometheus-user-workload-token Secret
     existingPrometheusTokenSecret=$(kubectl get secret --namespace openshift-user-workload-monitoring | grep prometheus-user-workload-token | awk '{print $1}')
 
-    # Create a new Secret in the openshift-operators namespace
+    # Create a new Secret in the operator's namespace
     kubectl get secret ${existingPrometheusTokenSecret} --namespace=openshift-user-workload-monitoring -o yaml | \
         sed '/namespace: .*==/d;/ca.crt:/d;/serviceCa.crt/d;/creationTimestamp:/d;/resourceVersion:/d;/uid:/d;/annotations/d;/kubernetes.io/d;' | \
         sed 's/namespace: .*/namespace: openshift-workload-availability/' | \
@@ -31,6 +31,7 @@ Use the following steps to create a bundle predisposed for OpenShift User Worklo
     kubectl apply -f monitor.yaml
     ```
 
-[1]: https://docs.openshift.com/container-platform/4.14/monitoring/enabling-monitoring-for-user-defined-projects.html
-[2]: https://docs.openshift.com/container-platform/4.14/monitoring/configuring-the-monitoring-stack.html
-[3]: https://docs.openshift.com/container-platform/4.14/monitoring/enabling-monitoring-for-user-defined-projects.html#enabling-monitoring-for-user-defined-projects_enabling-monitoring-for-user-defined-projects
+[1]: https://docs.openshift.com/container-platform/4.15/monitoring/enabling-monitoring-for-user-defined-projects.html
+[2]: https://docs.openshift.com/container-platform/4.15/monitoring/configuring-the-monitoring-stack.html
+[3]: https://docs.openshift.com/container-platform/4.15/monitoring/enabling-monitoring-for-user-defined-projects.html#enabling-monitoring-for-user-defined-projects_enabling-monitoring-for-user-defined-projects
+[4]: for testing purposes, you can build the bundle with `hack/ocp/test_create_bundle_ocp_image_in_quay.sh`
