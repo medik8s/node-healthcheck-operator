@@ -375,11 +375,6 @@ bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metri
 	$(KUSTOMIZE) build config/manifests/metrics | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
-.PHONY: bundle-metrics-ocp
-bundle-metrics-ocp: bundle-base ## Generate bundle manifests and metadata with metric relates manifests, then validate generated files.
-	$(KUSTOMIZE) build config/manifests/metrics-ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	$(MAKE) bundle-validate
-
 # Apply version or build date related changes in the bundle
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
