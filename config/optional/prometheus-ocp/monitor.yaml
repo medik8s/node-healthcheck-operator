@@ -12,9 +12,11 @@ spec:
   - interval: 5s
     port: https
     scheme: https
-    bearerTokenSecret:
-      name: prometheus-user-workload-token
-      key: token
+    authorization:
+      type: Bearer
+      credentials:
+        name: prometheus-user-workload-token
+        key: token
     tlsConfig:
       ca:
         configMap:
