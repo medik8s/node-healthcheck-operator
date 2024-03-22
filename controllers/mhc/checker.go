@@ -11,6 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/api/machine/v1beta1"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 )
 
 // NodeConditionTerminating is the node condition type used by the termination handler MHC
@@ -25,9 +27,9 @@ type Checker interface {
 }
 
 // NewMHCChecker creates a new Checker
-func NewMHCChecker(mgr manager.Manager, onOpenshift bool, mhcEvents chan<- event.GenericEvent) (Checker, error) {
+func NewMHCChecker(mgr manager.Manager, caps cluster.Capabilities, mhcEvents chan<- event.GenericEvent) (Checker, error) {
 
-	if !onOpenshift {
+	if !caps.HasMachineAPI {
 		return DummyChecker{}, nil
 	}
 
