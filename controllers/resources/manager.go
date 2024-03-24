@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonannotations "github.com/medik8s/common/pkg/annotations"
 	commonevents "github.com/medik8s/common/pkg/events"
 	"github.com/pkg/errors"
 
@@ -127,7 +128,7 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 
 	if annotations.HasMultipleTemplatesAnnotation(template) {
 		remediationCR.SetGenerateName(name)
-		remediationCR.SetAnnotations(map[string]string{annotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
+		remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
 	} else {
 		remediationCR.SetName(name)
 	}
@@ -177,7 +178,7 @@ func (m *manager) GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstru
 // CreateRemediationCR creates the given remediation CR from remediationCR it'll return: a bool indicator of success, a *time.Duration an indicator on when requeue is needed in order to extend the lease, a *unstructured.Unstructured of the created/existing CR and an error
 func (m *manager) CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, *unstructured.Unstructured, error) {
 	var err error
-	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[annotations.NodeNameAnnotation]) == 0 {
+	if remediationCR.GetAnnotations() == nil || len(remediationCR.GetAnnotations()[commonannotations.NodeNameAnnotation]) == 0 {
 		err = m.Get(m.ctx, client.ObjectKeyFromObject(remediationCR), remediationCR)
 	} else {
 		remediationCR, err = m.getCRWithNodeNameAnnotation(remediationCR)
@@ -358,7 +359,7 @@ func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.Owne
 }
 
 func (m *manager) getCRWithNodeNameAnnotation(remediationCR *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	nodeName := remediationCR.GetAnnotations()[annotations.NodeNameAnnotation]
+	nodeName := remediationCR.GetAnnotations()[commonannotations.NodeNameAnnotation]
 	templateName := remediationCR.GetAnnotations()[annotations.TemplateNameAnnotation]
 
 	resourceList := &unstructured.UnstructuredList{Object: m.GenerateRemediationCRBase(remediationCR.GroupVersionKind()).Object}
@@ -386,7 +387,7 @@ func (m *manager) isMatchNodeTemplate(cr unstructured.Unstructured, nodeName str
 	if _, isMultiSupported := ann[annotations.TemplateNameAnnotation]; !isMultiSupported {
 		return cr.GetName() == nodeName
 	}
-	return ann[annotations.TemplateNameAnnotation] == templateName && ann[annotations.NodeNameAnnotation] == nodeName
+	return ann[annotations.TemplateNameAnnotation] == templateName && ann[commonannotations.NodeNameAnnotation] == nodeName
 }
 
 func (m *manager) extractNodeName(cr unstructured.Unstructured) string {
@@ -397,7 +398,7 @@ func (m *manager) extractNodeName(cr unstructured.Unstructured) string {
 	if _, isMultiSupported := ann[annotations.TemplateNameAnnotation]; !isMultiSupported {
 		return cr.GetName()
 	}
-	return ann[annotations.NodeNameAnnotation]
+	return ann[commonannotations.NodeNameAnnotation]
 }
 
 func createOwnerRef(obj client.Object) *metav1.OwnerReference {
