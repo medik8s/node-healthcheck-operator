@@ -143,8 +143,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	var hasMachineAPI bool
+	if onOpenshift {
+		hasMachineAPI, err := cluster.HasMachineAPICapability(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "failed to check if MachineAPI is enabled")
+			os.Exit(1)
+		}
+		if hasMachineAPI {
+			setupLog.Info("MachineAPI is enabled")
+		} else {
+			setupLog.Info("MachineAPI is not enabled")
+		}
+	}
+
 	mhcEvents := make(chan event.GenericEvent)
-	mhcChecker, err := mhc.NewMHCChecker(mgr, onOpenshift, mhcEvents)
+	mhcChecker, err := mhc.NewMHCChecker(mgr, hasMachineAPI, mhcEvents)
 	if err != nil {
 		setupLog.Error(err, "unable initialize MHC checker")
 		os.Exit(1)
@@ -154,20 +168,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	clusterCapabilities := cluster.Capabilities{
+		// etcd quorum PDB is only installed in OpenShift
+		HasEtcdPDBQuorum: onOpenshift,
+		HasMachineAPI:    hasMachineAPI,
+	}
+
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
-		OnOpenShift:                 onOpenshift,
+		Capabilities:                clusterCapabilities,
 		MHCEvents:                   mhcEvents,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)
 	}
 
-	if onOpenshift {
+	if hasMachineAPI {
 		featureGateMHCControllerDisabledEvents := make(chan event.GenericEvent)
 		featureGateAccessor := featuregates.NewAccessor(mgr.GetConfig(), featureGateMHCControllerDisabledEvents)
 		if err = mgr.Add(featureGateAccessor); err != nil {
