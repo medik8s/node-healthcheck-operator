@@ -30,7 +30,7 @@ jobs:
       run: make manifests bundle-k8s bundle-reset test
 
     - name: Test container build
-      run: make container-build
+      run: make container-build-ocp
 
   e2e-k8s:
     runs-on: ubuntu-22.04
