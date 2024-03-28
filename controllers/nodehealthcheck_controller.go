@@ -28,6 +28,7 @@ import (
 	commonconditions "github.com/medik8s/common/pkg/conditions"
 	"github.com/medik8s/common/pkg/etcd"
 	commonevents "github.com/medik8s/common/pkg/events"
+	commonlabels "github.com/medik8s/common/pkg/labels"
 	"github.com/medik8s/common/pkg/lease"
 	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
@@ -350,6 +351,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// update unhealthy node in status
 		resources.UpdateStatusNodeUnhealthy(&node, nhc)
 		if skipRemediation {
+			continue
+		}
+
+		if r.isNodeRemediationExcluded(&node) {
+			msg := fmt.Sprintf("Skipped remediation because node %s is marked to exclude remediations", node.GetName())
+			log.Info(msg)
+			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 			continue
 		}
 
@@ -870,6 +878,15 @@ func (r *NodeHealthCheckReconciler) addRemediationTemplateCRWatch(templateCR *un
 	r.watches[key] = struct{}{}
 	r.Log.Info("added watch for remediation template CRs", "kind", templateCR.GetKind())
 	return nil
+}
+
+func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node) bool {
+	if nodeLabels := node.GetLabels(); nodeLabels == nil {
+		return false
+	} else {
+		_, isNodeExcluded := nodeLabels[commonlabels.ExcludeFromRemediation]
+		return isNodeExcluded
+	}
 }
 
 func getTimeoutAt(remediation *remediationv1alpha1.Remediation, configuredTimeout *time.Duration) time.Time {
