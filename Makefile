@@ -412,11 +412,7 @@ bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-metrics
-bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for k8s.
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
-
-.PHONY: bundle-build-metrics-ocp
-bundle-build-metrics-ocp: bundle-metrics-ocp bundle-update ## Build the bundle image for OCP/OKD predisposed for user workload Prometheus monitoring.
+bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for K8s with metric related configuration
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
@@ -472,12 +468,9 @@ container-build-k8s: ## Build containers
 	make docker-build bundle-build-k8s
 
 .PHONY: container-build-metrics
-container-build-metrics: ## Build containers
+container-build-metrics: ## Build containers for K8s with metric related configuration
 	make docker-build bundle-build-metrics
 
-.PHONY: container-build-metrics-ocp
-container-build-metrics-ocp: ## Build containers
-	make docker-build bundle-build-metrics-ocp
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
