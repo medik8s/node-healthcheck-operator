@@ -683,7 +683,8 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 	}
 
 	// no ongoing control plane remediation, check etcd quorum
-	if !r.Capabilities.HasEtcdPDBQuorum {
+	if !r.Capabilities.IsOnOpenshift {
+		// etcd quorum PDB is only installed in OpenShift
 		return true, nil
 	}
 	var allowed bool

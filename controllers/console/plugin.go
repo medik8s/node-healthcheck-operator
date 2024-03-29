@@ -29,7 +29,7 @@ import (
 
 	"github.com/openshift/api/console/v1alpha1"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 )
 
 const (
@@ -50,9 +50,11 @@ const (
 func CreateOrUpdatePlugin(ctx context.Context, cl client.Client, config *rest.Config, namespace string, log logr.Logger) error {
 
 	// check if we are on OCP
-	if isOpenshift, err := utils.IsOnOpenshift(config); err != nil {
-		return errors.Wrap(err, "failed to check if we are on Openshift")
-	} else if !isOpenshift {
+	clusterCapabilities, err := cluster.NewCapabilities(config)
+	if err != nil {
+		return errors.Wrap(err, "failed to check cluster capabilities")
+	}
+	if !clusterCapabilities.IsOnOpenshift {
 		log.Info("we are not on Openshift, skipping console plugin activation")
 		return nil
 	}
