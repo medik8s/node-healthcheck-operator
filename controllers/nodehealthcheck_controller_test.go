@@ -815,6 +815,20 @@ var _ = Describe("Node Health Check CR", func() {
 
 		})
 
+		Context("with Node marked for excluding remediation", func() {
+			BeforeEach(func() {
+				objects = newNodes(1, 2, false, true)
+				objects = append(objects, newNodeHealthCheck())
+				node := objects[0].(*v1.Node)
+				node.GetLabels()[commonLabels.ExcludeFromRemediation] = "true"
+
+			})
+			It("remediation shouldn't be created", func() {
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(0))
+			})
+		})
+
 		Context("with a single escalating remediation", func() {
 
 			BeforeEach(func() {
