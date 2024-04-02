@@ -26,10 +26,13 @@ jobs:
     - name: Build
       run: make manager
 
-    - name: Test
+    - name: Verify no bundle changes and run unit-tests
       run: make manifests bundle-k8s bundle-reset test
 
-    - name: Test container build
+    - name: Test container build K8s
+      run: make container-build-k8s
+
+    - name: Test container build OCP
       run: make container-build-ocp
 
   e2e-k8s:
