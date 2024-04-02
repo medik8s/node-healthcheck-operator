@@ -404,7 +404,7 @@ bundle-reset: ## Revert all version or build date related changes
 	sed -r -i "/replaces:.*/d" ${CSV}
 
 .PHONY: bundle-build-ocp
-bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image.
+bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s
@@ -460,11 +460,11 @@ deploy-snr:
 ##@ Targets used by CI
 
 .PHONY: container-build-ocp
-container-build-ocp: ## Build containers
+container-build-ocp: ## Build containers for OCP
 	make docker-build bundle-build-ocp
 
 .PHONY: container-build-k8s
-container-build-k8s: ## Build containers
+container-build-k8s: ## Build containers for K8s
 	make docker-build bundle-build-k8s
 
 .PHONY: container-build-metrics
