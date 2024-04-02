@@ -24,7 +24,6 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/api/console/v1alpha1"
@@ -47,14 +46,10 @@ const (
 // HEADS UP: consider cleanup of old resources in case of name changes or removals!
 //
 // TODO image reference to console plugin in CSV?
-func CreateOrUpdatePlugin(ctx context.Context, cl client.Client, config *rest.Config, namespace string, log logr.Logger) error {
+func CreateOrUpdatePlugin(ctx context.Context, cl client.Client, caps cluster.Capabilities, namespace string, log logr.Logger) error {
 
 	// check if we are on OCP
-	clusterCapabilities, err := cluster.NewCapabilities(config)
-	if err != nil {
-		return errors.Wrap(err, "failed to check cluster capabilities")
-	}
-	if !clusterCapabilities.IsOnOpenshift {
+	if !caps.IsOnOpenshift {
 		log.Info("we are not on Openshift, skipping console plugin activation")
 		return nil
 	}

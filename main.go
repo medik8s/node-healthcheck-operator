@@ -199,7 +199,7 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	// Do some initialization
-	initializer := initializer.New(mgr, ctrl.Log.WithName("Initializer"))
+	initializer := initializer.New(mgr, caps, ctrl.Log.WithName("Initializer"))
 	if err = mgr.Add(initializer); err != nil {
 		setupLog.Error(err, "failed to add initializer to the manager")
 		os.Exit(1)
