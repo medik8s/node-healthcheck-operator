@@ -26,4 +26,4 @@ rm -rf bundle
 # Make bundle image
 make container-build-ocp container-push
 set +x
-echo "Now you can use make bundle-run to test th image"
+echo "Now you can use make bundle-run to test the image"
