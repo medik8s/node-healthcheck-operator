@@ -12,6 +12,7 @@ COPY go.sum go.sum
 COPY PROJECT PROJECT
 COPY Makefile Makefile
 COPY config/ config/
+COPY bundle/ bundle/
 COPY hack/ hack/
 
 COPY main.go main.go
@@ -21,8 +22,8 @@ COPY controllers/ controllers/
 COPY metrics/ metrics/
 COPY vendor/ vendor/
 
-# Generate OCP bundle
-RUN make bundle-ocp
+# Generate OCP bundle without overriding the pullspec set by the CI
+RUN make bundle-ocp-ci
 
 # Build bundle image for OCP CI
 FROM scratch

@@ -357,6 +357,7 @@ bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and me
 
 .PHONY: bundle-ocp
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
+	$(shell rm -r bundle) # OCP bundle should be created from scratch
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
@@ -377,6 +378,10 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
 		$(MAKE) bundle-update
 
+.PHONY: bundle-ocp-ci
+bundle-ocp-ci: yq ## Generate OCP bundle for CI, without overriding the image pull-spec (CI only)
+	IMG="$(shell $(YQ) -r '.metadata.annotations.containerImage' ${CSV})" \
+		$(MAKE) bundle-ocp
 
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
