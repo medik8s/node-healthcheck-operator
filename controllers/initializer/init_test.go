@@ -7,8 +7,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 )
 
 var _ = Describe("Init", func() {
@@ -16,8 +14,7 @@ var _ = Describe("Init", func() {
 	var initializer *initializer
 
 	JustBeforeEach(func() {
-		caps := cluster.Capabilities{IsOnOpenshift: true, HasMachineAPI: true}
-		initializer = New(k8sManager, caps, ctrl.Log.WithName("test initializer"))
+		initializer = New(k8sManager, ctrl.Log.WithName("test initializer"))
 	})
 
 	AfterEach(func() {

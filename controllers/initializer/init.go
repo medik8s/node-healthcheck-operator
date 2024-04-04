@@ -6,10 +6,10 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/rbac"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
@@ -20,17 +20,17 @@ import (
 // - create default NHC
 // - create console plugin
 type initializer struct {
-	cl           client.Client
-	capabilities cluster.Capabilities
-	logger       logr.Logger
+	cl     client.Client
+	config *rest.Config
+	logger logr.Logger
 }
 
 // New returns a new Initializer
-func New(mgr ctrl.Manager, caps cluster.Capabilities, logger logr.Logger) *initializer {
+func New(mgr ctrl.Manager, logger logr.Logger) *initializer {
 	return &initializer{
-		cl:           mgr.GetClient(),
-		capabilities: caps,
-		logger:       logger,
+		cl:     mgr.GetClient(),
+		config: mgr.GetConfig(),
+		logger: logger,
 	}
 }
 
@@ -46,7 +46,7 @@ func (i *initializer) Start(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
 	}
 
-	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.capabilities, ns, ctrl.Log.WithName("console-plugin")); err != nil {
+	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.config, ns, ctrl.Log.WithName("console-plugin")); err != nil {
 		return errors.Wrap(err, "failed to create or update the console plugin")
 	}
 
