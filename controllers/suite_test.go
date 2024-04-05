@@ -196,9 +196,7 @@ var _ = BeforeSuite(func() {
 		Upgrading: false,
 	}
 
-	caps := cluster.Capabilities{IsOnOpenshift: true, HasMachineAPI: true}
-
-	mhcChecker, err := mhc.NewMHCChecker(k8sManager, caps, nil)
+	mhcChecker, err := mhc.NewMHCChecker(k8sManager, false, nil)
 	Expect(err).NotTo(HaveOccurred())
 
 	os.Setenv("DEPLOYMENT_NAMESPACE", DeploymentNamespace)
@@ -226,7 +224,7 @@ var _ = BeforeSuite(func() {
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
 		MHCEvents:                   mhcEvents,
-		Capabilities:                caps,
+		OnOpenShift:                 true,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

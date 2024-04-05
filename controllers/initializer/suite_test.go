@@ -36,8 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	consolev1alpha "github.com/openshift/api/console/v1alpha1"
-
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
 
@@ -65,13 +63,7 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDInstallOptions: envtest.CRDInstallOptions{
-			Paths: []string{
-				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "console", "v1alpha1"),
-				filepath.Join("..", "..", "config", "crd", "bases"),
-			},
-			ErrorIfPathMissing: true,
-		},
+		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
 	}
 
 	var err error
@@ -80,8 +72,8 @@ var _ = BeforeSuite(func() {
 	Expect(cfg).NotTo(BeNil())
 
 	scheme.AddToScheme(scheme.Scheme)
-	Expect(remediationv1alpha1.AddToScheme(scheme.Scheme)).NotTo(HaveOccurred())
-	Expect(consolev1alpha.AddToScheme(scheme.Scheme)).NotTo(HaveOccurred())
+	err = remediationv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())

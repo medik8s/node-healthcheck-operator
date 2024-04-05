@@ -13,6 +13,8 @@ import (
 
 	v1 "github.com/openshift/api/config/v1"
 	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
 var unsupportedUpgradeCheckerErr = errors.New(
@@ -64,8 +66,12 @@ func (n *noopClusterUpgradeStatusChecker) Check() (bool, error) {
 
 // NewClusterUpgradeStatusChecker will return some implementation of a checker or err in case it can't
 // reliably detect which implementation to use.
-func NewClusterUpgradeStatusChecker(mgr manager.Manager, caps Capabilities) (UpgradeChecker, error) {
-	if !caps.IsOnOpenshift {
+func NewClusterUpgradeStatusChecker(mgr manager.Manager) (UpgradeChecker, error) {
+	openshift, err := utils.IsOnOpenshift(mgr.GetConfig())
+	if err != nil {
+		return nil, err
+	}
+	if !openshift {
 		return &noopClusterUpgradeStatusChecker{}, nil
 	}
 	checker, err := newOpenshiftClusterUpgradeChecker(mgr)

@@ -33,7 +33,6 @@ import (
 
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
@@ -2388,8 +2387,7 @@ func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObje
 		WithRuntimeObjects(initObjects...).
 		WithStatusSubresource(&machinev1.MachineHealthCheck{}).
 		Build()
-	caps := cluster.Capabilities{IsOnOpenshift: false, HasMachineAPI: false}
-	mhcChecker, _ := mhc.NewMHCChecker(k8sManager, caps, nil)
+	mhcChecker, _ := mhc.NewMHCChecker(k8sManager, false, nil)
 	return &MachineHealthCheckReconciler{
 		Client:                         fakeClient,
 		Recorder:                       recorder,
