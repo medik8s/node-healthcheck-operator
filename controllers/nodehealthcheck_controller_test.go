@@ -41,6 +41,9 @@ const (
 )
 
 var _ = Describe("Node Health Check CR", func() {
+	AfterEach(func() {
+		clearEvents()
+	})
 
 	Context("Defaults", func() {
 		var underTest *v1alpha1.NodeHealthCheck
@@ -747,7 +750,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(2 + 1 /*2 seconds is DefaultLeaseDuration (mocked) + 1 second buffer (mocked)  */)))
 						Expect(lease.Spec.AcquireTime).ToNot(BeNil())
 						Expect(*lease.Spec.AcquireTime).To(Equal(*lease.Spec.RenewTime))
-
+						verifyEvent("Warning", utils.EventReasonRemediationSkipped, fmt.Sprintf("Skipped remediation of node: %s,because node lease is already taken", unhealthyNodeName))
 						leaseExpireTime := lease.Spec.AcquireTime.Time.Add(mockRequeueDurationIfLeaseTaken*3 + mockLeaseBuffer)
 						timeLeftForLease := leaseExpireTime.Sub(time.Now())
 						//Wait for lease to be extended
@@ -2151,4 +2154,57 @@ func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, isContro
 			},
 		},
 	}
+}
+
+func clearEvents() {
+	for {
+		select {
+		case _ = <-fakeRecorder.Events:
+
+		default:
+			return
+		}
+	}
+}
+
+func verifyEvent(eventType, reason, message string) {
+	EventuallyWithOffset(1, func() bool {
+		return isEventOccurred(eventType, reason, message)
+	}, 5*time.Second, 250*time.Millisecond).Should(BeTrue())
+}
+
+func verifyNoEvent(eventType, reason, message string) {
+	ConsistentlyWithOffset(1, func() bool {
+		return isEventOccurred(eventType, reason, message)
+	}, 5*time.Second, 250*time.Millisecond).Should(BeFalse())
+}
+
+func isEventOccurred(eventType string, reason string, message string) bool {
+	expected := fmt.Sprintf("%s %s [remediation] %s", eventType, reason, message)
+	isEventMatch := false
+
+	unMatchedEvents := make(chan string, len(fakeRecorder.Events))
+	By(fmt.Sprintf("verifying that the event was: %s", expected))
+	isDone := false
+	for {
+		select {
+		case event := <-fakeRecorder.Events:
+			if isEventMatch = event == expected; isEventMatch {
+				isDone = true
+			} else {
+				unMatchedEvents <- event
+			}
+		default:
+			isDone = true
+		}
+		if isDone {
+			break
+		}
+	}
+
+	close(unMatchedEvents)
+	for unMatchedEvent := range unMatchedEvents {
+		fakeRecorder.Events <- unMatchedEvent
+	}
+	return isEventMatch
 }
