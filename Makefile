@@ -117,7 +117,7 @@ KUBECTL=oc
 endif
 
 .PHONY: all
-all: container-build container-push
+all: container-build-ocp container-push
 
 ##@ General
 
