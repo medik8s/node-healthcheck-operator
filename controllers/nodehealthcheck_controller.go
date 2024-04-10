@@ -714,9 +714,9 @@ func (r *NodeHealthCheckReconciler) patchStatus(ctx context.Context, log logr.Lo
 	} else if len(nhc.Spec.PauseRequests) > 0 {
 		nhc.Status.Phase = remediationv1alpha1.PhasePaused
 		nhc.Status.Reason = fmt.Sprintf("NHC is paused: %s", strings.Join(nhc.Spec.PauseRequests, ","))
-	} else if len(nhc.Status.InFlightRemediations) > 0 {
+	} else if r.isRemediating(nhc.Status.UnhealthyNodes) {
 		nhc.Status.Phase = remediationv1alpha1.PhaseRemediating
-		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.InFlightRemediations))
+		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.UnhealthyNodes))
 	} else {
 		nhc.Status.Phase = remediationv1alpha1.PhaseEnabled
 		nhc.Status.Reason = "NHC is enabled, no ongoing remediation"
@@ -887,6 +887,15 @@ func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node) boo
 		_, isNodeExcluded := nodeLabels[commonlabels.ExcludeFromRemediation]
 		return isNodeExcluded
 	}
+}
+
+func (r *NodeHealthCheckReconciler) isRemediating(unhealthyNodes []*remediationv1alpha1.UnhealthyNode) bool {
+	for _, unhealthyNode := range unhealthyNodes {
+		if len(unhealthyNode.Remediations) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func getTimeoutAt(remediation *remediationv1alpha1.Remediation, configuredTimeout *time.Duration) time.Time {
