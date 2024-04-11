@@ -179,6 +179,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// set counters to zero for disabled NHC
 	nhc.Status.ObservedNodes = pointer.Int(0)
 	nhc.Status.HealthyNodes = pointer.Int(0)
+	//clear deprecated field before it's removed from the API
+	nhc.Status.InFlightRemediations = nil
 
 	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
