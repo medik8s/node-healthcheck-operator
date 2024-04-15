@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -101,15 +102,18 @@ var (
 	}
 )
 
-var cfg *rest.Config
-var k8sClient client.Client
-var k8sManager manager.Manager
-var testEnv *envtest.Environment
-var ctx context.Context
-var cancel context.CancelFunc
+var (
+	cfg        *rest.Config
+	k8sClient  client.Client
+	k8sManager manager.Manager
+	testEnv    *envtest.Environment
+	ctx        context.Context
+	cancel     context.CancelFunc
 
-var upgradeChecker *fakeClusterUpgradeChecker
-var fakeTime *time.Time
+	upgradeChecker *fakeClusterUpgradeChecker
+	fakeTime       *time.Time
+	fakeRecorder   *record.FakeRecorder
+)
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -217,10 +221,11 @@ var _ = BeforeSuite(func() {
 	}
 
 	mhcEvents := make(chan event.GenericEvent)
+	fakeRecorder = record.NewFakeRecorder(1000)
 	err = (&NodeHealthCheckReconciler{
 		Client:                      k8sManager.GetClient(),
 		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
-		Recorder:                    k8sManager.GetEventRecorderFor("NodeHealthCheck"),
+		Recorder:                    fakeRecorder,
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
 		MHCEvents:                   mhcEvents,
