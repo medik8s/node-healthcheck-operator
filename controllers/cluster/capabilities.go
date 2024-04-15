@@ -11,37 +11,32 @@ type Capabilities struct {
 }
 
 func NewCapabilities(config *rest.Config) (Capabilities, error) {
-	caps := &Capabilities{}
-	err := caps.discover(config)
-	return *caps, err
-}
-
-func (c *Capabilities) discover(config *rest.Config) error {
 	dc, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
-		return err
+		return Capabilities{}, err
 	}
 
 	apiGroups, err := dc.ServerGroups()
 	if err != nil {
-		return err
+		return Capabilities{}, err
 	}
 
 	ocpKind := schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "ClusterVersion"}
 	machineAPIGroup := schema.GroupVersion{Group: "machine.openshift.io", Version: "v1"}
 
+	caps := Capabilities{}
 	for _, apiGroup := range apiGroups.Groups {
 		for _, supportedVersion := range apiGroup.Versions {
 			if supportedVersion.GroupVersion == ocpKind.GroupVersion().String() {
-				c.IsOnOpenshift = true
+				caps.IsOnOpenshift = true
 				break
 			}
 
 			if supportedVersion.GroupVersion == machineAPIGroup.String() {
-				c.HasMachineAPI = true
+				caps.HasMachineAPI = true
 				break
 			}
 		}
 	}
-	return nil
+	return caps, nil
 }
