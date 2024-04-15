@@ -238,7 +238,6 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					By("ensuring status is set")
 					Eventually(func(g Gomega) {
 						nhc = getNodeHealthCheck()
-						g.Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
 						g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
 						g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(2))
 						g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
@@ -285,7 +284,6 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					By("ensuring status is set")
 					Eventually(func(g Gomega) {
 						nhc = getNodeHealthCheck()
-						g.Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
 						g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
 						g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
 						g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
@@ -407,7 +405,6 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 				By("ensuring status is set")
 				Eventually(func(g Gomega) {
 					nhc = getNodeHealthCheck()
-					g.Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
 					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
 					g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
 					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))

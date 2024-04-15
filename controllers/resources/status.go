@@ -13,15 +13,6 @@ import (
 )
 
 func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationCR *unstructured.Unstructured) {
-	if _, exists := nhc.Status.InFlightRemediations[remediationCR.GetName()]; !exists {
-		if nhc.Status.InFlightRemediations == nil {
-			nhc.Status.InFlightRemediations = make(map[string]metav1.Time, 1)
-		}
-		if _, ok := nhc.Status.InFlightRemediations[node.GetName()]; !ok {
-			nhc.Status.InFlightRemediations[node.GetName()] = remediationCR.GetCreationTimestamp()
-		}
-	}
-
 	var templateName string
 	if remediationCR.GetAnnotations() != nil {
 		templateName = remediationCR.GetAnnotations()[annotations.TemplateNameAnnotation]
@@ -68,7 +59,6 @@ func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.
 }
 
 func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck) {
-	delete(nhc.Status.InFlightRemediations, nodeName)
 	for i, _ := range nhc.Status.UnhealthyNodes {
 		if nhc.Status.UnhealthyNodes[i].Name == nodeName {
 			for _, remediation := range nhc.Status.UnhealthyNodes[i].Remediations {
