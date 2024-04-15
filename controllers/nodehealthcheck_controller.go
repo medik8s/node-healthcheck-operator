@@ -559,7 +559,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	if err != nil {
 		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained
 		if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
-			msg := fmt.Sprintf("Skipped remediation of node: %s,because node lease is already taken", node.GetName())
+			msg := fmt.Sprintf("Skipped remediation of node: %s, because node lease is already taken", node.GetName())
 			log.Info(msg)
 			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 			return leaseRequeueIn, nil
