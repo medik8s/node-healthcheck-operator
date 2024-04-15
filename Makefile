@@ -117,7 +117,7 @@ KUBECTL=oc
 endif
 
 .PHONY: all
-all: container-build container-push
+all: container-build-ocp container-push
 
 ##@ General
 
@@ -505,4 +505,4 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 	make docker-push bundle-push index-build index-push
 
 .PHONY: build-and-run
-build-and-run: container-build container-push bundle-run
+build-and-run: container-build-ocp container-push bundle-run
