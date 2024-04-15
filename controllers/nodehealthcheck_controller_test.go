@@ -750,7 +750,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(2 + 1 /*2 seconds is DefaultLeaseDuration (mocked) + 1 second buffer (mocked)  */)))
 						Expect(lease.Spec.AcquireTime).ToNot(BeNil())
 						Expect(*lease.Spec.AcquireTime).To(Equal(*lease.Spec.RenewTime))
-						verifyEvent("Warning", utils.EventReasonRemediationSkipped, fmt.Sprintf("Skipped remediation of node: %s,because node lease is already taken", unhealthyNodeName))
+						verifyEvent("Warning", utils.EventReasonRemediationSkipped, fmt.Sprintf("Skipped remediation of node: %s, because node lease is already taken", unhealthyNodeName))
 						leaseExpireTime := lease.Spec.AcquireTime.Time.Add(mockRequeueDurationIfLeaseTaken*3 + mockLeaseBuffer)
 						timeLeftForLease := leaseExpireTime.Sub(time.Now())
 						//Wait for lease to be extended
