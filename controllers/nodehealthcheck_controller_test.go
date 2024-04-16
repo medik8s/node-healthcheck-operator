@@ -806,6 +806,37 @@ var _ = Describe("Node Health Check CR", func() {
 
 			})
 
+			When("a Succeded remediation times out", func() {
+				BeforeEach(func() {
+					mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
+					setupObjects(1, 2, true)
+				})
+
+				It("should not set time out annotation", func() {
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(errors.IsNotFound(err)).To(BeFalse())
+
+					// Changing remediation's Status to Succeeded
+					cr = updateStatusCondition(cr)
+					Expect(k8sClient.Status().Update(context.Background(), cr)).To(Succeed())
+
+					// Wait for lease to expire
+					lease := &coordv1.Lease{}
+					err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+					leaseExpireTime := lease.Spec.AcquireTime.Time.Add(mockRequeueDurationIfLeaseTaken*3 + mockLeaseBuffer)
+					timeLeftForLease := leaseExpireTime.Sub(time.Now())
+					time.Sleep(timeLeftForLease + time.Millisecond*100)
+
+					// Verify that the remediation CR doesn't have the timeout annotation
+					Consistently(func(g Gomega) {
+						err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						Expect(errors.IsNotFound(err)).To(BeFalse())
+						_, isNhcTimeOutSet := cr.GetAnnotations()[commonannotations.NhcTimedOut]
+						Expect(isNhcTimeOutSet).To(BeFalse())
+					}, "10s", "1s").Should(Succeed())
+				})
+			})
 		})
 
 		Context("with a single escalating remediation", func() {
@@ -1038,6 +1069,47 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(getRemediationCRForMultiKindSupportTemplate(multiSupportTemplateRef.Name)).To(BeNil())
 					g.Expect(getRemediationCRForMultiKindSupportTemplate(secondMultiSupportTemplateRef.Name)).To(BeNil())
 				}, "5s", "200ms").Should(Succeed(), "CR wasn't deleted")
+			})
+
+			When("a Succeded remediation times out", func() {
+				It("should not set timeout remediation and continue with the next remediation", func() {
+					cr := newRemediationCRForNHC(unhealthyNodeName, underTest)
+					// first call should fail, because the node gets unready in a few seconds only
+					err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+					Expect(errors.IsNotFound(err)).To(BeTrue())
+
+					// wait until nodes are unhealthy
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+					}, time.Second*10, time.Millisecond*300).Should(Succeed())
+
+					// Set Remediation Succeded condition
+					cr = updateStatusCondition(cr)
+					Expect(k8sClient.Status().Update(context.Background(), cr)).To(Succeed())
+
+					// Wait for 1st remediation to time out and 2nd to start
+					lease := &coordv1.Lease{}
+					err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
+					Expect(err).ToNot(HaveOccurred())
+
+					leaseExpireTime := lease.Spec.AcquireTime.Time.Add(firstRemediationTimeout + mockLeaseBuffer)
+					timeLeftForLease := leaseExpireTime.Sub(time.Now())
+					time.Sleep(timeLeftForLease + time.Millisecond*100)
+
+					// Verify that the remediation CR doesn't have the timeout annotation
+					Consistently(func(g Gomega) {
+						err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+						Expect(errors.IsNotFound(err)).To(BeFalse())
+						_, isNhcTimeOutSet := cr.GetAnnotations()[commonannotations.NhcTimedOut]
+						Expect(isNhcTimeOutSet).To(BeFalse())
+					}, "10s", "1s").Should(Succeed())
+
+					// Verify the 2nd remediation exists
+					newCr := newRemediationCRForNHCSecondRemediation(unhealthyNodeName, underTest)
+					Eventually(func() error {
+						return k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)
+					}, time.Second*10, time.Millisecond*300).Should(Succeed())
+				})
 			})
 
 			When("unhealthy condition changes", func() {
@@ -2133,6 +2205,30 @@ func newNode(name string, t v1.NodeConditionType, s v1.ConditionStatus, isContro
 			},
 		},
 	}
+}
+
+// updateStatusCondition sets the Status.Condition Succeeded on an unstructured object
+func updateStatusCondition(o *unstructured.Unstructured) *unstructured.Unstructured {
+	// add .Status to the object if it doesn't exist
+	if _, found, _ := unstructured.NestedFieldNoCopy(o.Object, "status"); !found {
+		o.Object["status"] = make(map[string]interface{})
+	}
+
+	// add .Status.Conditions if it doesn't exist
+	if _, found, _ := unstructured.NestedFieldNoCopy(o.Object, "status", "conditions"); !found {
+		o.Object["status"].(map[string]interface{})["conditions"] = []interface{}{}
+	}
+
+	// add a condition to .Status.Conditions if it doesn't exist
+	conditions := make([]interface{}, 0)
+	conditions = append(conditions, map[string]interface{}{
+		"type":               "Succeeded",
+		"status":             "True",
+		"lastTransitionTime": time.Now().Format(time.RFC3339),
+	})
+
+	o.Object["status"].(map[string]interface{})["conditions"] = conditions
+	return o
 }
 
 func clearEvents() {

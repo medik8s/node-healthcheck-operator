@@ -570,8 +570,13 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		// Lease is overdue
 		if _, isLeaseOverDue := err.(resources.LeaseOverDueError); isLeaseOverDue {
 			now := currentTime()
-			if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: now}); timeOutErr != nil {
-				return nil, timeOutErr
+			// add timeout annotation to remediation CR if it not Succeeded yet
+			if !remediationSucceeded(remediationCR, log) {
+				if timeOutErr := r.addTimeOutAnnotation(rm, remediationCR, metav1.Time{Time: now}); timeOutErr != nil {
+					return nil, timeOutErr
+				}
+			} else {
+				log.Info("skipping timeout annotation on remediation CR: Succeeded condition is True", "CR name", remediationCR.GetName())
 			}
 			startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
 				return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
@@ -648,9 +653,13 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		log.Info("remediation failed")
 	}
 
-	// add timeout annotation to remediation CR
-	if err := r.addTimeOutAnnotation(rm, remediationCR, now); err != nil {
-		return nil, err
+	// add timeout annotation to remediation CR if it not Succeeded yet
+	if !remediationSucceeded(remediationCR, log) {
+		if err := r.addTimeOutAnnotation(rm, remediationCR, now); err != nil {
+			return nil, err
+		}
+	} else {
+		log.Info("skipping timeout annotation on remediation CR: Succeeded condition is True", "CR name", remediationCR.GetName())
 	}
 	// update status (important to do this after CR update, else we won't retry that update in case of error)
 	startedRemediation.TimedOut = &now
@@ -910,6 +919,11 @@ func getTimeoutAt(remediation *remediationv1alpha1.Remediation, configuredTimeou
 func remediationFailed(remediationCR *unstructured.Unstructured, log logr.Logger) bool {
 	succeededCondition := getCondition(remediationCR, commonconditions.SucceededType, log)
 	return succeededCondition != nil && succeededCondition.Status == metav1.ConditionFalse
+}
+
+func remediationSucceeded(remediationCR *unstructured.Unstructured, log logr.Logger) bool {
+	succeededCondition := getCondition(remediationCR, commonconditions.SucceededType, log)
+	return succeededCondition != nil && succeededCondition.Status == metav1.ConditionTrue
 }
 
 func getCondition(remediationCR *unstructured.Unstructured, conditionType string, log logr.Logger) *metav1.Condition {
