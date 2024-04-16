@@ -1,0 +1,30 @@
+
+# Prometheus Monitor Service (Metrics)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/component: controller-manager
+  name: node-healthcheck-controller-manager-metrics-monitor
+  namespace: system
+spec:
+  endpoints:
+  - interval: 5s
+    port: https
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials:
+        name: prometheus-user-workload-token
+        key: token
+    tlsConfig:
+      ca:
+        configMap:
+          name: node-healthcheck-ca-bundle
+          key: service-ca.crt
+      serverName: node-healthcheck-controller-manager-metrics-service.system.svc
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller-manager
+      app.kubernetes.io/name: node-healthcheck-operator
+      app.kubernetes.io/instance: metrics

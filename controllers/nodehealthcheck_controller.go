@@ -28,6 +28,7 @@ import (
 	commonconditions "github.com/medik8s/common/pkg/conditions"
 	"github.com/medik8s/common/pkg/etcd"
 	commonevents "github.com/medik8s/common/pkg/events"
+	commonlabels "github.com/medik8s/common/pkg/labels"
 	"github.com/medik8s/common/pkg/lease"
 	"github.com/medik8s/common/pkg/nodes"
 	"github.com/pkg/errors"
@@ -178,6 +179,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// set counters to zero for disabled NHC
 	nhc.Status.ObservedNodes = pointer.Int(0)
 	nhc.Status.HealthyNodes = pointer.Int(0)
+	//clear deprecated field before it's removed from the API
+	nhc.Status.InFlightRemediations = nil
 
 	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
@@ -350,6 +353,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// update unhealthy node in status
 		resources.UpdateStatusNodeUnhealthy(&node, nhc)
 		if skipRemediation {
+			continue
+		}
+
+		if r.isNodeRemediationExcluded(&node) {
+			msg := fmt.Sprintf("Skipped remediation because node %s is marked to exclude remediations", node.GetName())
+			log.Info(msg)
+			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 			continue
 		}
 
@@ -551,6 +561,9 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	if err != nil {
 		// An unhealthy node exists, but remediation couldn't be created because lease wasn't obtained
 		if _, isLeaseAlreadyTaken := err.(lease.AlreadyHeldError); isLeaseAlreadyTaken {
+			msg := fmt.Sprintf("Skipped remediation of node: %s, because node lease is already taken", node.GetName())
+			log.Info(msg)
+			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 			return leaseRequeueIn, nil
 		}
 
@@ -711,9 +724,9 @@ func (r *NodeHealthCheckReconciler) patchStatus(ctx context.Context, log logr.Lo
 	} else if len(nhc.Spec.PauseRequests) > 0 {
 		nhc.Status.Phase = remediationv1alpha1.PhasePaused
 		nhc.Status.Reason = fmt.Sprintf("NHC is paused: %s", strings.Join(nhc.Spec.PauseRequests, ","))
-	} else if len(nhc.Status.InFlightRemediations) > 0 {
+	} else if r.isRemediating(nhc.Status.UnhealthyNodes) {
 		nhc.Status.Phase = remediationv1alpha1.PhaseRemediating
-		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.InFlightRemediations))
+		nhc.Status.Reason = fmt.Sprintf("NHC is remediating %v nodes", len(nhc.Status.UnhealthyNodes))
 	} else {
 		nhc.Status.Phase = remediationv1alpha1.PhaseEnabled
 		nhc.Status.Reason = "NHC is enabled, no ongoing remediation"
@@ -875,6 +888,24 @@ func (r *NodeHealthCheckReconciler) addRemediationTemplateCRWatch(templateCR *un
 	r.watches[key] = struct{}{}
 	r.Log.Info("added watch for remediation template CRs", "kind", templateCR.GetKind())
 	return nil
+}
+
+func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node) bool {
+	if nodeLabels := node.GetLabels(); nodeLabels == nil {
+		return false
+	} else {
+		_, isNodeExcluded := nodeLabels[commonlabels.ExcludeFromRemediation]
+		return isNodeExcluded
+	}
+}
+
+func (r *NodeHealthCheckReconciler) isRemediating(unhealthyNodes []*remediationv1alpha1.UnhealthyNode) bool {
+	for _, unhealthyNode := range unhealthyNodes {
+		if len(unhealthyNode.Remediations) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func getTimeoutAt(remediation *remediationv1alpha1.Remediation, configuredTimeout *time.Duration) time.Time {

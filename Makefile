@@ -117,7 +117,7 @@ KUBECTL=oc
 endif
 
 .PHONY: all
-all: container-build container-push
+all: container-build-ocp container-push
 
 ##@ General
 
@@ -357,6 +357,7 @@ bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and me
 
 .PHONY: bundle-ocp
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
+	$(shell rm -r bundle) # OCP bundle should be created from scratch
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
@@ -377,6 +378,10 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
 		$(MAKE) bundle-update
 
+.PHONY: bundle-ocp-ci
+bundle-ocp-ci: yq ## Generate OCP bundle for CI, without overriding the image pull-spec (CI only)
+	IMG="$(shell $(YQ) -r '.metadata.annotations.containerImage' ${CSV})" \
+		$(MAKE) bundle-ocp
 
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
@@ -427,7 +432,7 @@ bundle-reset: ## Revert all version or build date related changes
 	sed -r -i "/replaces:.*/d" ${CSV}
 
 .PHONY: bundle-build-ocp
-bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image.
+bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s
@@ -435,7 +440,7 @@ bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-metrics
-bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for k8s.
+bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for K8s with metric related configuration
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
@@ -482,21 +487,22 @@ deploy-snr:
 
 ##@ Targets used by CI
 
-.PHONY: container-build
-container-build: ## Build containers
+.PHONY: container-build-ocp
+container-build-ocp: ## Build containers for OCP
 	make docker-build bundle-build-ocp
 
 .PHONY: container-build-k8s
-container-build-k8s: ## Build containers
+container-build-k8s: ## Build containers for K8s
 	make docker-build bundle-build-k8s
 
 .PHONY: container-build-metrics
-container-build-metrics: ## Build containers
+container-build-metrics: ## Build containers for K8s with metric related configuration
 	make docker-build bundle-build-metrics
+
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
 	make docker-push bundle-push index-build index-push
 
 .PHONY: build-and-run
-build-and-run: container-build container-push bundle-run
+build-and-run: container-build-ocp container-push bundle-run
