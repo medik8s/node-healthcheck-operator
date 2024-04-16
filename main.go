@@ -54,7 +54,6 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
@@ -138,20 +137,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr)
+	caps, err := cluster.NewCapabilities(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to determine cluster capabilities")
+		os.Exit(1)
+	}
+
+	setupLog.Info("Cluster capabilities", "IsOnOpenshift", caps.IsOnOpenshift, "HasMachineAPI", caps.HasMachineAPI)
+
+	upgradeChecker, err := cluster.NewClusterUpgradeStatusChecker(mgr, caps)
 	if err != nil {
 		setupLog.Error(err, "unable initialize cluster upgrade checker")
 		os.Exit(1)
 	}
 
-	onOpenshift, err := utils.IsOnOpenshift(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "failed to check if we run on Openshift")
-		os.Exit(1)
-	}
-
 	mhcEvents := make(chan event.GenericEvent)
-	mhcChecker, err := mhc.NewMHCChecker(mgr, onOpenshift, mhcEvents)
+	mhcChecker, err := mhc.NewMHCChecker(mgr, caps, mhcEvents)
 	if err != nil {
 		setupLog.Error(err, "unable initialize MHC checker")
 		os.Exit(1)
@@ -167,14 +168,14 @@ func main() {
 		Recorder:                    mgr.GetEventRecorderFor("NodeHealthCheck"),
 		ClusterUpgradeStatusChecker: upgradeChecker,
 		MHCChecker:                  mhcChecker,
-		OnOpenShift:                 onOpenshift,
+		Capabilities:                caps,
 		MHCEvents:                   mhcEvents,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)
 	}
 
-	if onOpenshift {
+	if caps.HasMachineAPI {
 		featureGateMHCControllerDisabledEvents := make(chan event.GenericEvent)
 		featureGateAccessor := featuregates.NewAccessor(mgr.GetConfig(), featureGateMHCControllerDisabledEvents)
 		if err = mgr.Add(featureGateAccessor); err != nil {
@@ -205,7 +206,7 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	// Do some initialization
-	initializer := initializer.New(mgr, ctrl.Log.WithName("Initializer"))
+	initializer := initializer.New(mgr, caps, ctrl.Log.WithName("Initializer"))
 	if err = mgr.Add(initializer); err != nil {
 		setupLog.Error(err, "failed to add initializer to the manager")
 		os.Exit(1)

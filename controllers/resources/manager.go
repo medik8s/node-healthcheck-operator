@@ -51,23 +51,23 @@ func (r RemediationCRNotOwned) Error() string { return r.msg }
 
 type manager struct {
 	client.Client
-	ctx          context.Context
-	log          logr.Logger
-	onOpenshift  bool
-	leaseManager LeaseManager
-	recorder     record.EventRecorder
+	ctx           context.Context
+	log           logr.Logger
+	hasMachineAPI bool
+	leaseManager  LeaseManager
+	recorder      record.EventRecorder
 }
 
 var _ Manager = &manager{}
 
-func NewManager(c client.Client, ctx context.Context, log logr.Logger, onOpenshift bool, leaseManager LeaseManager, recorder record.EventRecorder) Manager {
+func NewManager(c client.Client, ctx context.Context, log logr.Logger, hasMachineAPI bool, leaseManager LeaseManager, recorder record.EventRecorder) Manager {
 	return &manager{
-		Client:       c,
-		ctx:          ctx,
-		log:          log.WithName("resource manager"),
-		onOpenshift:  onOpenshift,
-		leaseManager: leaseManager,
-		recorder:     recorder,
+		Client:        c,
+		ctx:           ctx,
+		log:           log.WithName("resource manager"),
+		hasMachineAPI: hasMachineAPI,
+		leaseManager:  leaseManager,
+		recorder:      recorder,
 	}
 }
 
@@ -78,7 +78,7 @@ func (m *manager) GenerateRemediationCRForNode(node *corev1.Node, owner client.O
 	// also set the node's machine as owner ref if possible
 	// TODO also handle CAPI clusters / machines
 	var machineOwnerRef *metav1.OwnerReference
-	if m.onOpenshift {
+	if m.hasMachineAPI {
 		ref, machineNamespace, err := m.getOwningMachineWithNamespace(node)
 		if err != nil {
 			return nil, err
