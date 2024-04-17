@@ -424,6 +424,7 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(nhc *remediationv
 		nodeConditionByType[nc.Type] = nc
 	}
 
+	isNodeRemediating := r.isRemediatingNode(nhc.Status.UnhealthyNodes, node.GetName())
 	var expiresAfter *time.Duration
 	for _, c := range nhc.Spec.UnhealthyConditions {
 		n, exists := nodeConditionByType[c.Type]
@@ -435,7 +436,10 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(nhc *remediationv
 			if now.After(n.LastTransitionTime.Add(c.Duration.Duration)) {
 				// unhealthy condition duration expired, node is unhealthy
 				r.Log.Info("Node matches unhealthy condition", "node", node.GetName(), "condition type", c.Type, "condition status", c.Status)
-				commonevents.NormalEventf(r.Recorder, nhc, utils.EventReasonDetectedUnhealthy, "Node matches unhealthy condition. Node %q, condition type %q, condition status %q", node.GetName(), c.Type, c.Status)
+				//In case a remediation is already created no need to repeat this event
+				if !isNodeRemediating {
+					commonevents.NormalEventf(r.Recorder, nhc, utils.EventReasonDetectedUnhealthy, "Node matches unhealthy condition. Node %q, condition type %q, condition status %q", node.GetName(), c.Type, c.Status)
+				}
 				return true, nil
 			} else {
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
@@ -906,6 +910,15 @@ func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node) boo
 func (r *NodeHealthCheckReconciler) isRemediating(unhealthyNodes []*remediationv1alpha1.UnhealthyNode) bool {
 	for _, unhealthyNode := range unhealthyNodes {
 		if len(unhealthyNode.Remediations) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *NodeHealthCheckReconciler) isRemediatingNode(unhealthyNodes []*remediationv1alpha1.UnhealthyNode, nodeName string) bool {
+	for _, unhealthyNode := range unhealthyNodes {
+		if nodeName == unhealthyNode.Name && len(unhealthyNode.Remediations) > 0 {
 			return true
 		}
 	}

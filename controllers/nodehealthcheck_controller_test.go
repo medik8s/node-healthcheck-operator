@@ -806,6 +806,20 @@ var _ = Describe("Node Health Check CR", func() {
 
 			})
 
+			When("node stays unhealthy", func() {
+				BeforeEach(func() {
+					//mocking lease in order to reassure lease extension will trigger a second reconcile (in which the event shouldn't be triggered)
+					mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
+					setupObjects(1, 2, true)
+				})
+				It("Node unhealthy event should occur once", func() {
+					verifyEvent("Normal", utils.EventReasonDetectedUnhealthy, fmt.Sprintf("Node matches unhealthy condition. Node %q, condition type %q, condition status %q", unhealthyNodeName, "Ready", "Unknown"))
+					//After verification event is extracted so this is how we verify it occurred only once
+					verifyNoEvent("Normal", utils.EventReasonDetectedUnhealthy, fmt.Sprintf("Node matches unhealthy condition. Node %q, condition type %q, condition status %q", unhealthyNodeName, "Ready", "Unknown"))
+
+				})
+			})
+
 			When("a Succeded remediation times out", func() {
 				BeforeEach(func() {
 					mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
