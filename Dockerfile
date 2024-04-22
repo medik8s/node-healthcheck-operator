@@ -1,20 +1,29 @@
 # Build the manager binary
 FROM quay.io/centos/centos:stream9 AS builder
-RUN yum install git golang -y
+RUN dnf install -y jq git \
+    && dnf clean all -y
 
 WORKDIR /workspace
 
-# Copy the Go Modules manifests
+# Copy the Go Modules manifests for detecting Go version
 COPY go.mod go.mod
 COPY go.sum go.sum
 
-# use latest Go z release
-ENV GOTOOLCHAIN=auto
+RUN \
+    # get Go version from mod file
+    export GO_VERSION=$(grep -E "go [[:digit:]]\.[[:digit:]][[:digit:]]" go.mod | awk '{print $2}') && \
+    echo ${GO_VERSION} && \
+    # find filename for latest z version from Go download page
+    export GO_FILENAME=$(curl -sL 'https://go.dev/dl/?mode=json&include=all' | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].files[] | select(.os == \"linux\" and .arch == \"amd64\") | .filename") && \
+    echo ${GO_FILENAME} && \
+    # download and unpack
+    curl -sL -o go.tar.gz "https://golang.org/dl/${GO_FILENAME}" && \
+    tar -C /usr/local -xzf go.tar.gz && \
+    rm go.tar.gz
 
-# Ensure correct Go version
-RUN export GO_VERSION=$(grep -E "go [[:digit:]]\.[[:digit:]][[:digit:]]" go.mod | awk '{print $2}') && \
-    go get go@${GO_VERSION} && \
-    go version
+# add Go to PATH
+ENV PATH="/usr/local/go/bin:${PATH}"
+RUN go version
 
 # Copy the go source
 COPY vendor/ vendor/
