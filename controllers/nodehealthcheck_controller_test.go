@@ -1798,6 +1798,8 @@ var _ = Describe("Node Health Check CR", func() {
 	Context("Node updates", func() {
 		var oldConditions []v1.NodeCondition
 		var newConditions []v1.NodeCondition
+		var oldLabels map[string]string
+		var newLabels map[string]string
 
 		When("no Ready condition exists on new node", func() {
 			BeforeEach(func() {
@@ -1925,6 +1927,68 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 			It("should request reconcile", func() {
 				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
+			})
+		})
+
+		When("labels are equal", func() {
+			BeforeEach(func() {
+				oldLabels = map[string]string{
+					commonLabels.ExcludeFromRemediation: "true",
+				}
+				newLabels = map[string]string{
+					commonLabels.ExcludeFromRemediation: "true",
+				}
+			})
+			It("should not request reconcile", func() {
+				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeFalse())
+			})
+		})
+
+		When("label ExcludeFromRemediation is added", func() {
+			BeforeEach(func() {
+				oldLabels = map[string]string{}
+				newLabels = map[string]string{
+					commonLabels.ExcludeFromRemediation: "true",
+				}
+			})
+			It("should request reconcile", func() {
+				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeTrue())
+			})
+		})
+
+		When("label ExcludeFromRemediation is removed", func() {
+			BeforeEach(func() {
+				oldLabels = map[string]string{
+					commonLabels.ExcludeFromRemediation: "true",
+				}
+				newLabels = map[string]string{}
+			})
+			It("should request reconcile", func() {
+				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeTrue())
+			})
+		})
+
+		When("A label different than ExcludeFromRemediation is added", func() {
+			BeforeEach(func() {
+				oldLabels = map[string]string{}
+				newLabels = map[string]string{
+					"some-random-label": "true",
+				}
+			})
+			It("should not request reconcile", func() {
+				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeFalse())
+			})
+		})
+
+		When("A label different than ExcludeFromRemediation is removed", func() {
+			BeforeEach(func() {
+				oldLabels = map[string]string{
+					"some-random-label": "true",
+				}
+				newLabels = map[string]string{}
+			})
+			It("should not request reconcile", func() {
+				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeFalse())
 			})
 		})
 	})
