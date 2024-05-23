@@ -7,7 +7,7 @@
 ## Introduction
 
 Hardware is imperfect, and software contains bugs. When node level failures such
-as kernel hangs or dead NICs occur, the work required from the cluster does not
+as kernel freezes or dead NICs occur, the work required from the cluster does not
 decrease - workloads from affected nodes need to be restarted somewhere.
 
 However, some workloads, such as RWO volumes and StatefulSets, may require
