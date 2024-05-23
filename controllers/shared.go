@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
+	commonLabels "github.com/medik8s/common/pkg/labels"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,7 +23,17 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 	if newNode, ok = ev.ObjectNew.(*v1.Node); !ok {
 		return false
 	}
-	return conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
+
+	return labelsNeedReconcile(oldNode.Labels, newNode.Labels) ||
+		conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
+}
+
+func labelsNeedReconcile(oldLabels, newLabels map[string]string) bool {
+	// Check if the ExcludeFromRemediation label was added or removed
+	_, existsInOldLabels := oldLabels[commonLabels.ExcludeFromRemediation]
+	_, existsInNewLabels := newLabels[commonLabels.ExcludeFromRemediation]
+
+	return existsInOldLabels != existsInNewLabels
 }
 
 func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bool {
