@@ -357,7 +357,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 
 		if r.isNodeRemediationExcluded(&node) {
-			msg := fmt.Sprintf("Skipped remediation because node %s is marked to exclude remediations", node.GetName())
+			msg := fmt.Sprintf("Remediation skipped on node %s: node has Exclude from Remediation label", node.GetName())
 			log.Info(msg)
 			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 			continue
