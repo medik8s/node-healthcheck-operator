@@ -34,14 +34,14 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       VERSION: ${{ inputs.version }}
-      #PREVIOUS_VERSION: ${{ inputs.previous_version }}
+      PREVIOUS_VERSION: ${{ inputs.previous_version }}
       SKIP_RANGE_LOWER: ${{ inputs.skip_range_lower }}
       OCP_VERSION: ${{ inputs.ocp_version }}
     steps:
       - name: Log inputs
         run: |
           echo "Building version: ${VERSION},"
-          #echo "which replaces version: ${PREVIOUS_VERSION}."
+          echo "which replaces version: ${PREVIOUS_VERSION}."
           echo "Lower skip range bound: ${SKIP_RANGE_LOWER}."
 
       - name: Checkout code
@@ -68,6 +68,7 @@ jobs:
         # https://github.com/marketplace/actions/github-release-create-update-and-upload-assets
         uses: meeDamian/github-release@2.0
         with:
+          tag: v${{ env.VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true
           body: |
