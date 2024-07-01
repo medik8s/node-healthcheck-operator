@@ -129,10 +129,10 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 
 	if annotations.HasMultipleTemplatesAnnotation(template) {
 		remediationCR.SetGenerateName(fmt.Sprintf("%s-", name))
-		remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
 	} else {
 		remediationCR.SetName(name)
 	}
+	remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
 
 	remediationCR.SetNamespace(template.GetNamespace())
 	remediationCR.SetResourceVersion("")
