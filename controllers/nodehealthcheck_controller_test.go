@@ -996,8 +996,6 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(newCr), newCr)).To(Succeed())
 					g.Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
 					g.Expect(newCr.GetName()).To(Equal(unhealthyNodeName))
-					g.Expect(newCr.GetAnnotations()).ToNot(HaveKey(Equal(commonannotations.NodeNameAnnotation)))
-
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
 				// get updated NHC

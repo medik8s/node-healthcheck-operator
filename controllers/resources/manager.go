@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -127,11 +128,11 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
 
 	if annotations.HasMultipleTemplatesAnnotation(template) {
-		remediationCR.SetGenerateName(name)
-		remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
+		remediationCR.SetGenerateName(fmt.Sprintf("%s-", name))
 	} else {
 		remediationCR.SetName(name)
 	}
+	remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
 
 	remediationCR.SetNamespace(template.GetNamespace())
 	remediationCR.SetResourceVersion("")
