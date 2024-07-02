@@ -312,7 +312,6 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMAGE)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	$(MAKE) add-metadata-dependency
 	$(MAKE) bundle-validate
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
@@ -345,10 +344,6 @@ add-replaces-field: ## Add replaces field to the CSV
 add-community-edition-to-display-name: ## Add the "Community Edition" suffix to the display name
 	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
 
-.PHONY: add-metadata-dependency
-add-metadata-dependency: ## Add metadata/dependency.yaml to the bundle
-	cp config/metadata/dependencies.yaml bundle/metadata/
-
 .PHONY: bundle-okd
 bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
@@ -368,7 +363,6 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
 	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
 	$(MAKE) add-console-plugin-annotation
-	$(MAKE) add-metadata-dependency
 	# add OCP annotations
 	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
 	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
