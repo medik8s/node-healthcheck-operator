@@ -13,7 +13,7 @@ spec:
           - "--http2-disable"
           - "--upstream=http://127.0.0.1:8080/"
           - "--logtostderr=true"
-          - "--v=10"
+          - "--v=0"
           - "--tls-cert-file=/etc/tls/private/tls.crt"
           - "--tls-private-key-file=/etc/tls/private/tls.key"
         volumeMounts:
