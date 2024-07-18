@@ -35,9 +35,6 @@ For configuration of NHC, please follow instructions in the [configuration guide
 
 ## Installing a remediator
 
-Currently, NHC has the [Self Node Remediation (SNR) operator](https://www.medik8s.io/remediation/self-node-remediation/self-node-remediation/)
-configured as dependency. This means that SNR will be automatically installed by OLM.
-
-If you want to use another remediator, you have to install it manually.
+You need to install a remediator manually.
 You can find a list of remediators known to work with NHC on the
 [Medik8s website](https://www.medik8s.io/remediation/remediation/#implementations)

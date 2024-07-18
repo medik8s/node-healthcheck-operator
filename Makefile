@@ -386,14 +386,6 @@ bundle-ocp-ci: yq ## Generate OCP bundle for CI, without overriding the image pu
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
-	sed -r -i "/displayName: Node Health Check Operator/ i\    " ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    ### Notes" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    In case Pod Security Admission is used, please allow Pods to run" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    in the \"privileged\" Pod Security Standard policy." ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    This is required by the dependent Self Node Remediation operator" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    for rebooting unhealthy nodes, and can be done by labeling the" ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    the target namespace accordingly before installing NHC." ${CSV}
-	sed -r -i "/displayName: Node Health Check Operator/ i\    For details see https://kubernetes.io/docs/concepts/security/pod-security-admission/ ." ${CSV}
 	$(MAKE) add-community-edition-to-display-name
 	$(MAKE) bundle-validate
 

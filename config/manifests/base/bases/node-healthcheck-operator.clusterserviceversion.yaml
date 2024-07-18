@@ -7,7 +7,7 @@ metadata:
     categories: OpenShift Optional
     containerImage: quay.io/medik8s/node-healthcheck-operator:v0.0.1
     createdAt: ""
-    description: Detect failed Nodes and trigger remediation with e.g. Self Node Remediation.
+    description: Detect failed Nodes and trigger remediation with a remediation operator.
     olm.skipRange: '>=0.0.1'
     operatorframework.io/suggested-namespace: openshift-workload-availability
     operatorframework.io/suggested-namespace-template: '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"openshift-workload-availability","annotations":{"openshift.io/node-selector":""}}}'
@@ -191,8 +191,6 @@ spec:
     - Self Node Remediation (SNR)
     - Fence Agents Remediation (FAR)
     - Machine Deletion Remediation (MDR)
-
-    SNR is installed automatically when installing NHC.
 
     #### Self Node Remediation (SNR)
     SNR uses watchdog timers and heuristics to ensure nodes enter a safe state
