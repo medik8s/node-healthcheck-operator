@@ -8,11 +8,6 @@ when debugging issues, since many steps can potentially fail. See also our
 
 - various internal components are initialized
 - RBAC configuration is updated for [role aggregation with remediators](./contributing.md#rbac-and-role-aggregation)
-- old default configs are updated if found:
-  - update selector to !control-plane && !master
-  - update remediator to SelfNodeRemediation
-  - **Note** due to the increasing number of potential configurations, the latest
-    version of NHC is not creating a default config CR anymore
 - the UI plugin is configured (on OKD / OpenShift only)
 
 ### When a NHC CR is created / updated / deleted, or an observed node's status condition changes
