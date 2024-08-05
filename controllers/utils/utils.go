@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/api/machine/v1beta1"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 const (
@@ -146,4 +147,16 @@ func GetNodeNameFromCR(cr unstructured.Unstructured) string {
 		return ann[commonannotations.NodeNameAnnotation]
 	}
 	return cr.GetName()
+}
+
+// GetTemplateNameFromCR returns the template name from the given CR, if set.
+func GetTemplateNameFromCR(cr unstructured.Unstructured) string {
+	ann := cr.GetAnnotations()
+	if ann == nil {
+		return ""
+	}
+	if _, exists := ann[annotations.TemplateNameAnnotation]; exists {
+		return ann[annotations.TemplateNameAnnotation]
+	}
+	return ""
 }
