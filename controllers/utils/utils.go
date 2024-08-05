@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonannotations "github.com/medik8s/common/pkg/annotations"
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
@@ -132,4 +133,17 @@ func GetMachineNamespaceName(node *v1.Node) (namespace, name string, err error) 
 		return "", "", errors.Wrapf(err, "failed to split machine annotation value into namespace + name: %v", namespacedMachine)
 	}
 	return
+}
+
+// GetNodeNameFromCR returns the node name from the given CR. If the CR has a nodeName annotation, it will return its
+// value, otherwise it will return the CR name.
+func GetNodeNameFromCR(cr unstructured.Unstructured) string {
+	ann := cr.GetAnnotations()
+	if ann == nil {
+		return cr.GetName()
+	}
+	if _, exists := ann[commonannotations.NodeNameAnnotation]; exists {
+		return ann[commonannotations.NodeNameAnnotation]
+	}
+	return cr.GetName()
 }

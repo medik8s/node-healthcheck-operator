@@ -374,7 +374,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// check if we need to alert about a very old remediation CR
 		remediationCRs, err := resourceManager.ListRemediationCRs(utils.GetAllRemediationTemplates(nhc), func(cr unstructured.Unstructured) bool {
-			return cr.GetName() == node.GetName() && resources.IsOwner(&cr, nhc)
+			return utils.GetNodeNameFromCR(cr) == node.GetName() && resources.IsOwner(&cr, nhc)
 		})
 		for _, remediationCR := range remediationCRs {
 			isAlert, requeueAfter := r.alertOldRemediationCR(&remediationCR)
@@ -476,7 +476,7 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 
 		// check if node exists
 		for _, node := range allNodes {
-			if node.GetName() == cr.GetName() {
+			if node.GetName() == utils.GetNodeNameFromCR(cr) {
 				// node still exists
 				return false
 			}
@@ -495,13 +495,10 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 
 	log.Info("Going to delete orphaned remediation CRs", "count", len(orphanedRemediationCRs))
 	for _, cr := range orphanedRemediationCRs {
-		nodeName := cr.GetName()
-		if cr.GetAnnotations() != nil && len(cr.GetAnnotations()[commonannotations.NodeNameAnnotation]) > 0 {
-			nodeName = cr.GetAnnotations()[commonannotations.NodeNameAnnotation]
-		}
+		nodeName := utils.GetNodeNameFromCR(cr)
 		// do some housekeeping first. When the CRs are deleted, we never get back here...
 		if err := rm.CleanUp(nodeName); err != nil {
-			log.Error(err, "failed to clean up orphaned node", "node", cr.GetName())
+			log.Error(err, "failed to clean up orphaned node", "node", nodeName)
 			return err
 		}
 		resources.UpdateStatusNodeHealthy(nodeName, nhc)
@@ -700,10 +697,11 @@ func (r *NodeHealthCheckReconciler) isControlPlaneRemediationAllowed(ctx context
 	}
 	// if there is a control plane remediation CR for this node already, we can continue with the remediation process
 	for _, cr := range controlPlaneRemediationCRs {
-		if cr.GetName() == node.GetName() {
+		nodeName := utils.GetNodeNameFromCR(cr)
+		if nodeName == node.GetName() {
 			return true, nil
 		}
-		r.Log.Info("ongoing control plane remediation", "node", cr.GetName())
+		r.Log.Info("ongoing control plane remediation", "node", nodeName)
 	}
 	// if there is a control plane remediation CR for another cp node, don't start remediation for this node
 	if len(controlPlaneRemediationCRs) > 0 {
