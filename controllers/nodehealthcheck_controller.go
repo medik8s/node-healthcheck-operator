@@ -580,7 +580,8 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 				log.Info("skipping timeout annotation on remediation CR: Succeeded condition is True", "CR name", remediationCR.GetName())
 			}
 			startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
-				return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
+				return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind() &&
+					(r.TemplateName == "" || r.TemplateName == currentTemplate.GetName())
 			})
 
 			if startedRemediation == nil {
@@ -623,7 +624,8 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	}
 
 	startedRemediation := resources.FindStatusRemediation(node, nhc, func(r *remediationv1alpha1.Remediation) bool {
-		return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind()
+		return r.Resource.GroupVersionKind() == remediationCR.GroupVersionKind() &&
+			(r.TemplateName == "" || r.TemplateName == currentTemplate.GetName())
 	})
 
 	if startedRemediation == nil {
