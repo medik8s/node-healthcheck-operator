@@ -270,7 +270,7 @@ func (m *manager) ListRemediationCRs(remediationTemplates []*corev1.ObjectRefere
 				baseRemediationCR.GetAPIVersion())
 		} else {
 			for _, cr := range crList.Items {
-				if m.isMatchNodeTemplate(cr, m.extractNodeName(cr), template.Name) {
+				if m.isMatchNodeTemplate(cr, utils.GetNodeNameFromCR(cr), template.Name) {
 					remediationCRs = append(remediationCRs, cr)
 				}
 			}
@@ -310,7 +310,7 @@ func IsOwner(remediationCR *unstructured.Unstructured, owner client.Object) bool
 
 func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, error) {
 	remediationCRs, err := m.ListRemediationCRs(utils.GetAllRemediationTemplates(owner), func(cr unstructured.Unstructured) bool {
-		return (cr.GetName() == crName || m.extractNodeName(cr) == nodeName) && IsOwner(&cr, owner)
+		return (cr.GetName() == crName || utils.GetNodeNameFromCR(cr) == nodeName) && IsOwner(&cr, owner)
 	})
 	if err != nil {
 		m.log.Error(err, "failed to get remediation CRs for healthy node", "node", nodeName)
@@ -389,17 +389,6 @@ func (m *manager) isMatchNodeTemplate(cr unstructured.Unstructured, nodeName str
 		return cr.GetName() == nodeName
 	}
 	return ann[annotations.TemplateNameAnnotation] == templateName && ann[commonannotations.NodeNameAnnotation] == nodeName
-}
-
-func (m *manager) extractNodeName(cr unstructured.Unstructured) string {
-	if cr.GetAnnotations() == nil {
-		return cr.GetName()
-	}
-	ann := cr.GetAnnotations()
-	if _, isMultiSupported := ann[annotations.TemplateNameAnnotation]; !isMultiSupported {
-		return cr.GetName()
-	}
-	return ann[commonannotations.NodeNameAnnotation]
 }
 
 func createOwnerRef(obj client.Object) *metav1.OwnerReference {
