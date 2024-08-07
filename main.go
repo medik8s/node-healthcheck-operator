@@ -238,7 +238,7 @@ func getWebhookServer(tlsOpts []func(*tls.Config), log logr.Logger) webhook.Serv
 		TLSOpts: tlsOpts,
 	}
 
-	// check if OLM injected certs
+	// check if OLM injected certs exist
 	certs := []string{filepath.Join(WebhookCertDir, WebhookCertName), filepath.Join(WebhookCertDir, WebhookKeyName)}
 	certsInjected := true
 	for _, fname := range certs {
