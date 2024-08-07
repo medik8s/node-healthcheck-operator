@@ -56,6 +56,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -66,13 +67,14 @@ const (
 	MachineNamespace    = "openshift-machine-api"
 	leaseNs             = "medik8s-leases"
 
-	InfraRemediationGroup             = "test.medik8s.io"
-	InfraRemediationVersion           = "v1alpha1"
-	InfraRemediationKind              = "InfrastructureRemediation"
-	InfraRemediationTemplateKind      = "InfrastructureRemediationTemplate"
-	InfraRemediationTemplateName      = "infra-remediation-template"
-	MultipleSupportTemplateName       = "multi-supported-template"
-	SecondMultipleSupportTemplateName = "second-multi-supported-template"
+	InfraRemediationGroup                       = "test.medik8s.io"
+	InfraRemediationVersion                     = "v1alpha1"
+	InfraRemediationKind                        = "InfrastructureRemediation"
+	InfraRemediationTemplateKind                = "InfrastructureRemediationTemplate"
+	InfraRemediationTemplateName                = "infra-remediation-template"
+	InfraMultipleSupportRemediationTemplateName = "infra-multiple-remediation-template"
+	MultipleSupportTemplateName                 = "multi-supported-template"
+	SecondMultipleSupportTemplateName           = "second-multi-supported-template"
 )
 
 var (
@@ -85,7 +87,15 @@ var (
 		Name:       InfraRemediationTemplateName,
 	}
 
-	infraRemediationTemplate *unstructured.Unstructured
+	infraMultipleRemediationTemplateRef = &v1.ObjectReference{
+		APIVersion: InfraRemediationAPIVersion,
+		Kind:       InfraRemediationTemplateKind,
+		Namespace:  MachineNamespace,
+		Name:       InfraMultipleSupportRemediationTemplateName,
+	}
+
+	infraRemediationTemplate         *unstructured.Unstructured
+	infraMultipleRemediationTemplate *unstructured.Unstructured
 
 	multiSupportTemplateRef = &v1.ObjectReference{
 		APIVersion: InfraRemediationAPIVersion,
@@ -175,6 +185,10 @@ var _ = BeforeSuite(func() {
 	time.Sleep(time.Second)
 	infraRemediationTemplate = newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraRemediationTemplateName)
 	Expect(k8sClient.Create(context.Background(), infraRemediationTemplate)).To(Succeed())
+
+	infraMultipleRemediationTemplate = newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraMultipleSupportRemediationTemplateName)
+	infraMultipleRemediationTemplate.SetAnnotations(map[string]string{commonannotations.MultipleTemplatesSupportedAnnotation: "true"})
+	Expect(k8sClient.Create(context.Background(), infraMultipleRemediationTemplate)).To(Succeed())
 
 	testKind := "Metal3Remediation"
 	Expect(k8sClient.Create(context.Background(), newTestRemediationTemplateCRD(testKind))).To(Succeed())
@@ -389,9 +403,31 @@ func newTestRemediationTemplateCR(kind, namespace, name string) *unstructured.Un
 }
 
 func newRemediationCR(nodeName string, templateRef v1.ObjectReference, owner metav1.OwnerReference) *unstructured.Unstructured {
+
+	// check template if it supports multiple same kind remediation
+	// not needed (and fails for missing k8sclient) for MHC tests
+	mutipleSameKindSupported := false
+	if k8sClient != nil {
+		template := &unstructured.Unstructured{}
+		template.SetGroupVersionKind(templateRef.GroupVersionKind())
+		key := client.ObjectKey{
+			Namespace: templateRef.Namespace,
+			Name:      templateRef.Name,
+		}
+		Expect(k8sClient.Get(context.Background(), key, template)).To(Succeed())
+		if annotations.HasMultipleTemplatesAnnotation(template) {
+			mutipleSameKindSupported = true
+		}
+	}
+
 	cr := unstructured.Unstructured{}
-	cr.SetName(nodeName)
 	cr.SetNamespace(templateRef.Namespace)
+	if mutipleSameKindSupported {
+		cr.SetGenerateName(fmt.Sprintf("%s-", nodeName))
+	} else {
+		cr.SetName(nodeName)
+	}
+
 	kind := templateRef.GroupVersionKind().Kind
 	// remove trailing template
 	kind = kind[:len(kind)-len("template")]
@@ -401,5 +437,10 @@ func newRemediationCR(nodeName string, templateRef v1.ObjectReference, owner met
 		Kind:    kind,
 	})
 	cr.SetOwnerReferences([]metav1.OwnerReference{owner})
+	ann := map[string]string{
+		commonannotations.NodeNameAnnotation: nodeName,
+		annotations.TemplateNameAnnotation:   templateRef.Name,
+	}
+	cr.SetAnnotations(ann)
 	return &cr
 }
