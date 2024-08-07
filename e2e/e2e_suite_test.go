@@ -30,7 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
+	consolev1 "github.com/openshift/api/console/v1"
 	"github.com/openshift/api/machine/v1beta1"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
@@ -126,7 +126,7 @@ var _ = BeforeSuite(func() {
 	err = apiextensionsv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	Expect(consolev1alpha1.Install(scheme.Scheme)).To(Succeed())
+	Expect(consolev1.Install(scheme.Scheme)).To(Succeed())
 
 	k8sClient, err = ctrl.New(config, ctrl.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())

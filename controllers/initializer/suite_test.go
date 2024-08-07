@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	consolev1alpha "github.com/openshift/api/console/v1alpha1"
+	consolev1 "github.com/openshift/api/console/v1"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -81,7 +81,7 @@ var _ = BeforeSuite(func() {
 
 	scheme.AddToScheme(scheme.Scheme)
 	Expect(remediationv1alpha1.AddToScheme(scheme.Scheme)).NotTo(HaveOccurred())
-	Expect(consolev1alpha.AddToScheme(scheme.Scheme)).NotTo(HaveOccurred())
+	Expect(consolev1.AddToScheme(scheme.Scheme)).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
