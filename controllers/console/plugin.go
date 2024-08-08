@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/api/console/v1alpha1"
+	consolev1 "github.com/openshift/api/console/v1"
 
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 )
@@ -66,7 +66,7 @@ func CreateOrUpdatePlugin(ctx context.Context, cl client.Client, caps cluster.Ca
 
 func createOrUpdateConsolePlugin(ctx context.Context, namespace string, cl client.Client) error {
 	cp := getConsolePlugin(namespace)
-	oldCP := &v1alpha1.ConsolePlugin{}
+	oldCP := &consolev1.ConsolePlugin{}
 	if err := cl.Get(ctx, client.ObjectKeyFromObject(cp), oldCP); apierrors.IsNotFound(err) {
 		if err := cl.Create(ctx, cp); err != nil {
 			return errors.Wrap(err, "could not create console plugin")
@@ -83,20 +83,23 @@ func createOrUpdateConsolePlugin(ctx context.Context, namespace string, cl clien
 	return nil
 }
 
-func getConsolePlugin(namespace string) *v1alpha1.ConsolePlugin {
-	return &v1alpha1.ConsolePlugin{
+func getConsolePlugin(namespace string) *consolev1.ConsolePlugin {
+	return &consolev1.ConsolePlugin{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: PluginName,
 			// TODO set owner ref for deletion when operator is uninstalled
 			// but which resource to use, needs to be cluster scoped
 		},
-		Spec: v1alpha1.ConsolePluginSpec{
+		Spec: consolev1.ConsolePluginSpec{
 			DisplayName: "Node Remediation",
-			Service: v1alpha1.ConsolePluginService{
-				Name:      ServiceName,
-				Namespace: namespace,
-				Port:      ServicePort,
-				BasePath:  "/",
+			Backend: consolev1.ConsolePluginBackend{
+				Type: consolev1.Service,
+				Service: &consolev1.ConsolePluginService{
+					Name:      ServiceName,
+					Namespace: namespace,
+					Port:      ServicePort,
+					BasePath:  "/",
+				},
 			},
 		},
 	}
