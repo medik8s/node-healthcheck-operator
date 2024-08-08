@@ -44,7 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	"github.com/openshift/api/console/v1alpha1"
+	consolev1 "github.com/openshift/api/console/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
@@ -76,7 +76,7 @@ func init() {
 
 	utilruntime.Must(machinev1beta1.Install(scheme))
 	utilruntime.Must(operatorv1.Install(scheme))
-	utilruntime.Must(v1alpha1.Install(scheme))
+	utilruntime.Must(consolev1.Install(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
