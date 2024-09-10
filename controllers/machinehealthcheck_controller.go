@@ -403,19 +403,23 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 	if err != nil {
 		return errors.Wrapf(err, "failed to get remediation template")
 	}
-	remediationCR, err := rm.GenerateRemediationCRForMachine(target.Machine, target.MHC, template)
-	if err != nil {
-		return errors.Wrapf(err, "failed to generate remediation CR")
-	}
 
 	// TODO add control plane label
 
 	// create remediation CR
-	var nodeName *string
+	var nodeNamePtr *string
+	nodeName := ""
 	if target.Node != nil && target.Node.ResourceVersion != "" {
-		nodeName = &target.Node.Name
+		nodeNamePtr = &target.Node.Name
+		nodeName = target.Node.Name
 	}
-	created, _, _, err := rm.CreateRemediationCR(remediationCR, target.MHC, nodeName, utils.DefaultRemediationDuration, 0)
+
+	remediationCR, err := rm.GenerateRemediationCRForMachine(target.Machine, target.MHC, template, nodeName)
+	if err != nil {
+		return errors.Wrapf(err, "failed to generate remediation CR")
+	}
+
+	created, _, _, err := rm.CreateRemediationCR(remediationCR, target.MHC, nodeNamePtr, utils.DefaultRemediationDuration, 0)
 	if err != nil {
 		if _, ok := err.(resources.RemediationCRNotOwned); ok {
 			// CR exists but not owned by us, nothing to do
