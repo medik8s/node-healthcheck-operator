@@ -127,6 +127,7 @@ func (m *manager) generateRemediationCR(name string, nodeName string, healthChec
 	templateSpec, _, _ := unstructured.NestedMap(template.Object, "spec", "template", "spec")
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
 
+	// Multiple same kind templates are never supported for MHC, and remediators are not expected to handle generated names in this case, even if they do for NHC.
 	isMHCRemediation := name != nodeName
 	if annotations.HasMultipleTemplatesAnnotation(template) && !isMHCRemediation {
 		remediationCR.SetGenerateName(fmt.Sprintf("%s-", name))

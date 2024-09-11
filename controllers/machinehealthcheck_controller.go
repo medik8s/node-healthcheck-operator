@@ -404,17 +404,15 @@ func (r *MachineHealthCheckReconciler) remediate(target resources.Target, rm res
 		return errors.Wrapf(err, "failed to get remediation template")
 	}
 
+	var nodeNamePtr *string
+	if target.Node != nil && target.Node.ResourceVersion != "" {
+		nodeNamePtr = &target.Node.Name
+	}
+
 	// TODO add control plane label
 
 	// create remediation CR
-	var nodeNamePtr *string
-	nodeName := ""
-	if target.Node != nil && target.Node.ResourceVersion != "" {
-		nodeNamePtr = &target.Node.Name
-		nodeName = target.Node.Name
-	}
-
-	remediationCR, err := rm.GenerateRemediationCRForMachine(target.Machine, target.MHC, template, nodeName)
+	remediationCR, err := rm.GenerateRemediationCRForMachine(target.Machine, target.MHC, template, pointer.StringDeref(nodeNamePtr, ""))
 	if err != nil {
 		return errors.Wrapf(err, "failed to generate remediation CR")
 	}
