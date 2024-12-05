@@ -17,6 +17,12 @@ type Capabilities struct {
 	IsOnOpenshift, HasMachineAPI, IsSupportedControlPlaneTopology bool
 }
 
+//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
+
+// NewCapabilities returns a Capabilities struct with the following fields:
+// - IsOnOpenshift: true if the cluster is an OpenShift cluster
+// - HasMachineAPI: true if the cluster has the Machine API installed
+// - IsSupportedControlPlaneTopology: true if the cluster has a supported control plane topology
 func NewCapabilities(config *rest.Config, reader client.Reader, logger logr.Logger, ctx context.Context) (Capabilities, error) {
 	dc, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {

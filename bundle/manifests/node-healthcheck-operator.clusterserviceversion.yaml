@@ -280,6 +280,14 @@ spec:
           - list
           - watch
         - apiGroups:
+          - config.openshift.io
+          resources:
+          - infrastructures
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
           - console.openshift.io
           resources:
           - consoleplugins
