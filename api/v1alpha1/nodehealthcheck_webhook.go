@@ -33,28 +33,30 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
 const (
-	OngoingRemediationError   = "prohibited due to running remediation"
-	minHealthyError           = "MinHealthy must not be negative"
-	invalidSelectorError      = "Invalid selector"
-	missingSelectorError      = "Selector is mandatory"
-	mandatoryRemediationError = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
-	mutualRemediationError    = "RemediationTemplate and EscalatingRemediations usage is mutual exclusive"
-	uniqueOrderError          = "EscalatingRemediation Order must be unique"
-	uniqueRemediatorError     = "Using multiple templates of same kind is not supported for this template"
-	minimumTimeoutError       = "EscalatingRemediation Timeout must be at least one minute"
+	OngoingRemediationError    = "prohibited due to running remediation"
+	minHealthyError            = "MinHealthy must not be negative"
+	invalidSelectorError       = "Invalid selector"
+	missingSelectorError       = "Selector is mandatory"
+	mandatoryRemediationError  = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
+	mutualRemediationError     = "RemediationTemplate and EscalatingRemediations usage is mutual exclusive"
+	uniqueOrderError           = "EscalatingRemediation Order must be unique"
+	uniqueRemediatorError      = "Using multiple templates of same kind is not supported for this template"
+	minimumTimeoutError        = "EscalatingRemediation Timeout must be at least one minute"
+	unsupportedCpTopologyError = "Unsupported control plane topology"
 )
 
 // log is for logging in this package.
 var nodehealthchecklog = logf.Log.WithName("nodehealthcheck-resource")
 
-func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
+func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager, caps *cluster.Capabilities) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(nhc).
-		WithValidator(&customValidator{mgr.GetClient()}).
+		WithValidator(&customValidator{mgr.GetClient(), caps}).
 		Complete()
 }
 
@@ -62,6 +64,7 @@ func (nhc *NodeHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 type customValidator struct {
 	client.Client
+	caps *cluster.Capabilities
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
@@ -106,12 +109,20 @@ func (v *customValidator) validate(ctx context.Context, nhc *NodeHealthCheck) er
 		v.validateSelector(nhc),
 		v.validateMutualRemediations(nhc),
 		v.validateEscalatingRemediations(ctx, nhc),
+		v.validateControlPlaneTopology(),
 	})
 
 	// everything else should have been covered by API server validation
 	// as defined by kubebuilder validation markers on the NHC struct.
 
 	return aggregated
+}
+
+func (v *customValidator) validateControlPlaneTopology() error {
+	if !v.caps.IsSupportedControlPlaneTopology {
+		return fmt.Errorf(unsupportedCpTopologyError)
+	}
+	return nil
 }
 
 func (v *customValidator) validateMinHealthy(nhc *NodeHealthCheck) error {

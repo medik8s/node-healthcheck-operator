@@ -44,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	configv1 "github.com/openshift/api/config/v1"
 	consolev1 "github.com/openshift/api/console/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -77,6 +78,7 @@ func init() {
 	utilruntime.Must(machinev1beta1.Install(scheme))
 	utilruntime.Must(operatorv1.Install(scheme))
 	utilruntime.Must(consolev1.Install(scheme))
+	utilruntime.Must(configv1.Install(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -137,7 +139,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	caps, err := cluster.NewCapabilities(mgr.GetConfig())
+	ctx := ctrl.SetupSignalHandler()
+
+	caps, err := cluster.NewCapabilities(mgr.GetConfig(), mgr.GetAPIReader(), setupLog, ctx)
 	if err != nil {
 		setupLog.Error(err, "unable to determine cluster capabilities")
 		os.Exit(1)
@@ -197,13 +201,11 @@ func main() {
 		}
 	}
 
-	if err = (&remediationv1alpha1.NodeHealthCheck{}).SetupWebhookWithManager(mgr); err != nil {
+	if err = (&remediationv1alpha1.NodeHealthCheck{}).SetupWebhookWithManager(mgr, &caps); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "NodeHealthCheck")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
-
-	ctx := ctrl.SetupSignalHandler()
 
 	// Do some initialization
 	initializer := initializer.New(mgr, caps, ctrl.Log.WithName("Initializer"))

@@ -21,7 +21,7 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 	var mockValidatorClient = &mockClient{
 		listFunc: func(context.Context, client.ObjectList, ...client.ListOption) error { return nil },
 	}
-	var validator = &customValidator{mockValidatorClient}
+	var validator = &customValidator{mockValidatorClient, testCaps}
 	Context("Creating or updating a NHC", func() {
 
 		var nhc *NodeHealthCheck
@@ -198,6 +198,18 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 					})
 				})
 
+			})
+		})
+
+		Context("with unsupported control plane topology", func() {
+			BeforeEach(func() {
+				testCaps.IsSupportedControlPlaneTopology = false
+			})
+			AfterEach(func() {
+				testCaps.IsSupportedControlPlaneTopology = true
+			})
+			It("should be denied", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(unsupportedCpTopologyError)))
 			})
 		})
 	})

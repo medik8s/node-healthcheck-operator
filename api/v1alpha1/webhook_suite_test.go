@@ -38,6 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -48,6 +50,12 @@ var k8sClient client.Client
 var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
+
+var testCaps = &cluster.Capabilities{
+	IsOnOpenshift:                   true,
+	HasMachineAPI:                   true,
+	IsSupportedControlPlaneTopology: true,
+}
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -103,7 +111,7 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	err = (&NodeHealthCheck{}).SetupWebhookWithManager(mgr)
+	err = (&NodeHealthCheck{}).SetupWebhookWithManager(mgr, testCaps)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:webhook
