@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func ensureRemediationResourceExists(name string, namespace string, remediationResource schema.GroupVersionResource) func() error {
+func ensureRemediationResourceExists(nodeName string, namespace string, remediationResource schema.GroupVersionResource) func() error {
 	return func() error {
 		// The CR name doesn't always match the node name in case multiple CRs of same type for the same node are supported
 		// So list all, and look for the node name in the annotation
@@ -25,7 +25,7 @@ func ensureRemediationResourceExists(name string, namespace string, remediationR
 			return err
 		}
 		for _, cr := range list.Items {
-			if nodeName, exists := cr.GetAnnotations()[commonannotations.NodeNameAnnotation]; exists && nodeName == name {
+			if annotationNodeName, exists := cr.GetAnnotations()[commonannotations.NodeNameAnnotation]; exists && annotationNodeName == nodeName {
 				log.Info("found remediation resource")
 				return nil
 			}
