@@ -68,7 +68,7 @@ will be started.
 
 Cluster upgrades usually draw workers reboots, mainly to apply OS updates.
 These nodes might get unhealthy for some time during these reboots.
-This disruption can als cause other nodes to overload and appear unhealthy,
+This disruption can also cause other nodes to overload and appear unhealthy,
 when compensating for the lost compute capacity. Making remediation decisions
 at this moment may interfere with the upgrade and may even fail it completely.
 For that reason NHC will stop remediating new unhealthy nodes in case it
