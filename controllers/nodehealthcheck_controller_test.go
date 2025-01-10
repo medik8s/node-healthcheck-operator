@@ -2298,7 +2298,7 @@ func newRemediationCRForNHC(nodeName string, nhc *v1alpha1.NodeHealthCheck) *uns
 		Name:       nhc.Name,
 		UID:        nhc.UID,
 	}
-	return newRemediationCR(nodeName, templateRef, owner)
+	return newRemediationCR(nodeName, nodeName, templateRef, owner)
 }
 
 func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
