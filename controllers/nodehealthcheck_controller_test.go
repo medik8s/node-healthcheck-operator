@@ -210,7 +210,10 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(k8sClient.Update(context.Background(), &item)).To(Succeed())
 						Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(&item), &item)).To(Succeed())
 					}
-					Expect(k8sClient.Delete(context.Background(), &item)).To(Succeed())
+					err := k8sClient.Delete(context.Background(), &item)
+					if err != nil {
+						Expect(errors.IsNotFound(err)).To(BeTrue())
+					}
 				}
 			}
 
@@ -1288,15 +1291,15 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(k8sClient.Delete(context.Background(), node))
 			}
 
-			markCR := func() *unstructured.Unstructured {
-				By("marking CR as succeeded and permanent node deletion expected")
+			markCR := func(succeededStatus metav1.ConditionStatus) *unstructured.Unstructured {
+				By("marking CR for permanent node deletion expected")
 				cr := findRemediationCRForNHC("unhealthy-worker-node-1", underTest)
 				Expect(cr).ToNot(BeNil())
 
 				conditions := []interface{}{
 					map[string]interface{}{
 						"type":               commonconditions.SucceededType,
-						"status":             "True",
+						"status":             string(succeededStatus),
 						"lastTransitionTime": time.Now().Format(time.RFC3339),
 					},
 					map[string]interface{}{
@@ -1322,18 +1325,30 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 			}
 
-			It("it should delete orphaned CR when CR was updated", func() {
+			ensureCRNotDeleted := func(cr *unstructured.Unstructured) {
+				By("ensuring CR is not deleted")
+				Consistently(func() error {
+					return k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
+				}, "10s", "1s").ShouldNot(HaveOccurred())
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				Expect(underTest.Status.UnhealthyNodes).ToNot(BeEmpty())
+			}
+
+			It("it should delete orphaned CR when CR with expected node deletion succeeded", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				cr := markCR(metav1.ConditionFalse)
 				deleteNode()
-				time.Sleep(1 * time.Second)
-				cr := markCR()
+				ensureCRNotDeleted(cr)
+				cr = markCR(metav1.ConditionTrue)
 				expectCRDeletion(cr)
 			})
 
 			It("it should delete orphaned CR when node is deleted", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
-				cr := markCR()
-				time.Sleep(1 * time.Second)
+				cr := findRemediationCRForNHC("unhealthy-worker-node-1", underTest)
+				Expect(cr).ToNot(BeNil())
 				deleteNode()
 				expectCRDeletion(cr)
 			})

@@ -170,7 +170,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	defer func() {
 		patchErr := r.patchStatus(ctx, log, nhc, nhcOrig)
 		if patchErr != nil {
-			log.Error(err, "failed to update status")
+			log.Error(patchErr, "failed to update status")
 		}
 		returnErr = utilerrors.NewAggregate([]error{patchErr, returnErr})
 		log.Info("reconcile end", "error", returnErr, "requeue", result.Requeue, "requeuAfter", result.RequeueAfter)
@@ -465,12 +465,14 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 		}
 
 		// check conditions
+		// for some remediators (e.g. MDR) node deletion is expected. If so, wait until they are succeeded.
+		// for all other remediators, we can delete the CRs immediately after node deletion
 		permanentNodeDeletionExpectedCondition := getCondition(&cr, commonconditions.PermanentNodeDeletionExpectedType, log)
 		permanentNodeDeletionExpected := permanentNodeDeletionExpectedCondition != nil && permanentNodeDeletionExpectedCondition.Status == metav1.ConditionTrue
 		succeededCondition := getCondition(&cr, commonconditions.SucceededType, log)
 		succeeded := succeededCondition != nil && succeededCondition.Status == metav1.ConditionTrue
-		if !permanentNodeDeletionExpected || !succeeded {
-			// no node name change expected, or not succeeded yet
+		if permanentNodeDeletionExpected && !succeeded {
+			// node deletion is expected, but remediation not succeeded yet
 			return false
 		}
 
@@ -504,13 +506,10 @@ func (r *NodeHealthCheckReconciler) deleteOrphanedRemediationCRs(nhc *remediatio
 		resources.UpdateStatusNodeHealthy(nodeName, nhc)
 
 		if deleted, err := rm.DeleteRemediationCR(&cr, nhc); err != nil {
-			log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
+			log.Error(err, "failed to delete orphaned remediation CR", "name", cr.GetName())
 			return err
 		} else if deleted {
-			permanentNodeDeletionExpectedCondition := getCondition(&cr, commonconditions.PermanentNodeDeletionExpectedType, log)
-			log.Info("deleted orphaned remediation CR", "name", cr.GetName(),
-				"reason", permanentNodeDeletionExpectedCondition.Reason,
-				"message", permanentNodeDeletionExpectedCondition.Message)
+			log.Info("deleted orphaned remediation CR", "name", cr.GetName(), "for deleted node", nodeName)
 		}
 
 	}
