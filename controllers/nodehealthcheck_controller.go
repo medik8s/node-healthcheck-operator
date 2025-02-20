@@ -69,6 +69,11 @@ const (
 
 	// RemediationControlPlaneLabelKey is the label key to put on remediation CRs for control plane nodes
 	RemediationControlPlaneLabelKey = "remediation.medik8s.io/isControlPlaneNode"
+
+	// currentMachineConfigAnnotationKey is used to fetch current targetConfigVersionHash
+	currentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
+	// desiredMachineConfigAnnotationKey is used to indicate the version a node should be updating to
+	desiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
 )
 
 var (
@@ -249,7 +254,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	updateRequeueAfter(&result, requeueAfter)
 
 	// TODO consider setting Disabled condition?
-	if r.isClusterUpgrading() {
+	if r.isClusterUpgrading(matchingNodes) {
 		msg := "Postponing potential remediations because of ongoing cluster upgrade"
 		log.Info(msg)
 		commonevents.NormalEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
@@ -388,14 +393,27 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return result, nil
 }
 
-func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
+func (r *NodeHealthCheckReconciler) isClusterUpgrading(nodesToBeRemediated []v1.Node) bool {
 	clusterUpgrading, err := r.ClusterUpgradeStatusChecker.Check()
 	if err != nil {
 		// if we can't reliably tell if the cluster is upgrading then just continue with remediation.
 		// TODO finer error handling may help to decide otherwise here.
 		r.Log.Error(err, "failed to check if the cluster is upgrading. Proceed with remediation as if it is not upgrading")
 	}
-	return clusterUpgrading
+	return clusterUpgrading || r.isHostedControlPlaneUpgrading(nodesToBeRemediated)
+}
+
+func (r *NodeHealthCheckReconciler) isHostedControlPlaneUpgrading(nodesToBeRemediated []v1.Node) bool {
+	for _, node := range nodesToBeRemediated {
+		if !nodes.IsControlPlane(&node) || len(node.Annotations) == 0 || len(node.Annotations[desiredMachineConfigAnnotationKey]) == 0 {
+			continue
+		}
+
+		if node.Annotations[currentMachineConfigAnnotationKey] != node.Annotations[desiredMachineConfigAnnotationKey] {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *NodeHealthCheckReconciler) checkNodeConditions(nodes []v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (notMatchingNodes, soonMatchingNodes, matchingNodes []v1.Node, requeueAfter *time.Duration) {
