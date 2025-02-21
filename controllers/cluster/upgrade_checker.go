@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"context"
-	"errors"
 
 	"github.com/go-logr/logr"
 	gerrors "github.com/pkg/errors"
@@ -14,10 +13,6 @@ import (
 	v1 "github.com/openshift/api/config/v1"
 	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 )
-
-var unsupportedUpgradeCheckerErr = errors.New(
-	"the cluster doesn't have any upgrade state representation." +
-		" Currently only OpenShift/OKD is supported")
 
 // UpgradeChecker checks if the cluster is currently under upgrade.
 // error should be thrown if it can't reliably determine if it's under upgrade or not.
