@@ -1687,11 +1687,13 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		When("Nodes are candidates for remediation and cluster is upgrading", func() {
+			BeforeEach(func() {
+				clusterUpgradeRequeueAfter = 5 * time.Second
+				setupObjects(1, 2, true)
+			})
 			When("non HCP Upgrade", func() {
 				BeforeEach(func() {
-					clusterUpgradeRequeueAfter = 5 * time.Second
 					upgradeChecker.Upgrading = true
-					setupObjects(1, 2, true)
 				})
 
 				AfterEach(func() {
@@ -1722,49 +1724,31 @@ var _ = Describe("Node Health Check CR", func() {
 
 			})
 			When("HCP Upgrade", func() {
-				var unhealthyCPNodeName string
+				var currentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
+				var desiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
 				BeforeEach(func() {
-					clusterUpgradeRequeueAfter = 5 * time.Second
-					objects = newNodes(1, 0, true, true)
-					cpNode := objects[0]
-					objects = append(objects, newNodes(0, 2, false, false)...)
-					objects = append(objects, underTest)
-					unhealthyCPNodeName = cpNode.GetName()
-					cpNodeAnnotations := map[string]string{}
-					if cpNode.GetAnnotations() != nil {
-						cpNodeAnnotations = cpNode.GetAnnotations()
-					}
-					cpNodeAnnotations[currentMachineConfigAnnotationKey] = "fakeVersion1"
-					cpNodeAnnotations[desiredMachineConfigAnnotationKey] = "fakeVersion2"
-					cpNode.SetAnnotations(cpNodeAnnotations)
-
-					//Mock PDB in order to allow creation of CP remediation
-					etcdNs := &v1.Namespace{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "openshift-etcd",
-						},
-						Spec: v1.NamespaceSpec{},
-					}
-					err := k8sClient.Create(context.Background(), etcdNs)
-					if err != nil {
-						Expect(errors.IsAlreadyExists(err)).To(BeTrue())
-					}
-
-					pdb := &policyv1.PodDisruptionBudget{}
-					pdb.Namespace = etcdNs.Name
-					pdb.Name = "mockPDB"
-					Expect(k8sClient.Create(context.TODO(), pdb)).To(Succeed())
-					pdb.Status.DisruptionsAllowed = 1
-					Expect(k8sClient.Status().Update(context.TODO(), pdb)).To(Succeed())
+					//Use a real upgrade checker instead of mock
+					prevUpgradeChecker := nhcReconciler.ClusterUpgradeStatusChecker
+					nhcReconciler.ClusterUpgradeStatusChecker = ocpUpgradeChecker
 					DeferCleanup(func() {
-						Expect(k8sClient.Delete(context.TODO(), pdb)).To(Succeed())
+						nhcReconciler.ClusterUpgradeStatusChecker = prevUpgradeChecker
 					})
+
+					//Simulate HCP Upgrade on the unhealthy node
+					upgradingNode := objects[0]
+					upgradingNodeAnnotations := map[string]string{}
+					if upgradingNode.GetAnnotations() != nil {
+						upgradingNodeAnnotations = upgradingNode.GetAnnotations()
+					}
+					upgradingNodeAnnotations[currentMachineConfigAnnotationKey] = "fakeVersion1"
+					upgradingNodeAnnotations[desiredMachineConfigAnnotationKey] = "fakeVersion2"
+					upgradingNode.SetAnnotations(upgradingNodeAnnotations)
 
 				})
 
 				It("doesn't not remediate but requeues reconciliation and updates status", func() {
 
-					cr := findRemediationCRForNHC(unhealthyCPNodeName, underTest)
+					cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
 					Expect(cr).To(BeNil())
 
 					Expect(*underTest.Status.HealthyNodes).To(Equal(0))
@@ -1774,20 +1758,16 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(underTest.Status.Reason).ToNot(BeEmpty())
 
 					By("stopping upgrade and waiting for requeue")
-					nodeList := v1.NodeList{}
-					Expect(k8sClient.List(context.TODO(), &nodeList)).To(Succeed())
-					for _, node := range nodeList.Items {
-						if len(node.GetAnnotations()) == 0 {
-							continue
-						}
-						if node.GetAnnotations()[currentMachineConfigAnnotationKey] != node.GetAnnotations()[desiredMachineConfigAnnotationKey] {
-							node.Annotations[currentMachineConfigAnnotationKey] = node.GetAnnotations()[desiredMachineConfigAnnotationKey]
-							Expect(k8sClient.Update(context.TODO(), &node)).To(Succeed())
-						}
+					unhealthyNode := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: unhealthyNodeName}}
+					Expect(k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(unhealthyNode), unhealthyNode)).To(Succeed())
+					if unhealthyNode.GetAnnotations()[currentMachineConfigAnnotationKey] != unhealthyNode.GetAnnotations()[desiredMachineConfigAnnotationKey] {
+						// Simulating upgrade complete.
+						unhealthyNode.Annotations[currentMachineConfigAnnotationKey] = unhealthyNode.GetAnnotations()[desiredMachineConfigAnnotationKey]
+						Expect(k8sClient.Update(context.TODO(), unhealthyNode)).To(Succeed())
 					}
 
 					time.Sleep(10 * time.Second)
-					cr = findRemediationCRForNHC(unhealthyCPNodeName, underTest)
+					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
 					Expect(cr).ToNot(BeNil())
 
 					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
