@@ -35,7 +35,7 @@ type Manager interface {
 	GenerateRemediationCRBase(gvk schema.GroupVersionKind) *unstructured.Unstructured
 	GenerateRemediationCRBaseNamed(gvk schema.GroupVersionKind, namespace string, name string) *unstructured.Unstructured
 	GenerateRemediationCRForNode(node *corev1.Node, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
-	GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error)
+	GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured, nodeName string) (*unstructured.Unstructured, error)
 	CreateRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object, nodeName *string, currentRemediationDuration, previousRemediationsDuration time.Duration) (bool, *time.Duration, *unstructured.Unstructured, error)
 	DeleteRemediationCR(remediationCR *unstructured.Unstructured, owner client.Object) (bool, error)
 	UpdateRemediationCR(remediationCR *unstructured.Unstructured) error
@@ -98,10 +98,10 @@ func (m *manager) GenerateRemediationCRForNode(node *corev1.Node, owner client.O
 		}
 	}
 
-	return m.generateRemediationCR(node.GetName(), nhcOwnerRef, machineOwnerRef, template)
+	return m.generateRemediationCR(node.GetName(), node.GetName(), nhcOwnerRef, machineOwnerRef, template)
 }
 
-func (m *manager) GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+func (m *manager) GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured, nodeName string) (*unstructured.Unstructured, error) {
 
 	mhcOwnerRef := createOwnerRef(owner)
 
@@ -116,10 +116,10 @@ func (m *manager) GenerateRemediationCRForMachine(machine *machinev1beta1.Machin
 		// So it can be ignored here.
 	}
 
-	return m.generateRemediationCR(machine.GetName(), mhcOwnerRef, machineOwnerRef, template)
+	return m.generateRemediationCR(machine.GetName(), nodeName, mhcOwnerRef, machineOwnerRef, template)
 }
 
-func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1.OwnerReference, machineOwnerRef *metav1.OwnerReference, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+func (m *manager) generateRemediationCR(name string, nodeName string, healthCheckOwnerRef *metav1.OwnerReference, machineOwnerRef *metav1.OwnerReference, template *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 
 	remediationCR := m.GenerateRemediationCRBase(template.GroupVersionKind())
 
@@ -127,12 +127,14 @@ func (m *manager) generateRemediationCR(name string, healthCheckOwnerRef *metav1
 	templateSpec, _, _ := unstructured.NestedMap(template.Object, "spec", "template", "spec")
 	unstructured.SetNestedField(remediationCR.Object, templateSpec, "spec")
 
-	if annotations.HasMultipleTemplatesAnnotation(template) {
+	// Multiple same kind templates are never supported for MHC, and remediators are not expected to handle generated names in this case, even if they do for NHC.
+	isMHCRemediation := name != nodeName
+	if annotations.HasMultipleTemplatesAnnotation(template) && !isMHCRemediation {
 		remediationCR.SetGenerateName(fmt.Sprintf("%s-", name))
 	} else {
 		remediationCR.SetName(name)
 	}
-	remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: name, annotations.TemplateNameAnnotation: template.GetName()})
+	remediationCR.SetAnnotations(map[string]string{commonannotations.NodeNameAnnotation: nodeName, annotations.TemplateNameAnnotation: template.GetName()})
 
 	remediationCR.SetNamespace(template.GetNamespace())
 	remediationCR.SetResourceVersion("")

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	commonannotations "github.com/medik8s/common/pkg/annotations"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
@@ -122,16 +123,16 @@ func TestReconcile(t *testing.T) {
 	machineWithoutNodeRef := newMachine("machineWithoutNodeRef", nodeAnnotatedWithMachineWithoutNodeReference.Name)
 	machineWithoutNodeRef.Status.NodeRef = nil
 
-	machineHealthCheck := newMachineHealthCheck("machineHealthCheck")
+	machineHealthCheck := newMachineHealthCheck("machineHealthCheck", infraRemediationTemplateRef)
 	nodeStartupTimeout := 15 * time.Minute
 	machineHealthCheck.Spec.NodeStartupTimeout = &metav1.Duration{Duration: nodeStartupTimeout}
 
-	machineHealthCheckNegativeMaxUnhealthy := newMachineHealthCheck("machineHealthCheckNegativeMaxUnhealthy")
+	machineHealthCheckNegativeMaxUnhealthy := newMachineHealthCheck("machineHealthCheckNegativeMaxUnhealthy", infraRemediationTemplateRef)
 	negativeOne := intstr.FromInt(-1)
 	machineHealthCheckNegativeMaxUnhealthy.Spec.MaxUnhealthy = &negativeOne
 	machineHealthCheckNegativeMaxUnhealthy.Spec.NodeStartupTimeout = &metav1.Duration{Duration: nodeStartupTimeout}
 
-	machineHealthCheckPaused := newMachineHealthCheck("machineHealthCheck")
+	machineHealthCheckPaused := newMachineHealthCheck("machineHealthCheck", infraRemediationTemplateRef)
 	machineHealthCheckPaused.Annotations = make(map[string]string)
 	machineHealthCheckPaused.Annotations[annotations.MHCPausedAnnotation] = "test"
 
@@ -387,15 +388,18 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 	machineWithNodeUnHealthy := newMachine("Machine", nodeUnHealthy.Name)
 	machineWithNodeUnHealthy.APIVersion = machinev1.SchemeGroupVersion.String()
 
-	mhc := newMachineHealthCheck("machineHealthCheck")
+	mhc := newMachineHealthCheck("machineHealthCheck", infraRemediationTemplateRef)
+	mhcMultipleSupport := newMachineHealthCheck("machineHealthCheck", infraMultipleRemediationTemplateRef)
+
 	remediationTemplateCR := newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraRemediationTemplateName)
+	remediationMultipleSupportTemplateCR := newTestRemediationTemplateCR(InfraRemediationKind, MachineNamespace, InfraMultipleSupportRemediationTemplateName)
 	owner := metav1.OwnerReference{
 		APIVersion: mhc.APIVersion,
 		Kind:       mhc.Kind,
 		Name:       mhc.Name,
 		UID:        mhc.UID,
 	}
-	remediationCR := newRemediationCR(machineWithNodeUnHealthy.Name, *mhc.Spec.RemediationTemplate, owner)
+	remediationCR := newRemediationCR(machineWithNodeUnHealthy.Name, nodeUnHealthy.Name, *mhc.Spec.RemediationTemplate, owner)
 
 	testCases := []testCase{
 
@@ -455,6 +459,28 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				error:  false,
 			},
 			expectedEvents: []string{},
+			expectedStatus: &machinev1.MachineHealthCheckStatus{
+				ExpectedMachines:    pointer.Int(1),
+				CurrentHealthy:      pointer.Int(0),
+				RemediationsAllowed: 0,
+				Conditions: machinev1.Conditions{
+					remediationAllowedCondition,
+				},
+			},
+		},
+
+		{
+			name:                "create new multiple template supported remediation",
+			machine:             machineWithNodeUnHealthy,
+			node:                nodeUnHealthy,
+			mhc:                 mhcMultipleSupport,
+			remediationCR:       nil,
+			remediationTemplate: remediationMultipleSupportTemplateCR,
+			expected: expectedReconcile{
+				result: reconcile.Result{},
+				error:  false,
+			},
+			expectedEvents: []string{utils.EventReasonRemediationCreated},
 			expectedStatus: &machinev1.MachineHealthCheckStatus{
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
@@ -849,7 +875,7 @@ func TestMHCRequestsFromNode(t *testing.T) {
 func TestGetTargetsFromMHC(t *testing.T) {
 	machine1 := newMachine("match1", "node1")
 	machine2 := newMachine("match2", "node2")
-	mhc := newMachineHealthCheck("findTargets")
+	mhc := newMachineHealthCheck("findTargets", infraRemediationTemplateRef)
 	testCases := []struct {
 		testCase        string
 		mhc             *machinev1.MachineHealthCheck
@@ -2485,6 +2511,10 @@ func buildRunTimeObjects(tc testCase) []runtime.Object {
 	objects = append(objects, newTestRemediationCRD(testRemediationKind))
 	objects = append(objects, newTestRemediationTemplateCR(testRemediationKind, MachineNamespace, InfraRemediationTemplateName))
 
+	templateMultiSupportCR := newTestRemediationTemplateCR(testRemediationKind, MachineNamespace, InfraMultipleSupportRemediationTemplateName)
+	templateMultiSupportCR.SetAnnotations(map[string]string{commonannotations.MultipleTemplatesSupportedAnnotation: "true"})
+	objects = append(objects, templateMultiSupportCR)
+
 	return objects
 }
 
@@ -2501,6 +2531,10 @@ func verifyRemediationCR(t *testing.T, tc testCase, ctx context.Context, client 
 	}
 	if isExist {
 		g.Expect(client.Get(ctx, nameSpace, remediationCR)).To(Succeed())
+		crAnnotations := remediationCR.GetAnnotations()
+		g.Expect(crAnnotations).ToNot(BeNil())
+		g.Expect(crAnnotations[commonannotations.NodeNameAnnotation]).Should(Equal(tc.node.Name))
+		g.Expect(crAnnotations[annotations.TemplateNameAnnotation]).Should(Equal(tc.remediationTemplate.GetName()))
 	} else {
 		g.Expect(client.Get(ctx, nameSpace, remediationCR)).NotTo(Succeed())
 	}
@@ -2588,7 +2622,7 @@ func newMachine(name string, nodeName string) *machinev1.Machine {
 }
 
 // newMachineHealthCheck returns new MachineHealthCheck object that can be used for testing
-func newMachineHealthCheck(name string) *machinev1.MachineHealthCheck {
+func newMachineHealthCheck(name string, remediationTemplate *corev1.ObjectReference) *machinev1.MachineHealthCheck {
 	return &machinev1.MachineHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -2615,7 +2649,7 @@ func newMachineHealthCheck(name string) *machinev1.MachineHealthCheck {
 					Timeout: metav1.Duration{Duration: 300 * time.Second},
 				},
 			},
-			RemediationTemplate: infraRemediationTemplateRef,
+			RemediationTemplate: remediationTemplate,
 		},
 		Status: machinev1.MachineHealthCheckStatus{},
 	}

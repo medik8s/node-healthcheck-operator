@@ -31,7 +31,6 @@ const (
 
 var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 	var nodeUnderTest *v1.Node
-	var machineNameUnderTest string
 	var mhc *v1beta1.MachineHealthCheck
 	var workers *v1.NodeList
 	var leaseName string
@@ -84,7 +83,7 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 			nodeUnderTest = &workers.Items[0]
 
 			var err error
-			_, machineNameUnderTest, err = controllerutils.GetMachineNamespaceName(nodeUnderTest)
+			_, _, err = controllerutils.GetMachineNamespaceName(nodeUnderTest)
 			Expect(err).ToNot(HaveOccurred(), "failed to get machine name from node")
 
 			leaseName = fmt.Sprintf("%s-%s", "node", nodeUnderTest.Name)
@@ -126,7 +125,7 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 				By("ensuring remediation CR exists")
 				waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
 				Eventually(
-					ensureRemediationResourceExists(machineNameUnderTest, mhcNamespace, remediationGVR), waitTime, "500ms").
+					ensureRemediationResourceExists(nodeUnderTest.Name, mhcNamespace, remediationGVR), waitTime, "500ms").
 					Should(Succeed())
 
 				By("ensuring lease exist")

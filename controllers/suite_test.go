@@ -402,7 +402,7 @@ func newTestRemediationTemplateCR(kind, namespace, name string) *unstructured.Un
 	return template
 }
 
-func newRemediationCR(nodeName string, templateRef v1.ObjectReference, owner metav1.OwnerReference) *unstructured.Unstructured {
+func newRemediationCR(name string, nodeName string, templateRef v1.ObjectReference, owner metav1.OwnerReference) *unstructured.Unstructured {
 
 	// check template if it supports multiple same kind remediation
 	// not needed (and fails for missing k8sclient) for MHC tests
@@ -423,9 +423,9 @@ func newRemediationCR(nodeName string, templateRef v1.ObjectReference, owner met
 	cr := unstructured.Unstructured{}
 	cr.SetNamespace(templateRef.Namespace)
 	if mutipleSameKindSupported {
-		cr.SetGenerateName(fmt.Sprintf("%s-", nodeName))
+		cr.SetGenerateName(fmt.Sprintf("%s-", name))
 	} else {
-		cr.SetName(nodeName)
+		cr.SetName(name)
 	}
 
 	kind := templateRef.GroupVersionKind().Kind
