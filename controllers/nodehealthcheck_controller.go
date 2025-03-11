@@ -249,7 +249,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	updateRequeueAfter(&result, requeueAfter)
 
 	// TODO consider setting Disabled condition?
-	if r.isClusterUpgrading() {
+	if r.isClusterUpgrading(matchingNodes) {
 		msg := "Postponing potential remediations because of ongoing cluster upgrade"
 		log.Info(msg)
 		commonevents.NormalEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
@@ -388,8 +388,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return result, nil
 }
 
-func (r *NodeHealthCheckReconciler) isClusterUpgrading() bool {
-	clusterUpgrading, err := r.ClusterUpgradeStatusChecker.Check()
+func (r *NodeHealthCheckReconciler) isClusterUpgrading(nodesToBeRemediated []v1.Node) bool {
+	clusterUpgrading, err := r.ClusterUpgradeStatusChecker.Check(nodesToBeRemediated)
 	if err != nil {
 		// if we can't reliably tell if the cluster is upgrading then just continue with remediation.
 		// TODO finer error handling may help to decide otherwise here.

@@ -120,9 +120,13 @@ var (
 	ctx        context.Context
 	cancel     context.CancelFunc
 
-	upgradeChecker *fakeClusterUpgradeChecker
-	fakeTime       *time.Time
-	fakeRecorder   *record.FakeRecorder
+	upgradeChecker    *fakeClusterUpgradeChecker
+	ocpUpgradeChecker cluster.UpgradeChecker
+
+	fakeTime     *time.Time
+	fakeRecorder *record.FakeRecorder
+
+	nhcReconciler *NodeHealthCheckReconciler
 )
 
 func TestAPIs(t *testing.T) {
@@ -238,7 +242,8 @@ var _ = BeforeSuite(func() {
 
 	mhcEvents := make(chan event.GenericEvent)
 	fakeRecorder = record.NewFakeRecorder(1000)
-	err = (&NodeHealthCheckReconciler{
+	ocpUpgradeChecker, _ = cluster.NewClusterUpgradeStatusChecker(k8sManager, cluster.Capabilities{IsOnOpenshift: true})
+	nhcReconciler = &NodeHealthCheckReconciler{
 		Client:                      k8sManager.GetClient(),
 		Log:                         k8sManager.GetLogger().WithName("test reconciler"),
 		Recorder:                    fakeRecorder,
@@ -246,7 +251,8 @@ var _ = BeforeSuite(func() {
 		MHCChecker:                  mhcChecker,
 		MHCEvents:                   mhcEvents,
 		Capabilities:                caps,
-	}).SetupWithManager(k8sManager)
+	}
+	err = nhcReconciler.SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = (&MachineHealthCheckReconciler{
@@ -286,7 +292,7 @@ type fakeClusterUpgradeChecker struct {
 // force implementation of interface
 var _ cluster.UpgradeChecker = &fakeClusterUpgradeChecker{}
 
-func (c *fakeClusterUpgradeChecker) Check() (bool, error) {
+func (c *fakeClusterUpgradeChecker) Check([]v1.Node) (bool, error) {
 	return c.Upgrading, c.Err
 }
 

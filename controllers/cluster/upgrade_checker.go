@@ -2,11 +2,11 @@ package cluster
 
 import (
 	"context"
-	"errors"
 
 	"github.com/go-logr/logr"
 	gerrors "github.com/pkg/errors"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -15,16 +15,19 @@ import (
 	clusterversion "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 )
 
-var unsupportedUpgradeCheckerErr = errors.New(
-	"the cluster doesn't have any upgrade state representation." +
-		" Currently only OpenShift/OKD is supported")
+const (
+	// currentMachineConfigAnnotationKey is used to fetch current targetConfigVersionHash
+	currentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
+	// desiredMachineConfigAnnotationKey is used to indicate the version a node should be updating to
+	desiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
+)
 
 // UpgradeChecker checks if the cluster is currently under upgrade.
 // error should be thrown if it can't reliably determine if it's under upgrade or not.
 type UpgradeChecker interface {
 	// Check if the cluster is currently under upgrade.
 	// error should be thrown if it can't reliably determine if it's under upgrade or not.
-	Check() (bool, error)
+	Check(nodesToBeRemediated []corev1.Node) (bool, error)
 }
 
 type openshiftClusterUpgradeStatusChecker struct {
@@ -36,7 +39,11 @@ type openshiftClusterUpgradeStatusChecker struct {
 // force implementation of interface
 var _ UpgradeChecker = &openshiftClusterUpgradeStatusChecker{}
 
-func (o *openshiftClusterUpgradeStatusChecker) Check() (bool, error) {
+func (o *openshiftClusterUpgradeStatusChecker) Check(nodesToBeRemediated []corev1.Node) (bool, error) {
+	if o.isNodeUpgrading(nodesToBeRemediated) {
+		return true, nil
+	}
+
 	cvs, err := o.clusterVersionsClient.List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return false, gerrors.Wrap(err, "failed to check for Openshift cluster upgrade status")
@@ -52,13 +59,27 @@ func (o *openshiftClusterUpgradeStatusChecker) Check() (bool, error) {
 	return false, nil
 }
 
+func (o *openshiftClusterUpgradeStatusChecker) isNodeUpgrading(nodesToBeRemediated []corev1.Node) bool {
+	// We can identify an HCP (Hosted Control Plane) cluster upgrade by checking annotations of the CP node.
+	for _, node := range nodesToBeRemediated {
+		if len(node.Annotations) == 0 || len(node.Annotations[desiredMachineConfigAnnotationKey]) == 0 {
+			continue
+		}
+
+		if node.Annotations[currentMachineConfigAnnotationKey] != node.Annotations[desiredMachineConfigAnnotationKey] {
+			return true
+		}
+	}
+	return false
+}
+
 type noopClusterUpgradeStatusChecker struct {
 }
 
 // force implementation of interface
 var _ UpgradeChecker = &noopClusterUpgradeStatusChecker{}
 
-func (n *noopClusterUpgradeStatusChecker) Check() (bool, error) {
+func (n *noopClusterUpgradeStatusChecker) Check([]corev1.Node) (bool, error) {
 	return false, nil
 }
 
