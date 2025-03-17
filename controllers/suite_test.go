@@ -258,6 +258,7 @@ var _ = BeforeSuite(func() {
 	err = nhcReconciler.SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
+	mhcWatchManager := resources.NewWatchManager(k8sManager.GetClient(), ctrl.Log.WithName("controllers").WithName("MachineHealthCheck").WithName("WatchManager"), k8sManager.GetCache())
 	err = (&MachineHealthCheckReconciler{
 		Client:                         k8sManager.GetClient(),
 		Log:                            k8sManager.GetLogger().WithName("test reconciler"),
@@ -268,6 +269,7 @@ var _ = BeforeSuite(func() {
 		FeatureGates: &featuregates.FakeAccessor{
 			IsMaoMhcDisabled: false,
 		},
+		WatchManager: mhcWatchManager,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

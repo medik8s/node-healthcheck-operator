@@ -15,6 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/api/machine/v1beta1"
+
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
@@ -47,6 +49,15 @@ func (wm *WatchManager) AddWatchesNhc(rm Manager, nhc *v1alpha1.NodeHealthCheck)
 	}
 	for _, escalatingRemediation := range nhc.Spec.EscalatingRemediations {
 		remediationsToWatch = append(remediationsToWatch, escalatingRemediation.RemediationTemplate)
+	}
+	return wm.addWatches(rm, remediationsToWatch)
+}
+
+func (wm *WatchManager) AddWatchesMhc(rm Manager, mhc *v1beta1.MachineHealthCheck) error {
+	var remediationsToWatch []v1.ObjectReference
+	//aggregate all templates to watch
+	if mhc.Spec.RemediationTemplate != nil {
+		remediationsToWatch = append(remediationsToWatch, *mhc.Spec.RemediationTemplate)
 	}
 	return wm.addWatches(rm, remediationsToWatch)
 }
