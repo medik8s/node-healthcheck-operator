@@ -56,6 +56,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
@@ -240,6 +241,7 @@ var _ = BeforeSuite(func() {
 		return time.Now()
 	}
 
+	watchManager := resources.NewWatchManager(k8sManager.GetClient(), ctrl.Log.WithName("controllers").WithName("NodeHealthCheck").WithName("WatchManager"), k8sManager.GetCache())
 	mhcEvents := make(chan event.GenericEvent)
 	fakeRecorder = record.NewFakeRecorder(1000)
 	ocpUpgradeChecker, _ = cluster.NewClusterUpgradeStatusChecker(k8sManager, cluster.Capabilities{IsOnOpenshift: true})
@@ -251,6 +253,7 @@ var _ = BeforeSuite(func() {
 		MHCChecker:                  mhcChecker,
 		MHCEvents:                   mhcEvents,
 		Capabilities:                caps,
+		WatchManager:                watchManager,
 	}
 	err = nhcReconciler.SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())

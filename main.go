@@ -55,6 +55,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
@@ -166,6 +167,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	watchManager := resources.NewWatchManager(mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("NodeHealthCheck").WithName("WatchManager"), mgr.GetCache())
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
@@ -174,6 +176,7 @@ func main() {
 		MHCChecker:                  mhcChecker,
 		Capabilities:                caps,
 		MHCEvents:                   mhcEvents,
+		WatchManager:                watchManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)
