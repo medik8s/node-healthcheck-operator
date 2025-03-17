@@ -44,6 +44,7 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -56,6 +57,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
@@ -240,6 +242,7 @@ var _ = BeforeSuite(func() {
 		return time.Now()
 	}
 
+	watchManager := resources.NewWatchManager(k8sManager.GetClient(), ctrl.Log.WithName("controllers").WithName("NodeHealthCheck").WithName("WatchManager"), k8sManager.GetCache())
 	mhcEvents := make(chan event.GenericEvent)
 	fakeRecorder = record.NewFakeRecorder(1000)
 	ocpUpgradeChecker, _ = cluster.NewClusterUpgradeStatusChecker(k8sManager, cluster.Capabilities{IsOnOpenshift: true})
@@ -251,10 +254,12 @@ var _ = BeforeSuite(func() {
 		MHCChecker:                  mhcChecker,
 		MHCEvents:                   mhcEvents,
 		Capabilities:                caps,
+		WatchManager:                watchManager,
 	}
 	err = nhcReconciler.SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
+	mhcWatchManager := resources.NewWatchManager(k8sManager.GetClient(), ctrl.Log.WithName("controllers").WithName("MachineHealthCheck").WithName("WatchManager"), k8sManager.GetCache())
 	err = (&MachineHealthCheckReconciler{
 		Client:                         k8sManager.GetClient(),
 		Log:                            k8sManager.GetLogger().WithName("test reconciler"),
@@ -265,6 +270,7 @@ var _ = BeforeSuite(func() {
 		FeatureGates: &featuregates.FakeAccessor{
 			IsMaoMhcDisabled: false,
 		},
+		WatchManager: mhcWatchManager,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -295,6 +301,16 @@ var _ cluster.UpgradeChecker = &fakeClusterUpgradeChecker{}
 func (c *fakeClusterUpgradeChecker) Check([]v1.Node) (bool, error) {
 	return c.Upgrading, c.Err
 }
+
+type fakeWatchManager struct{}
+
+func (c *fakeWatchManager) AddWatchesNhc(rm resources.Manager, nhc *remediationv1alpha1.NodeHealthCheck) error {
+	return nil
+}
+func (c *fakeWatchManager) AddWatchesMhc(rm resources.Manager, mhc *machinev1beta1.MachineHealthCheck) error {
+	return nil
+}
+func (c *fakeWatchManager) SetController(controller.Controller) {}
 
 func newTestRemediationTemplateCRD(kind string) *apiextensionsv1.CustomResourceDefinition {
 	return &apiextensionsv1.CustomResourceDefinition{

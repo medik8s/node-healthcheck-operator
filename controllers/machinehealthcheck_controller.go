@@ -57,6 +57,7 @@ type MachineHealthCheckReconciler struct {
 	MHCChecker                     mhc.Checker
 	FeatureGateMHCControllerEvents <-chan event.GenericEvent
 	FeatureGates                   featuregates.Accessor
+	WatchManager                   resources.WatchManager
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -97,7 +98,12 @@ func (r *MachineHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		handler.EnqueueRequestsFromMapFunc(utils.MHCByFeatureGateEventMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates)),
 	)
 
-	return bldr.Complete(r)
+	if controller, err := bldr.Build(r); err == nil {
+		r.WatchManager.SetController(controller)
+		return nil
+	} else {
+		return err
+	}
 }
 
 func indexMachineByNodeName(object client.Object) []string {
@@ -185,6 +191,9 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// TODO add more checks like in NHC?!
+	if err = r.WatchManager.AddWatchesMhc(resourceManager, mhc); err != nil {
+		return result, err
+	}
 
 	log.Info("Reconciling")
 

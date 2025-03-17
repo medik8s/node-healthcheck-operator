@@ -55,6 +55,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
+	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
@@ -166,6 +167,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	nhcWatchManager := resources.NewWatchManager(mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("NodeHealthCheck").WithName("WatchManager"), mgr.GetCache())
 	if err := (&controllers.NodeHealthCheckReconciler{
 		Client:                      mgr.GetClient(),
 		Log:                         ctrl.Log.WithName("controllers").WithName("NodeHealthCheck"),
@@ -174,6 +176,7 @@ func main() {
 		MHCChecker:                  mhcChecker,
 		Capabilities:                caps,
 		MHCEvents:                   mhcEvents,
+		WatchManager:                nhcWatchManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeHealthCheck")
 		os.Exit(1)
@@ -186,7 +189,7 @@ func main() {
 			setupLog.Error(err, "failed to add feature gate accessor to the manager")
 			os.Exit(1)
 		}
-
+		mhcWatchManager := resources.NewWatchManager(mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("MachineHealthCheck").WithName("WatchManager"), mgr.GetCache())
 		if err := (&controllers.MachineHealthCheckReconciler{
 			Client:                         mgr.GetClient(),
 			Log:                            ctrl.Log.WithName("controllers").WithName("MachineHealthCheck"),
@@ -195,6 +198,7 @@ func main() {
 			MHCChecker:                     mhcChecker,
 			FeatureGateMHCControllerEvents: featureGateMHCControllerDisabledEvents,
 			FeatureGates:                   featureGateAccessor,
+			WatchManager:                   mhcWatchManager,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "MachineHealthCheck")
 			os.Exit(1)
