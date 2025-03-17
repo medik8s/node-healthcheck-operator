@@ -57,7 +57,7 @@ type MachineHealthCheckReconciler struct {
 	MHCChecker                     mhc.Checker
 	FeatureGateMHCControllerEvents <-chan event.GenericEvent
 	FeatureGates                   featuregates.Accessor
-	WatchManager                   *resources.WatchManager
+	WatchManager                   resources.WatchManager
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -99,7 +99,7 @@ func (r *MachineHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	)
 
 	if controller, err := bldr.Build(r); err == nil {
-		r.WatchManager.Controller = controller
+		r.WatchManager.SetController(controller)
 		return nil
 	} else {
 		return err

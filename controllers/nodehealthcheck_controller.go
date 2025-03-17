@@ -86,7 +86,7 @@ type NodeHealthCheckReconciler struct {
 	Capabilities                cluster.Capabilities
 	MHCEvents                   chan event.GenericEvent
 	controller                  controller.Controller
-	WatchManager                *resources.WatchManager
+	WatchManager                resources.WatchManager
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -117,7 +117,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
-	r.WatchManager.Controller = controller
+	r.WatchManager.SetController(controller)
 	return nil
 }
 

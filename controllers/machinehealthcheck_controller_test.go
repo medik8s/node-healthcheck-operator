@@ -2416,7 +2416,6 @@ func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObje
 		Build()
 	caps := cluster.Capabilities{IsOnOpenshift: false, HasMachineAPI: false}
 	mhcChecker, _ := mhc.NewMHCChecker(k8sManager, caps, nil)
-	mhcWatchManager := resources.NewWatchManager(k8sManager.GetClient(), ctrl.Log.WithName("controllers").WithName("MachineHealthCheck").WithName("WatchManager"), k8sManager.GetCache())
 	return &MachineHealthCheckReconciler{
 		Client:                         fakeClient,
 		Recorder:                       recorder,
@@ -2426,7 +2425,7 @@ func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObje
 		FeatureGates: &featuregates.FakeAccessor{
 			IsMaoMhcDisabled: true,
 		},
-		WatchManager: mhcWatchManager,
+		WatchManager: &fakeWatchManager{},
 	}
 }
 

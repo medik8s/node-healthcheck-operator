@@ -44,6 +44,7 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -300,6 +301,16 @@ var _ cluster.UpgradeChecker = &fakeClusterUpgradeChecker{}
 func (c *fakeClusterUpgradeChecker) Check([]v1.Node) (bool, error) {
 	return c.Upgrading, c.Err
 }
+
+type fakeWatchManager struct{}
+
+func (c *fakeWatchManager) AddWatchesNhc(rm resources.Manager, nhc *remediationv1alpha1.NodeHealthCheck) error {
+	return nil
+}
+func (c *fakeWatchManager) AddWatchesMhc(rm resources.Manager, mhc *machinev1beta1.MachineHealthCheck) error {
+	return nil
+}
+func (c *fakeWatchManager) SetController(controller.Controller) {}
 
 func newTestRemediationTemplateCRD(kind string) *apiextensionsv1.CustomResourceDefinition {
 	return &apiextensionsv1.CustomResourceDefinition{
