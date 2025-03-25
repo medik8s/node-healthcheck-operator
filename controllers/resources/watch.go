@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -15,31 +15,39 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/api/machine/v1beta1"
+
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
-type WatchManager struct {
-	Client     client.Client
-	Log        logr.Logger
-	Controller controller.Controller
-	Cache      cache.Cache
+type WatchManager interface {
+	AddWatchesNhc(rm Manager, nhc *v1alpha1.NodeHealthCheck) error
+	AddWatchesMhc(rm Manager, mhc *v1beta1.MachineHealthCheck) error
+	SetController(controller.Controller)
+}
+
+type watchManager struct {
+	client     client.Client
+	log        logr.Logger
+	controller controller.Controller
+	cache      cache.Cache
 	Watches    map[string]struct{}
-	Lock       *sync.Mutex
+	lock       *sync.Mutex
 }
 
 // NewWatchManager creates a new instance of WatchManager.
-func NewWatchManager(c client.Client, log logr.Logger, cache cache.Cache) *WatchManager {
-	return &WatchManager{
-		Client:  c,
-		Log:     log,
-		Cache:   cache,
+func NewWatchManager(c client.Client, log logr.Logger, cache cache.Cache) WatchManager {
+	return &watchManager{
+		client:  c,
+		log:     log,
+		cache:   cache,
 		Watches: make(map[string]struct{}),
-		Lock:    &sync.Mutex{},
+		lock:    &sync.Mutex{},
 	}
 }
 
-func (wm *WatchManager) AddWatchesNhc(rm Manager, nhc *v1alpha1.NodeHealthCheck) error {
+func (wm *watchManager) AddWatchesNhc(rm Manager, nhc *v1alpha1.NodeHealthCheck) error {
 	var remediationsToWatch []v1.ObjectReference
 	//aggregate all templates to watch
 	if nhc.Spec.RemediationTemplate != nil {
@@ -48,37 +56,50 @@ func (wm *WatchManager) AddWatchesNhc(rm Manager, nhc *v1alpha1.NodeHealthCheck)
 	for _, escalatingRemediation := range nhc.Spec.EscalatingRemediations {
 		remediationsToWatch = append(remediationsToWatch, escalatingRemediation.RemediationTemplate)
 	}
-	return wm.addWatches(rm, remediationsToWatch)
+	return wm.addWatches(rm, remediationsToWatch, utils.NHC)
 }
 
-func (wm *WatchManager) addWatches(rm Manager, templates []v1.ObjectReference) error {
+func (wm *watchManager) AddWatchesMhc(rm Manager, mhc *v1beta1.MachineHealthCheck) error {
+	var remediationsToWatch []v1.ObjectReference
+	//aggregate all templates to watch
+	if mhc.Spec.RemediationTemplate != nil {
+		remediationsToWatch = append(remediationsToWatch, *mhc.Spec.RemediationTemplate)
+	}
+	return wm.addWatches(rm, remediationsToWatch, utils.MHC)
+}
+
+func (wm *watchManager) SetController(controller controller.Controller) {
+	wm.controller = controller
+}
+
+func (wm *watchManager) addWatches(rm Manager, templates []v1.ObjectReference, watchType utils.WatchType) error {
 	for _, ref := range templates {
 		template := rm.GenerateTemplate(&ref)
 		if err := wm.addRemediationTemplateCRWatch(template); err != nil {
-			wm.Log.Error(err, "failed to add watch for template CR", "kind", template.GetKind())
+			wm.log.Error(err, "failed to add watch for template CR", "kind", template.GetKind())
 			return err
 		}
 		rem := rm.GenerateRemediationCRBase(template.GroupVersionKind())
-		if err := wm.addRemediationCRWatch(rem); err != nil {
-			wm.Log.Error(err, "failed to add watch for remediation CR", "kind", rem.GetKind())
+		if err := wm.addRemediationCRWatch(rem, watchType); err != nil {
+			wm.log.Error(err, "failed to add watch for remediation CR", "kind", rem.GetKind())
 			return err
 		}
 	}
 	return nil
 }
 
-func (wm *WatchManager) addRemediationTemplateCRWatch(templateCR *unstructured.Unstructured) error {
-	wm.Lock.Lock()
-	defer wm.Lock.Unlock()
+func (wm *watchManager) addRemediationTemplateCRWatch(templateCR *unstructured.Unstructured) error {
+	wm.lock.Lock()
+	defer wm.lock.Unlock()
 
 	key := templateCR.GroupVersionKind().String()
 	if _, exists := wm.Watches[key]; exists {
 		return nil
 	}
 
-	if err := wm.Controller.Watch(
-		source.Kind(wm.Cache, templateCR),
-		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationTemplateCRMapperFunc(wm.Client, wm.Log)),
+	if err := wm.controller.Watch(
+		source.Kind(wm.cache, templateCR),
+		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationTemplateCRMapperFunc(wm.client, wm.log)),
 		predicate.Funcs{
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
 			GenericFunc: func(_ event.GenericEvent) bool { return false },
@@ -87,22 +108,22 @@ func (wm *WatchManager) addRemediationTemplateCRWatch(templateCR *unstructured.U
 		return err
 	}
 	wm.Watches[key] = struct{}{}
-	wm.Log.Info("added watch for remediation template CRs", "kind", templateCR.GetKind())
+	wm.log.Info("added watch for remediation template CRs", "kind", templateCR.GetKind())
 	return nil
 }
 
-func (wm *WatchManager) addRemediationCRWatch(remediationCR *unstructured.Unstructured) error {
-	wm.Lock.Lock()
-	defer wm.Lock.Unlock()
+func (wm *watchManager) addRemediationCRWatch(remediationCR *unstructured.Unstructured, watchType utils.WatchType) error {
+	wm.lock.Lock()
+	defer wm.lock.Unlock()
 
 	key := remediationCR.GroupVersionKind().String()
 	if _, exists := wm.Watches[key]; exists {
 		return nil
 	}
 
-	if err := wm.Controller.Watch(
-		source.Kind(wm.Cache, remediationCR),
-		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationCRMapperFunc(wm.Log)),
+	if err := wm.controller.Watch(
+		source.Kind(wm.cache, remediationCR),
+		handler.EnqueueRequestsFromMapFunc(utils.RemediationCRMapperFunc(wm.log, watchType)),
 		predicate.Funcs{
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
 			GenericFunc: func(_ event.GenericEvent) bool { return false },
@@ -111,6 +132,6 @@ func (wm *WatchManager) addRemediationCRWatch(remediationCR *unstructured.Unstru
 		return err
 	}
 	wm.Watches[key] = struct{}{}
-	wm.Log.Info("added watch for remediation CRs", "kind", remediationCR.GetKind())
+	wm.log.Info("added watch for remediation CRs", "kind", remediationCR.GetKind())
 	return nil
 }
