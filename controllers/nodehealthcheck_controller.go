@@ -156,6 +156,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return result, err
 	}
+
+	ctx = context.WithValue(ctx, resources.HealthyDelayContextKey, nhc.Spec.HealthyDelay)
 	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.Capabilities.HasMachineAPI, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
@@ -285,6 +287,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			continue
 		}
 
+		resources.UpdateStatusNodeDelayedHealthy(node.GetName(), nhc, remediationCRs)
 		// set conditions healthy timestamp
 		conditionsHealthyTimestamp := resources.UpdateStatusNodeConditionsHealthy(node.GetName(), nhc, currentTime())
 		if conditionsHealthyTimestamp != nil {

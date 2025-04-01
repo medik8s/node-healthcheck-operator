@@ -144,6 +144,11 @@ spec:
                   and they cannot be used at the same time.
                 pattern: ^((100|[0-9]{1,2})%|[0-9]+)$
                 x-kubernetes-int-or-string: true
+              healthyDelay:
+                description: |-
+                  HealthyDelay stores the time in minutes before NHC would allow a node to be healthy again.
+                  A negative value means that NHC will never consider the node healthy and a manual intervention is expected
+                type: integer
               minHealthy:
                 anyOf:
                 - type: integer
@@ -443,6 +448,11 @@ spec:
                         remediation CRs are actually deleted, when remediators finished cleanup and removed their finalizers.
                       format: date-time
                       type: string
+                    healthyDelayed:
+                      description: HealthyDelayed notes whether a node should be considered
+                        healthy, but isn't due to NodeHealthCheckSpec.HealthyDelay
+                        configuration.
+                      type: boolean
                     name:
                       description: Name is the name of the unhealthy node
                       type: string

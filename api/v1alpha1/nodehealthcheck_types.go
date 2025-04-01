@@ -137,6 +137,12 @@ type NodeHealthCheckSpec struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	PauseRequests []string `json:"pauseRequests,omitempty"`
+
+	// HealthyDelay stores the time in minutes before NHC would allow a node to be healthy again.
+	// A negative value means that NHC will never consider the node healthy and a manual intervention is expected
+	//
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	HealthyDelay int `json:"healthyDelay,omitempty"`
 }
 
 // UnhealthyCondition represents a Node condition type and value with a
@@ -286,6 +292,12 @@ type UnhealthyNode struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
 	ConditionsHealthyTimestamp *metav1.Time `json:"conditionsHealthyTimestamp,omitempty"`
+
+	// HealthyDelayed notes whether a node should be considered healthy, but isn't due to NodeHealthCheckSpec.HealthyDelay configuration.
+	//
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	HealthyDelayed bool `json:"healthyDelayed,omitempty"`
 }
 
 // Remediation defines a remediation which was created for a node
