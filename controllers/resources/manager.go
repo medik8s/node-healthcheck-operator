@@ -27,6 +27,12 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
+const (
+	HealthyDelayContextKey = "healthyDelay"
+	// remediationHealthyDelayAnnotationKey annotation storing the time in minutes to postponed node regaining health
+	remediationHealthyDelayAnnotationKey = "remediation.medik8s.io/healthy-delay"
+)
+
 type Manager interface {
 	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *time.Duration, error)
 	GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstructured.Unstructured, error)
@@ -329,6 +335,12 @@ func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client
 	}
 
 	for _, cr := range remediationCRs {
+		if delayCrDeletion, err := m.shouldDelayCrDeletion(cr); err != nil {
+			m.log.Error(err, "failed to check whether remediation deletion should be delayed, delay is canceled", "node", nodeName, "Cr name", cr.GetName())
+		} else if delayCrDeletion {
+			continue
+		}
+
 		if deleted, err := m.DeleteRemediationCR(&cr, owner); err != nil {
 			m.log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
 			return remediationCRs, err
@@ -338,6 +350,49 @@ func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client
 	}
 
 	return remediationCRs, nil
+}
+
+func (m *manager) shouldDelayCrDeletion(cr unstructured.Unstructured) (bool, error) {
+	healthyDelayInSeconds, isDelayConfigured := m.ctx.Value(HealthyDelayContextKey).(int)
+	//Delay isn't configured stick with regular flow and delete the CR without delay
+	if !isDelayConfigured {
+		return false, nil
+	}
+
+	layout := "2006-01-02 15:04:05"
+	switch {
+	case healthyDelayInSeconds == 0: //Delete the CR
+		return false, nil
+	case healthyDelayInSeconds < 0:
+		//negative value is an indication to never automatically delete the CR
+		return true, nil
+	default:
+		if cr.GetAnnotations() == nil {
+			cr.SetAnnotations(make(map[string]string))
+		}
+		if delayStartTimeStr, isDelayAnnotationExist := cr.GetAnnotations()[remediationHealthyDelayAnnotationKey]; isDelayAnnotationExist {
+			if delayStartTime, err := time.Parse(layout, delayStartTimeStr); err != nil {
+				return false, err
+			} else {
+				now := time.Now().UTC()
+				shouldDelayDelete := now.Before(delayStartTime.Add(time.Duration(healthyDelayInSeconds) * time.Second))
+				if shouldDelayDelete {
+					remainingTimeSec := delayStartTime.Add(time.Duration(healthyDelayInSeconds) * time.Second).Sub(now).Seconds()
+					m.log.Info("delaying node getting healthy", "node name", utils.GetNodeNameFromCR(cr), "remaining time in seconds", remainingTimeSec)
+				} else {
+					m.log.Info("delaying for node getting healthy is done, about to remove the remediation CR", "node name", utils.GetNodeNameFromCR(cr))
+				}
+				return shouldDelayDelete, nil
+			}
+		} else {
+			// Set current time as the baseline for delaying node healthy
+			crAnnotations := cr.GetAnnotations()
+			crAnnotations[remediationHealthyDelayAnnotationKey] = time.Now().UTC().Format(layout)
+			cr.SetAnnotations(crAnnotations)
+			m.log.Info("setting a delay for node getting healthy", "node name", utils.GetNodeNameFromCR(cr), "delay in seconds", healthyDelayInSeconds)
+			return true, m.UpdateRemediationCR(&cr)
+		}
+	}
 }
 
 func (m *manager) CleanUp(nodeName string) error {
