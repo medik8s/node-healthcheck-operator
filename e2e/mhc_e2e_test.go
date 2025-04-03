@@ -145,17 +145,22 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 				By("waiting for healthy node condition")
 				utils.WaitForNodeHealthyCondition(k8sClient, nodeUnderTest, v1.ConditionTrue)
 
-				By("waiting for remediation CR deletion, else cleanup fails")
+				By("waiting for triggering remediation CR deletion, else cleanup fails")
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(mhc), mhc)).To(Succeed())
 					g.Expect(*mhc.Status.CurrentHealthy).To(BeNumerically("==", len(workers.Items)))
 				}, "5m", "5s").Should(Succeed(), "CR not deleted")
 
+				By("waiting for CR deletion (after finilizers are removed by snr) in order to trigger lease removal")
+				Eventually(
+					ensureRemediationResourceDoesNotExist(nodeUnderTest.Name, mhcNamespace, remediationGVR), "5m", "5s").
+					Should(Succeed())
+
 				By("ensuring lease removed")
 				Eventually(func(g Gomega) {
 					err := k8sClient.Get(context.Background(), ctrl.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 					g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
-				}, "1m", "5s").Should(Succeed(), "lease not deleted")
+				}, "2m", "5s").Should(Succeed(), "lease not deleted")
 
 			})
 		})
