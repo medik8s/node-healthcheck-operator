@@ -75,7 +75,7 @@ func (wm *watchManager) SetController(controller controller.Controller) {
 func (wm *watchManager) addWatches(rm Manager, templates []v1.ObjectReference, watchType utils.WatchType) error {
 	for _, ref := range templates {
 		template := rm.GenerateTemplate(&ref)
-		if err := wm.addRemediationTemplateCRWatch(template); err != nil {
+		if err := wm.addRemediationTemplateCRWatch(template, watchType); err != nil {
 			wm.log.Error(err, "failed to add watch for template CR", "kind", template.GetKind())
 			return err
 		}
@@ -88,7 +88,7 @@ func (wm *watchManager) addWatches(rm Manager, templates []v1.ObjectReference, w
 	return nil
 }
 
-func (wm *watchManager) addRemediationTemplateCRWatch(templateCR *unstructured.Unstructured) error {
+func (wm *watchManager) addRemediationTemplateCRWatch(templateCR *unstructured.Unstructured, watchType utils.WatchType) error {
 	wm.lock.Lock()
 	defer wm.lock.Unlock()
 
@@ -96,11 +96,20 @@ func (wm *watchManager) addRemediationTemplateCRWatch(templateCR *unstructured.U
 	if _, exists := wm.Watches[key]; exists {
 		return nil
 	}
+	var mapperFunc handler.MapFunc
+	if watchType == utils.NHC {
+		mapperFunc = utils.NHCByRemediationTemplateCRMapperFunc(wm.client, wm.log)
+	} else {
+		mapperFunc = utils.MHCByRemediationTemplateCRMapperFunc(wm.client, wm.log)
+	}
 
 	if err := wm.controller.Watch(
 		source.Kind(wm.cache, templateCR),
-		handler.EnqueueRequestsFromMapFunc(utils.NHCByRemediationTemplateCRMapperFunc(wm.client, wm.log)),
+		handler.EnqueueRequestsFromMapFunc(mapperFunc),
 		predicate.Funcs{
+			// we are just interested in update and delete events for now
+			// template CR updates: validate
+			// template CR deletion: update NHC/MHC status
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
 			GenericFunc: func(_ event.GenericEvent) bool { return false },
 		},
@@ -125,6 +134,9 @@ func (wm *watchManager) addRemediationCRWatch(remediationCR *unstructured.Unstru
 		source.Kind(wm.cache, remediationCR),
 		handler.EnqueueRequestsFromMapFunc(utils.RemediationCRMapperFunc(wm.log, watchType)),
 		predicate.Funcs{
+			// we are just interested in update and delete events for now
+			// remediation CR update: watch conditions
+			// remediation CR deletion: clean up
 			CreateFunc:  func(_ event.CreateEvent) bool { return false },
 			GenericFunc: func(_ event.GenericEvent) bool { return false },
 		},

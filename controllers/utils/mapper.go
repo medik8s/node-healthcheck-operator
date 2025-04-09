@@ -160,6 +160,38 @@ func NHCByRemediationTemplateCRMapperFunc(c client.Client, logger logr.Logger) h
 	return delegate
 }
 
+// MHCByRemediationTemplateCRMapperFunc return the RemediationTemplateCR-to-MHC mapper function
+func MHCByRemediationTemplateCRMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+	// This closure is meant to get the MHC for the given remediation template CR
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(ctx, mhcList, &client.ListOptions{}); err != nil {
+			logger.Error(err, "mapper: failed to list MHCs")
+			return requests
+		}
+
+		templateMatches := func(mhcTemplate v1.ObjectReference) bool {
+			return mhcTemplate.Kind == o.GetObjectKind().GroupVersionKind().Kind && mhcTemplate.Name == o.GetName()
+		}
+
+		for _, mhc := range mhcList.Items {
+			match := false
+			if mhc.Spec.RemediationTemplate != nil {
+				match = templateMatches(*mhc.Spec.RemediationTemplate)
+			}
+			if match {
+				logger.Info("adding MHC to reconcile queue for handling remediation template", "template", o.GetName(), "MHC", mhc.GetName())
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: mhc.GetName()}})
+			}
+		}
+		return requests
+
+	}
+	return delegate
+}
+
 // MHCByNodeMapperFunc return the Node-to-MHC mapper function
 func MHCByNodeMapperFunc(c client.Client, logger logr.Logger, featureGates featuregates.Accessor) handler.MapFunc {
 	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
