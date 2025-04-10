@@ -671,16 +671,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(err).ToNot(HaveOccurred())
 
 						//Mock node becoming healthy
-						node := &v1.Node{}
-						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)
-						Expect(err).ToNot(HaveOccurred())
-						for i, c := range node.Status.Conditions {
-							if c.Type == v1.NodeReady {
-								node.Status.Conditions[i].Status = v1.ConditionTrue
-							}
-						}
-						err = k8sClient.Status().Update(context.Background(), node)
-						Expect(err).ToNot(HaveOccurred())
+						mockNodeGettingHealthy(unhealthyNodeName)
 
 						//Remediation should be removed
 						Eventually(func() bool {
@@ -711,16 +702,7 @@ var _ = Describe("Node Health Check CR", func() {
 						Expect(k8sClient.Update(context.Background(), lease)).To(Succeed(), "failed to update lease owner")
 
 						//Mock node becoming healthy
-						node := &v1.Node{}
-						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)
-						Expect(err).ToNot(HaveOccurred())
-						for i, c := range node.Status.Conditions {
-							if c.Type == v1.NodeReady {
-								node.Status.Conditions[i].Status = v1.ConditionTrue
-							}
-						}
-						err = k8sClient.Status().Update(context.Background(), node)
-						Expect(err).ToNot(HaveOccurred())
+						mockNodeGettingHealthy(unhealthyNodeName)
 
 						//Remediation should be removed
 						Eventually(func() bool {
@@ -1248,6 +1230,56 @@ var _ = Describe("Node Health Check CR", func() {
 			It("remediation shouldn't be created", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(0))
+			})
+		})
+
+		Context("with Node setup to delay healthy", func() {
+			BeforeEach(func() {
+				setupObjects(1, 2, false)
+				underTest.Spec.HealthyDelay = 3
+			})
+			It("remediation shouldn't be created", func() {
+				// first call should fail, because the node gets unready in a few seconds only
+				cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
+				Expect(cr).To(BeNil())
+
+				// wait until nodes are unhealthy
+				Eventually(func(g Gomega) {
+					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+					g.Expect(cr).ToNot(BeNil())
+				}, time.Second*10, time.Millisecond*300).Should(Succeed())
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				//Check Delay status isn't applied until the node is healthy
+				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeFalse())
+
+				mockNodeGettingHealthy(unhealthyNodeName)
+
+				// remediation shouldn't be removed even though rhe node is healthy because of delay
+				Consistently(func(g Gomega) {
+					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+					g.Expect(cr).ToNot(BeNil())
+				}, time.Second*2, time.Millisecond*300).Should(Succeed())
+
+				//Check healthy delay annotation on the CR
+				Expect(cr.GetAnnotations()["remediation.medik8s.io/healthy-delay"]).ToNot(BeEmpty())
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				//Check status was updated
+				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeTrue())
+
+				//Delay is done remediation should be removed
+				Eventually(func(g Gomega) {
+					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+					g.Expect(cr).To(BeNil())
+				}, time.Second*15, time.Millisecond*300).Should(Succeed())
+
+				// get updated NHC
+				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+				//Check unhealthy was removed
+				Expect(len(underTest.Status.UnhealthyNodes)).To(BeZero())
 			})
 		})
 
@@ -2688,4 +2720,17 @@ func isEventOccurred(eventType string, reason string, message string) bool {
 func ptrToIntStr(val string) *intstr.IntOrString {
 	v := intstr.Parse(val)
 	return &v
+}
+
+func mockNodeGettingHealthy(unhealthyNodeName string) {
+	node := &v1.Node{}
+	err := k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)
+	Expect(err).ToNot(HaveOccurred())
+	for i, c := range node.Status.Conditions {
+		if c.Type == v1.NodeReady {
+			node.Status.Conditions[i].Status = v1.ConditionTrue
+		}
+	}
+	err = k8sClient.Status().Update(context.Background(), node)
+	Expect(err).ToNot(HaveOccurred())
 }
