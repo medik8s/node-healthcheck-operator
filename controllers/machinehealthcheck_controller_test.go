@@ -2425,6 +2425,7 @@ func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObje
 		FeatureGates: &featuregates.FakeAccessor{
 			IsMaoMhcDisabled: true,
 		},
+		WatchManager: &fakeWatchManager{},
 	}
 }
 

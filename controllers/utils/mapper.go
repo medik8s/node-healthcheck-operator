@@ -25,6 +25,14 @@ const (
 	MachineNodeNameIndex = "machineNodeNameIndex"
 )
 
+// WatchType is used to differentiate watch CR logic between NHC and MHC.
+type WatchType string
+
+const (
+	NHC WatchType = "NHC"
+	MHC WatchType = "MHC"
+)
+
 // NHCByNodeMapperFunc return the Node-to-NHC mapper function
 func NHCByNodeMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
 	// This closure is meant to fetch all NHC to fill the reconcile queue.
@@ -86,22 +94,31 @@ func NHCByMHCEventMapperFunc(c client.Client, logger logr.Logger) handler.MapFun
 	return delegate
 }
 
-// NHCByRemediationCRMapperFunc return the RemediationCR-to-NHC mapper function
-func NHCByRemediationCRMapperFunc(logger logr.Logger) handler.MapFunc {
+// RemediationCRMapperFunc return the RemediationCR-to-NHC/MHC mapper function
+func RemediationCRMapperFunc(logger logr.Logger, watchType WatchType) handler.MapFunc {
 	// This closure is meant to get the NHC for the given remediation CR
 	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
 		requests := make([]reconcile.Request, 0)
 		for _, owner := range o.GetOwnerReferences() {
-			if owner.Kind == "NodeHealthCheck" && owner.APIVersion == remediationv1alpha1.GroupVersion.String() {
-				logger.Info("mapper: found NHC for remediation CR", "NHC Name", owner.Name, "Remediation CR Name", o.GetName(), "Remediation CR Kind", o.GetObjectKind().GroupVersionKind().Kind)
+			logger.Info("Request info", "owner ref", owner)
+			if isCrNeedWatching(owner, watchType) {
+				logger.Info(fmt.Sprintf("mapper: found %s for remediation CR", watchType), fmt.Sprintf("%s Name", watchType), owner.Name, "Remediation CR Name", o.GetName(), "Remediation CR Kind", o.GetObjectKind().GroupVersionKind().Kind)
 				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: owner.Name}})
 				return requests
 			}
 		}
-		logger.Info("mapper: didn't find NHC for remediation CR", "Remediation CR Name", o.GetName(), "Remediation CR Kind", o.GetObjectKind().GroupVersionKind().Kind)
+		logger.Info(fmt.Sprintf("mapper: didn't find %s for remediation CR", watchType), "Remediation CR Name", o.GetName(), "Remediation CR Kind", o.GetObjectKind().GroupVersionKind().Kind)
 		return requests
 	}
 	return delegate
+}
+
+func isCrNeedWatching(owner metav1.OwnerReference, watchType WatchType) bool {
+	if watchType == NHC {
+		return owner.Kind == "NodeHealthCheck" && owner.APIVersion == remediationv1alpha1.GroupVersion.String()
+	} else {
+		return owner.Kind == "Machine" && owner.APIVersion == machinev1beta1.GroupVersion.String()
+	}
 }
 
 // NHCByRemediationTemplateCRMapperFunc return the RemediationTemplateCR-to-NHC mapper function
@@ -135,6 +152,38 @@ func NHCByRemediationTemplateCRMapperFunc(c client.Client, logger logr.Logger) h
 			if match {
 				logger.Info("adding NHC to reconcile queue for handling remediation template", "template", o.GetName(), "NHC", nhc.GetName())
 				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: nhc.GetName()}})
+			}
+		}
+		return requests
+
+	}
+	return delegate
+}
+
+// MHCByRemediationTemplateCRMapperFunc return the RemediationTemplateCR-to-MHC mapper function
+func MHCByRemediationTemplateCRMapperFunc(c client.Client, logger logr.Logger) handler.MapFunc {
+	// This closure is meant to get the MHC for the given remediation template CR
+	delegate := func(ctx context.Context, o client.Object) []reconcile.Request {
+		requests := make([]reconcile.Request, 0)
+
+		mhcList := &machinev1beta1.MachineHealthCheckList{}
+		if err := c.List(ctx, mhcList, &client.ListOptions{}); err != nil {
+			logger.Error(err, "mapper: failed to list MHCs")
+			return requests
+		}
+
+		templateMatches := func(mhcTemplate v1.ObjectReference) bool {
+			return mhcTemplate.Kind == o.GetObjectKind().GroupVersionKind().Kind && mhcTemplate.Name == o.GetName()
+		}
+
+		for _, mhc := range mhcList.Items {
+			match := false
+			if mhc.Spec.RemediationTemplate != nil {
+				match = templateMatches(*mhc.Spec.RemediationTemplate)
+			}
+			if match {
+				logger.Info("adding MHC to reconcile queue for handling remediation template", "template", o.GetName(), "MHC", mhc.GetName())
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: mhc.GetName()}})
 			}
 		}
 		return requests
