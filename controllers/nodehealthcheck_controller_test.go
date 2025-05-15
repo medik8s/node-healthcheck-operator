@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -1236,50 +1237,114 @@ var _ = Describe("Node Health Check CR", func() {
 		Context("with Node setup to delay healthy", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2, false)
-				underTest.Spec.HealthyDelay = 3
 			})
-			It("remediation shouldn't be created", func() {
-				// first call should fail, because the node gets unready in a few seconds only
-				cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
-				Expect(cr).To(BeNil())
+			When("Delay is set for 3 seconds", func() {
+				BeforeEach(func() {
+					underTest.Spec.HealthyDelay = &metav1.Duration{Duration: time.Second * 3}
+				})
+				It("remediation deletion should be delayed", func() {
+					// First call should fail, because the node gets unready in a few seconds only
+					cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
+					Expect(cr).To(BeNil())
 
-				// wait until nodes are unhealthy
-				Eventually(func(g Gomega) {
-					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
-					g.Expect(cr).ToNot(BeNil())
-				}, time.Second*10, time.Millisecond*300).Should(Succeed())
+					// Wait until nodes are unhealthy
+					Eventually(func(g Gomega) {
+						cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+						g.Expect(cr).ToNot(BeNil())
+					}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				// get updated NHC
-				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-				//Check Delay status isn't applied until the node is healthy
-				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeFalse())
+					// Get updated NHC
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					// Check delay status isn't applied until the node is healthy
+					Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeNil())
 
-				mockNodeGettingHealthy(unhealthyNodeName)
+					mockNodeGettingHealthy(unhealthyNodeName)
 
-				// remediation shouldn't be removed even though rhe node is healthy because of delay
-				Consistently(func(g Gomega) {
-					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
-					g.Expect(cr).ToNot(BeNil())
-				}, time.Second*2, time.Millisecond*300).Should(Succeed())
+					// Remediation shouldn't be removed even though the node is healthy because of delay
+					Consistently(func(g Gomega) {
+						cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+						g.Expect(cr).ToNot(BeNil())
+					}, time.Second*2, time.Millisecond*300).Should(Succeed())
 
-				//Check healthy delay annotation on the CR
-				Expect(cr.GetAnnotations()["remediation.medik8s.io/healthy-delay"]).ToNot(BeEmpty())
+					// Check healthy delay annotation on the CR
+					Expect(cr.GetAnnotations()["remediation.medik8s.io/healthy-delay"]).ToNot(BeEmpty())
 
-				// get updated NHC
-				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-				//Check status was updated
-				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeTrue())
+					// Get updated NHC
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					// Check status was updated
+					Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(Equal(ptr.To(true)))
 
-				//Delay is done remediation should be removed
-				Eventually(func(g Gomega) {
-					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
-					g.Expect(cr).To(BeNil())
-				}, time.Second*15, time.Millisecond*300).Should(Succeed())
+					// Delay is done, remediation should be removed
+					Eventually(func(g Gomega) {
+						cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+						g.Expect(cr).To(BeNil())
+					}, time.Second*3, time.Millisecond*300).Should(Succeed())
 
-				// get updated NHC
-				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-				//Check unhealthy was removed
-				Expect(len(underTest.Status.UnhealthyNodes)).To(BeZero())
+					// Get updated NHC
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+
+					// Check unhealthy was removed
+					Eventually(func(g Gomega) {
+						g.Expect(len(underTest.Status.UnhealthyNodes)).To(BeZero())
+					}, time.Second*3, time.Millisecond*300).Should(Succeed())
+
+				})
+			})
+			When("Delay is set indefinitely", func() {
+				BeforeEach(func() {
+					underTest.Spec.HealthyDelay = &metav1.Duration{Duration: time.Second * -1}
+				})
+				It("remediation should only be deleted after node is manually confirmed to be healthy", func() {
+					// First call should fail, because the node gets unready in a few seconds only
+					cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
+					Expect(cr).To(BeNil())
+
+					// Wait until nodes are unhealthy
+					Eventually(func(g Gomega) {
+						cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+						g.Expect(cr).ToNot(BeNil())
+					}, time.Second*10, time.Millisecond*300).Should(Succeed())
+
+					// Get updated NHC
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					// Check Delay status isn't applied until the node is healthy
+					Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeNil())
+
+					// Simulate node getting healthy
+					mockNodeGettingHealthy(unhealthyNodeName)
+
+					// Remediation shouldn't be removed even though the node is healthy because of delay
+					Consistently(func(g Gomega) {
+						cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+						g.Expect(cr).ToNot(BeNil())
+					}, time.Second*5, time.Millisecond*300).Should(Succeed())
+
+					// Mock user intervention marking the node as healthy by using manually-confirmed-healthy annotation
+					unhealthyNode := &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, unhealthyNode)).To(Succeed())
+					unhealthyNode.SetAnnotations(map[string]string{resources.RemediationManuallyConfirmedHealthyAnnotationKey: "true"})
+					Expect(k8sClient.Update(context.Background(), unhealthyNode)).To(Succeed())
+
+					// User confirmed node as healthy so remediation should be removed
+					Eventually(func(g Gomega) {
+						cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
+						g.Expect(cr).To(BeNil())
+					}, time.Second*3, time.Millisecond*300).Should(Succeed())
+
+					// Get updated NHC
+					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+
+					// Check unhealthy was removed
+					Eventually(func(g Gomega) {
+						g.Expect(len(underTest.Status.UnhealthyNodes)).To(BeZero())
+					}, time.Second*3, time.Millisecond*300).Should(Succeed())
+
+					// Check node annotation was removed
+					remediatedNode := &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, remediatedNode))
+					_, found := remediatedNode.GetAnnotations()[resources.RemediationManuallyConfirmedHealthyAnnotationKey]
+					Expect(found).To(BeFalse())
+				})
 			})
 		})
 

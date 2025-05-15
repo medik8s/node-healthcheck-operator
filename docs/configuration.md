@@ -58,6 +58,7 @@ spec:
 | _maxUnhealthy_           | one of _minHealthy_ or _maxUnhealthy_ should be set | n/a                                                                                             | The maximum number of unhealthy nodes selected by this CR for allowing further remediation. Percentage or absolute number. _minHealthy_ and _maxUnhealthy_ are mutually exclusive. _maxUnhealthy_ should not be used with remediators that delete nodes (e.g. _MachineDeletionRemediation_), as this breaks the logic for counting healthy and unhealthy nodes. |
 | _pauseRequests_          | no                                                  | n/a                                                                                             | A string list. See details below.                                                                                                                                                                                                                                                                                                                               |
 | _unhealthyConditions_    | no                                                  | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | List of UnhealthyCondition, which defines node unhealthiness. See details below.                                                                                                                                                                                                                                                                                |
+| _healthyDelay_           | no                                                  | 0                                                                                               | The time before NHC would allow a node to be healthy again. A negative value means that NHC will never consider the node healthy, and manual intervention is expected.                                                                                                                                                                                          |
 
 ### Selector
 
@@ -190,6 +191,39 @@ Updating pauseRequests on the command line works like this:
 ```shell
 oc patch nhc/<name> --patch '{"spec":{"pauseRequests":["pause for cluster upgrade by @admin"]}}' --type=merge
 ```
+
+### HealthyDelay
+The healthyDelay field introduces a configurable delay before Node HealthCheck (NHC) will fully recognize a node as healthy again and remove its associated remediation.
+
+Meaning and Motivation:
+
+Historically, NHC would remove a remediation (and potentially allow taints to be removed) as soon as a node reported healthy. However, some customers require more precise control over this process, especially when dealing with nodes that might:
+
+- "Flap" health status: Briefly regain health for a very short period only to become unhealthy again.
+- Require post-remediation validation: Need a grace period to ensure stability or run specific checks before being fully integrated back into the cluster and having taints removed.
+
+By configuring a healthyDelay, you can ensure that a node remains under observation for a specified duration after it first reports healthy. NHC will only delete its associated remediation (which in turn can trigger taint removal) once the node has maintained a healthy status for the entire configured delay.
+
+Manual Intervention:
+
+A negative value for healthyDelay has a special meaning: it tells NHC to never automatically consider the node healthy and to never automatically delete the remediation. This requires manual intervention to clear the remediation and allow the node to fully rejoin the cluster.
+
+There are two methods for manual intervention:
+
+- Method 1: Modifying the NodeHealthCheck CR (Affects all delayed nodes under this CR)
+
+  - Action: Set the healthyDelay field to 0s (zero duration) or simply remove the field entirely from the NodeHealthCheck CR.
+  - Impact: This action will affect all nodes currently being delayed by that specific NodeHealthCheck CR, allowing them to be considered healthy (if they meet other healthy conditions) and have their remediations removed without further delay. This is useful if you want to disable the delay for the entire set of nodes managed by this CR.
+
+- Method 2: Using a Node Annotation (Node-specific intervention)
+
+  - To trigger node-specific manual intervention, you should add the remediation.medik8s.io/manually-confirmed-healthy annotation (with any value) to the Node object of the node that you want to manually confirm as healthy.
+  - When this annotation is present on a Node:
+    - NHC will ignore the configured healthyDelay for that specific node.
+    - NHC will update its internal status to reflect that the node is no longer being delayed by healthyDelay.
+    - Once the node meets all other healthy criteria, NHC will delete the remediation.medik8s.io/manually-confirmed-healthy annotation from the Node, and proceed with deleting the remediation CR for that node.
+    - This approach provides a precise, node-specific mechanism for an administrator to signal that a node is healthy and ready to exit the healthyDelay period, without affecting the healthyDelay configuration for other nodes under the same NodeHealthCheck CR.
+
 
 ## NodeHealthCheck Status
 

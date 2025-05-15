@@ -138,11 +138,14 @@ type NodeHealthCheckSpec struct {
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	PauseRequests []string `json:"pauseRequests,omitempty"`
 
-	// HealthyDelay stores the time in minutes before NHC would allow a node to be healthy again.
+	// HealthyDelay is the time before NHC would allow a node to be healthy again.
 	// A negative value means that NHC will never consider the node healthy and a manual intervention is expected
 	//
+	//+kubebuilder:validation:Pattern="^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	//+kubebuilder:validation:Type=string
+	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
-	HealthyDelay int `json:"healthyDelay,omitempty"`
+	HealthyDelay *metav1.Duration `json:"healthyDelay,omitempty"`
 }
 
 // UnhealthyCondition represents a Node condition type and value with a
@@ -297,7 +300,7 @@ type UnhealthyNode struct {
 	//
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status
-	HealthyDelayed bool `json:"healthyDelayed,omitempty"`
+	HealthyDelayed *bool `json:"healthyDelayed,omitempty"`
 }
 
 // Remediation defines a remediation which was created for a node

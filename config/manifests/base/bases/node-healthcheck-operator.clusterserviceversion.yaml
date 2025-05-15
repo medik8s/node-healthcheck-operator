@@ -66,9 +66,9 @@ spec:
           at the same time.
         displayName: Max Unhealthy
         path: maxUnhealthy
-      - description: HealthyDelay stores the time in minutes before NHC would allow
-          a node to be healthy again. A negative value means that NHC will never consider
-          the node healthy and a manual intervention is expected
+      - description: HealthyDelay is the time before NHC would allow a node to be
+          healthy again. A negative value means that NHC will never consider the node
+          healthy and a manual intervention is expected
         displayName: Healthy Delay
         path: healthyDelay
       - description: Remediation is allowed if at least "MinHealthy" nodes selected
