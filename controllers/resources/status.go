@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/ptr"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
@@ -72,16 +73,21 @@ func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealt
 }
 
 func UpdateStatusNodeDelayedHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, remediationCRs []unstructured.Unstructured) {
-	for i, _ := range nhc.Status.UnhealthyNodes {
-		if isNodeHealthyDelayed(nodeName, remediationCRs) {
-			nhc.Status.UnhealthyNodes[i].HealthyDelayed = true
+	if !isNodeHealthyDelayed(nodeName, remediationCRs) {
+		return
+	}
+
+	for i := range nhc.Status.UnhealthyNodes {
+		if nhc.Status.UnhealthyNodes[i].Name == nodeName {
+			nhc.Status.UnhealthyNodes[i].HealthyDelayed = ptr.To(true)
+			break
 		}
 	}
 }
 
 func isNodeHealthyDelayed(nodeName string, remediationCRs []unstructured.Unstructured) bool {
 	for _, cr := range remediationCRs {
-		nodeHealthyDelayed := cr.GetAnnotations() != nil && len(cr.GetAnnotations()[remediationHealthyDelayAnnotationKey]) > 0 && utils.GetNodeNameFromCR(cr) == nodeName
+		nodeHealthyDelayed := cr.GetAnnotations() != nil && len(cr.GetAnnotations()[RemediationHealthyDelayAnnotationKey]) > 0 && utils.GetNodeNameFromCR(cr) == nodeName
 		if nodeHealthyDelayed {
 			return true
 		}
