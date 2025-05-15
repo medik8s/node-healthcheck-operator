@@ -156,6 +156,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return result, err
 	}
+
+	ctx = context.WithValue(ctx, resources.HealthyDelayContextKey, nhc.Spec.HealthyDelay.Duration)
 	resourceManager := resources.NewManager(r.Client, ctx, r.Log, r.Capabilities.HasMachineAPI, leaseManager, r.Recorder)
 
 	// always check if we need to patch status before we exit Reconcile
@@ -272,10 +274,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	healthyCount := 0
 	for _, node := range notMatchingNodes {
 		log.Info("handling healthy node", "node", node.GetName())
-		remediationCRs, err := resourceManager.HandleHealthyNode(node.GetName(), node.GetName(), nhc)
+		remediationCRs, requeueAfter, err := resourceManager.HandleHealthyNode(node.GetName(), node.GetName(), nhc)
 		if err != nil {
 			log.Error(err, "failed to handle healthy node", "node", node.Name)
 			return result, err
+		}
+		if requeueAfter > 0 {
+			updateRequeueAfter(&result, &requeueAfter)
 		}
 
 		// only consider nodes without remediation CRs as healthy

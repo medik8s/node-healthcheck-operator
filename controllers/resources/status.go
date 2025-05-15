@@ -71,6 +71,25 @@ func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealt
 	}
 }
 
+func UpdateStatusNodeDelayedHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealthCheck, remediationCRs []unstructured.Unstructured) {
+	for i := range nhc.Status.UnhealthyNodes {
+		if nhc.Status.UnhealthyNodes[i].Name == nodeName && isNodeHealthyDelayed(nodeName, remediationCRs) {
+			nhc.Status.UnhealthyNodes[i].HealthyDelayed = true
+			break
+		}
+	}
+}
+
+func isNodeHealthyDelayed(nodeName string, remediationCRs []unstructured.Unstructured) bool {
+	for _, cr := range remediationCRs {
+		nodeHealthyDelayed := cr.GetAnnotations() != nil && len(cr.GetAnnotations()[RemediationHealthyDelayAnnotationKey]) > 0 && utils.GetNodeNameFromCR(cr) == nodeName
+		if nodeHealthyDelayed {
+			return true
+		}
+	}
+	return false
+}
+
 func UpdateStatusNodeUnhealthy(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) {
 	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
 		if unhealthyNode.Name == node.Name {
