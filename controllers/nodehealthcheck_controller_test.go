@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -1204,7 +1205,7 @@ var _ = Describe("Node Health Check CR", func() {
 		Context("with Node setup to delay healthy", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2, false)
-				underTest.Spec.HealthyDelay = 3
+				underTest.Spec.HealthyDelay = &metav1.Duration{Duration: time.Second * 3}
 			})
 			It("remediation shouldn't be created", func() {
 				// first call should fail, because the node gets unready in a few seconds only
@@ -1220,11 +1221,11 @@ var _ = Describe("Node Health Check CR", func() {
 				// get updated NHC
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 				//Check Delay status isn't applied until the node is healthy
-				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeFalse())
+				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeNil())
 
 				mockNodeGettingHealthy(unhealthyNodeName)
 
-				// remediation shouldn't be removed even though rhe node is healthy because of delay
+				// remediation shouldn't be removed even though the node is healthy because of delay
 				Consistently(func(g Gomega) {
 					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
 					g.Expect(cr).ToNot(BeNil())
@@ -1236,13 +1237,13 @@ var _ = Describe("Node Health Check CR", func() {
 				// get updated NHC
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 				//Check status was updated
-				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(BeTrue())
+				Expect(underTest.Status.UnhealthyNodes[0].HealthyDelayed).To(Equal(ptr.To(true)))
 
 				//Delay is done remediation should be removed
 				Eventually(func(g Gomega) {
 					cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
 					g.Expect(cr).To(BeNil())
-				}, time.Second*15, time.Millisecond*300).Should(Succeed())
+				}, time.Second*3, time.Millisecond*300).Should(Succeed())
 
 				// get updated NHC
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
