@@ -167,7 +167,7 @@ var _ = BeforeSuite(func() {
 	for _, obj := range []ctrl.Object{dummyTemplateCRD, dummyCRD, dummyTemplate, clusterRole} {
 		err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)
 		if errors.IsNotFound(err) {
-			// no need to cleanup, just reuse fro next round of tests
+			// no need to cleanup, just reuse for next round of tests
 			Expect(k8sClient.Create(context.Background(), obj)).To(Succeed())
 			// wait until resource exists
 			Eventually(func(g Gomega) {
@@ -310,7 +310,7 @@ func newExtRemediationClusterRole() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{dummyRemediationTemplateGVK.Group},
 				Resources: []string{strings.ToLower(dummyRemediationTemplateGVK.Kind) + "s"},
-				Verbs:     []string{"get"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{dummyRemediationGVK.Group},
