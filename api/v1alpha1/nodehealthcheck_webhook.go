@@ -40,6 +40,7 @@ import (
 const (
 	OngoingRemediationError    = "prohibited due to running remediation"
 	minHealthyError            = "MinHealthy must not be negative"
+	maxUnhealthyError          = "MaxUnhealthy must not be negative"
 	invalidSelectorError       = "Invalid selector"
 	missingSelectorError       = "Selector is mandatory"
 	mandatoryRemediationError  = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
@@ -105,7 +106,7 @@ func (v *customValidator) ValidateDelete(_ context.Context, obj runtime.Object) 
 
 func (v *customValidator) validate(ctx context.Context, nhc *NodeHealthCheck) error {
 	aggregated := errors.NewAggregate([]error{
-		v.validateMinHealthy(nhc),
+		v.validateMinHealthyMaxUnhealthy(nhc),
 		v.validateSelector(nhc),
 		v.validateMutualRemediations(nhc),
 		v.validateEscalatingRemediations(ctx, nhc),
@@ -125,13 +126,19 @@ func (v *customValidator) validateControlPlaneTopology() error {
 	return nil
 }
 
-func (v *customValidator) validateMinHealthy(nhc *NodeHealthCheck) error {
+func (v *customValidator) validateMinHealthyMaxUnhealthy(nhc *NodeHealthCheck) error {
 	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
-	if nhc.Spec.MinHealthy == nil {
-		return fmt.Errorf("MinHealthy must not be empty")
+	if nhc.Spec.MinHealthy != nil && nhc.Spec.MaxUnhealthy != nil {
+		return fmt.Errorf("minHealthy and maxUnhealthy cannot be specified at the same time")
 	}
-	if nhc.Spec.MinHealthy.Type == intstr.Int && nhc.Spec.MinHealthy.IntVal < 0 {
+	if nhc.Spec.MinHealthy == nil && nhc.Spec.MaxUnhealthy == nil {
+		return fmt.Errorf("one of minHealthy and maxUnhealthy should be specified")
+	}
+	if nhc.Spec.MinHealthy != nil && nhc.Spec.MinHealthy.Type == intstr.Int && nhc.Spec.MinHealthy.IntVal < 0 {
 		return fmt.Errorf("%s: %v", minHealthyError, nhc.Spec.MinHealthy)
+	}
+	if nhc.Spec.MaxUnhealthy != nil && nhc.Spec.MaxUnhealthy.Type == intstr.Int && nhc.Spec.MaxUnhealthy.IntVal < 0 {
+		return fmt.Errorf("%s: %v", maxUnhealthyError, nhc.Spec.MaxUnhealthy)
 	}
 	return nil
 }

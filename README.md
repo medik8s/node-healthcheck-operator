@@ -61,6 +61,10 @@ larger clusters, we want to protect against failures that appear to take out
 large portions of compute capacity but are really the result of failures on or
 near the control plane. For this reason, the NHC CR includes the ability to
 define a minimum number of healthy nodes, by percentage or absolute number.
+Alternatively, a complementary `maxUnhealthy` parameter can be used to specify
+the maximum number of unhealthy nodes, simplifying the configuration of N-1 or
+N-2 scenarios when the total number of selected nodes is not known in advance
+or is expected to change.
 When the cluster is falling short of this threshold, no further remediation
 will be started.
 
