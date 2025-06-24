@@ -127,16 +127,11 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(errors.IsInvalid(err)).To(BeTrue())
 			})
 
-			It("fails creation on negative number", func() {
-				// This test does not work yet, because the "minimum" validation
-				// of kubebuilder does not work for IntOrString.
-				// Un-skip this as soon as this is supported.
-				// For now negative minHealthy is validated via webhook.
-				Skip("Does not work yet")
-				invalidInt := intstr.FromInt(-10)
-				underTest.Spec.MinHealthy = &invalidInt
+			It("succeeds creation on negative numbers", func() {
+				negativeInt := intstr.FromInt(-10)
+				underTest.Spec.MinHealthy = &negativeInt
 				err := k8sClient.Create(context.Background(), underTest)
-				Expect(errors.IsInvalid(err)).To(BeTrue())
+				Expect(errors.IsInvalid(err)).To(BeFalse())
 			})
 
 			It("succeeds creation on percentage between 0%-100%", func() {
@@ -144,6 +139,20 @@ var _ = Describe("Node Health Check CR", func() {
 				underTest.Spec.MinHealthy = &validPercentage
 				err := k8sClient.Create(context.Background(), underTest)
 				Expect(errors.IsInvalid(err)).To(BeFalse())
+			})
+
+			It("succeeds creation on negative percentage between -0% and -100%", func() {
+				validNegativePercentage := intstr.FromString("-30%")
+				underTest.Spec.MinHealthy = &validNegativePercentage
+				err := k8sClient.Create(context.Background(), underTest)
+				Expect(errors.IsInvalid(err)).To(BeFalse())
+			})
+
+			It("fails creation on negative percentage < -100%", func() {
+				invalidPercentage := intstr.FromString("-150%")
+				underTest.Spec.MinHealthy = &invalidPercentage
+				err := k8sClient.Create(context.Background(), underTest)
+				Expect(errors.IsInvalid(err)).To(BeTrue())
 			})
 		})
 	})
@@ -2242,6 +2251,75 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 
+	})
+
+	Context("getAbsoluteMinHealthy", func() {
+		DescribeTable("should return absolute minHealthy",
+			func(intOrPercent intstr.IntOrString, totalNodes, expectedAbsoluteMinHealthy int, expectedErr error) {
+				absoluteMinHealthy, err := getAbsoluteMinHealthy(&intOrPercent, totalNodes)
+				if expectedErr != nil {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(expectedErr))
+				} else {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(absoluteMinHealthy).To(Equal(expectedAbsoluteMinHealthy))
+				}
+			},
+			Entry("positive value",
+				intstr.Parse("8"),
+				10,
+				8,
+				nil,
+			),
+			Entry("positive percentage value",
+				intstr.Parse("80%"),
+				10,
+				8,
+				nil,
+			),
+			Entry("positive percentage value with round-up",
+				intstr.Parse("75%"),
+				10,
+				8,
+				nil,
+			),
+			Entry("0%",
+				intstr.Parse("0%"),
+				10,
+				0,
+				nil,
+			),
+			Entry("100%",
+				intstr.Parse("100%"),
+				10,
+				10,
+				nil,
+			),
+			Entry("negative value",
+				intstr.Parse("-3"),
+				10,
+				7,
+				nil,
+			),
+			Entry("negative percentage value",
+				intstr.Parse("-30%"),
+				10,
+				7,
+				nil,
+			),
+			Entry("negative percentage value with round-up",
+				intstr.Parse("-25%"),
+				10,
+				8,
+				nil,
+			),
+			Entry("negative value exceeding the number of nodes",
+				intstr.Parse("-11"),
+				10,
+				-1,
+				fmt.Errorf("absolute minHealthy is negative: %d", -1),
+			),
+		)
 	})
 })
 

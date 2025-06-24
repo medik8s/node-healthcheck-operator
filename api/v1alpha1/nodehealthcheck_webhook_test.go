@@ -74,8 +74,8 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 				nhc.Spec.MinHealthy = &mh
 			})
 
-			It("should be denied", func() {
-				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(minHealthyError)))
+			It("should be allowed", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(Succeed())
 			})
 		})
 

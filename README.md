@@ -60,7 +60,10 @@ Remediation is not always the correct response to a failure. Especially in
 larger clusters, we want to protect against failures that appear to take out
 large portions of compute capacity but are really the result of failures on or
 near the control plane. For this reason, the NHC CR includes the ability to
-define a minimum number of healthy nodes, by percentage or absolute number.
+define a minimum number of healthy nodes, by percentage or integer number.
+Negative values (both integers and percentages) can be used to configure
+N-1, N-2, or similar thresholds when the total number of selected nodes is
+not known in advance.
 When the cluster is falling short of this threshold, no further remediation
 will be started.
 

@@ -80,13 +80,20 @@ type NodeHealthCheckSpec struct {
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Remediation is allowed if at least "MinHealthy" nodes selected by "selector" are healthy.
-	// Expects either a positive integer value or a percentage value.
-	// Percentage values must be positive whole numbers and are capped at 100%.
-	// 100% is valid and will block all remediation.
+	// Accepts either an integer or a percentage (whole numbers only, capped at 100%).
+	// For positive values, MinHealthy is the actual number of nodes healthy,
+	// negative values (both integers and percentages) are instead interpreted as
+	// "total number of selected nodes minus the provided value".
+	// This simplifies expressing N-1, N-2, or similar thresholds when the
+	// total number of selected nodes is not known in advance.
+	// For example, with 10 selected nodes:
+	// - MinHealthy: -1    -> at least 9 must be healthy.
+	// - MinHealthy: -30%: -> at least 7 must be healthy.
+	// A value of 100% is valid and blocks all remediation.
 	//
 	//+kubebuilder:default="51%"
 	//+kubebuilder:validation:XIntOrString
-	//+kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
+	//+kubebuilder:validation:Pattern="^-?((100|[0-9]{1,2})%|[0-9]+)$"
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	MinHealthy *intstr.IntOrString `json:"minHealthy,omitempty"`
 

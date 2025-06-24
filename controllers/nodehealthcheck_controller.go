@@ -329,7 +329,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// check if we have enough healthy nodes
 	skipRemediation := false
-	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(selectedNodes), true); err != nil {
+	if minHealthy, err := getAbsoluteMinHealthy(nhc.Spec.MinHealthy, len(selectedNodes)); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
@@ -878,4 +878,20 @@ func updateRequeueAfter(result *ctrl.Result, newRequeueAfter *time.Duration) {
 	if result.RequeueAfter == 0 || *newRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = *newRequeueAfter
 	}
+}
+
+func getAbsoluteMinHealthy(intOrPercent *intstr.IntOrString, total int) (int, error) {
+	minHealthy, err := intstr.GetScaledValueFromIntOrPercent(intOrPercent, total, true)
+	if err != nil {
+		return minHealthy, err
+	}
+	err = nil
+	absMinHealthy := minHealthy
+	if minHealthy < 0 {
+		absMinHealthy = total + minHealthy
+	}
+	if absMinHealthy < 0 {
+		err = fmt.Errorf("absolute minHealthy is negative: %d", absMinHealthy)
+	}
+	return absMinHealthy, err
 }
