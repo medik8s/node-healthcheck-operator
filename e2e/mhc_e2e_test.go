@@ -150,7 +150,7 @@ var _ = Describe("e2e - MHC", Label("MHC", labelOcpOnlyValue), func() {
 					g.Expect(*mhc.Status.CurrentHealthy).To(BeNumerically("==", len(workers.Items)))
 				}, "5m", "5s").Should(Succeed(), "CR not deleted")
 
-				By("waiting for CR deletion (after finilizers are removed by snr) in order to trigger lease removal")
+				By("waiting for CR deletion (after finalizers are removed by snr) in order to trigger lease removal")
 				Eventually(
 					ensureRemediationResourceDoesNotExist(nodeUnderTest.Name, mhcNamespace, remediationGVR), "5m", "5s").
 					Should(Succeed())
