@@ -80,15 +80,32 @@ type NodeHealthCheckSpec struct {
 	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
 
 	// Remediation is allowed if at least "MinHealthy" nodes selected by "selector" are healthy.
-	// Expects either a positive integer value or a percentage value.
+	// Expects either a non-negative integer value or a percentage value.
 	// Percentage values must be positive whole numbers and are capped at 100%.
 	// 100% is valid and will block all remediation.
+	// MinHealthy and MaxUnhealthy are configuring the same aspect,
+	// and they cannot be used at the same time.
 	//
-	//+kubebuilder:default="51%"
+	//+optional
 	//+kubebuilder:validation:XIntOrString
 	//+kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	MinHealthy *intstr.IntOrString `json:"minHealthy,omitempty"`
+
+	// Remediation is allowed if no more than "MaxUnhealthy" nodes selected by "selector" are not healthy.
+	// Expects either a non-negative integer value or a percentage value.
+	// Percentage values must be positive whole numbers and are capped at 100%.
+	// 0% is valid and will block all remediation.
+	// MaxUnhealthy should not be used with remediators that delete nodes (e.g. MachineDeletionRemediation),
+	// as this breaks the logic for counting healthy and unhealthy nodes.
+	// MinHealthy and MaxUnhealthy are configuring the same aspect,
+	// and they cannot be used at the same time.
+	//
+	//+optional
+	//+kubebuilder:validation:XIntOrString
+	//+kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template
 	// provided by an infrastructure provider.

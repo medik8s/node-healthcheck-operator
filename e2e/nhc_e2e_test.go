@@ -36,13 +36,13 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 	BeforeEach(func() {
 
 		// prepare "classic" NHC with single remediation
-		minHealthy := intstr.FromInt(1)
+		maxUnhealthy := intstr.FromInt(1)
 		nhc = &v1alpha1.NodeHealthCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: nhcName,
 			},
 			Spec: v1alpha1.NodeHealthCheckSpec{
-				MinHealthy: &minHealthy,
+				MaxUnhealthy: &maxUnhealthy,
 				Selector: metav1.LabelSelector{
 					MatchExpressions: []metav1.LabelSelectorRequirement{
 						{
@@ -290,11 +290,23 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					}, "10s", "500ms").Should(Succeed())
 
 					// let's do some NHC validation tests here
-					By("ensuring negative minHealthy update fails")
+					By("ensuring negative maxUnhealthy update fails")
 					nhc = getNodeHealthCheck()
 					negValue := intstr.FromInt(-1)
-					nhc.Spec.MinHealthy = &negValue
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
+					nhc.Spec.MaxUnhealthy = &negValue
+					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("maxUnhealthy must not be negative")), "negative maxUnhealthy update should be prevented")
+
+					By("ensuring setting both maxUnhealthy update fails")
+					nhc = getNodeHealthCheck()
+					minValue := intstr.FromInt(10)
+					nhc.Spec.MinHealthy = &minValue
+					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("minHealthy and maxUnhealthy cannot be specified at the same time")), "minHealthy and maxUnhealthy cannot be specified at the same time")
+
+					By("ensuring removing both minHealthy and maxUnhealthy update fails")
+					nhc = getNodeHealthCheck()
+					nhc.Spec.MinHealthy = nil
+					nhc.Spec.MaxUnhealthy = nil
+					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("one of minHealthy and maxUnhealthy should be specified")), "one of minHealthy and maxUnhealthy should be specified")
 
 					By("ensuring selector update fails")
 					nhc = getNodeHealthCheck()
@@ -309,10 +321,11 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					nhc = getNodeHealthCheck()
 					Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "deletion should be prevented")
 
-					By("ensuring minHealthy update succeeds")
+					By("ensuring minHealthy update succeeds when removing maxUnhealthy")
 					nhc = getNodeHealthCheck()
 					newValue := intstr.FromString("10%")
 					nhc.Spec.MinHealthy = &newValue
+					nhc.Spec.MaxUnhealthy = nil
 					Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
 
 					By("waiting for healthy node condition")

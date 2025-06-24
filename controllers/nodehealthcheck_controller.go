@@ -329,9 +329,9 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// check if we have enough healthy nodes
 	skipRemediation := false
-	if minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, len(selectedNodes), true); err != nil {
+	if minHealthy, err := getMinHealthy(nhc, len(selectedNodes)); err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
-			"minHealthy", nhc.Spec.MinHealthy, "observedNodes", nhc.Status.ObservedNodes)
+			"minHealthy", nhc.Spec.MinHealthy, "maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
 	} else if *nhc.Status.HealthyNodes < minHealthy {
 		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
@@ -878,4 +878,29 @@ func updateRequeueAfter(result *ctrl.Result, newRequeueAfter *time.Duration) {
 	if result.RequeueAfter == 0 || *newRequeueAfter < result.RequeueAfter {
 		result.RequeueAfter = *newRequeueAfter
 	}
+}
+
+func getMinHealthy(nhc *remediationv1alpha1.NodeHealthCheck, total int) (int, error) {
+	err := remediationv1alpha1.ValidateMinHealthyMaxUnhealthy(nhc)
+	if err != nil {
+		return 0, err
+	}
+	if nhc.Spec.MinHealthy != nil {
+		minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, total, true)
+		if minHealthy < 0 && err == nil {
+			err = fmt.Errorf("minHealthy is negative: %d", minHealthy)
+		}
+		return minHealthy, err
+	}
+	if nhc.Spec.MaxUnhealthy != nil {
+		maxUnhealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, total, true)
+		if maxUnhealthy < 0 && err == nil {
+			err = fmt.Errorf("maxUnhealthy is negative: %d", maxUnhealthy)
+		}
+		if maxUnhealthy > total && err == nil {
+			err = fmt.Errorf("maxUnhealthy is greater than the number of selected nodes: %d", maxUnhealthy)
+		}
+		return total - maxUnhealthy, err
+	}
+	return 0, fmt.Errorf("one of minHealthy and maxUnhealthy should be specified")
 }

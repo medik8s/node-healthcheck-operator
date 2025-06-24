@@ -75,7 +75,6 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Spec.UnhealthyConditions[1].Type).To(Equal(v1.NodeReady))
 				Expect(underTest.Spec.UnhealthyConditions[1].Status).To(Equal(v1.ConditionUnknown))
 				Expect(underTest.Spec.UnhealthyConditions[1].Duration).To(Equal(metav1.Duration{Duration: time.Minute * 5}))
-				Expect(underTest.Spec.MinHealthy.StrVal).To(Equal(intstr.FromString("51%").StrVal))
 				Expect(underTest.Spec.Selector.MatchLabels).To(BeEmpty())
 				Expect(underTest.Spec.Selector.MatchExpressions).To(BeEmpty())
 			})
@@ -120,31 +119,62 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 		When("specifying min healthy", func() {
-			It("fails creation on percentage > 100%", func() {
-				invalidPercentage := intstr.FromString("150%")
-				underTest.Spec.MinHealthy = &invalidPercentage
-				err := k8sClient.Create(context.Background(), underTest)
-				Expect(errors.IsInvalid(err)).To(BeTrue())
+			Context("minHealthy", func() {
+				It("fails creation on percentage > 100%", func() {
+					invalidPercentage := intstr.FromString("150%")
+					underTest.Spec.MinHealthy = &invalidPercentage
+					err := k8sClient.Create(context.Background(), underTest)
+					Expect(errors.IsInvalid(err)).To(BeTrue())
+				})
+
+				It("fails creation on negative number", func() {
+					// This test does not work yet, because the "minimum" validation
+					// of kubebuilder does not work for IntOrString.
+					// Un-skip this as soon as this is supported.
+					// For now negative minHealthy is validated via webhook.
+					Skip("Does not work yet")
+					invalidInt := intstr.FromInt(-10)
+					underTest.Spec.MinHealthy = &invalidInt
+					err := k8sClient.Create(context.Background(), underTest)
+					Expect(errors.IsInvalid(err)).To(BeTrue())
+				})
+
+				It("succeeds creation on percentage between 0%-100%", func() {
+					validPercentage := intstr.FromString("30%")
+					underTest.Spec.MinHealthy = &validPercentage
+					err := k8sClient.Create(context.Background(), underTest)
+					Expect(errors.IsInvalid(err)).To(BeFalse())
+				})
 			})
 
-			It("fails creation on negative number", func() {
-				// This test does not work yet, because the "minimum" validation
-				// of kubebuilder does not work for IntOrString.
-				// Un-skip this as soon as this is supported.
-				// For now negative minHealthy is validated via webhook.
-				Skip("Does not work yet")
-				invalidInt := intstr.FromInt(-10)
-				underTest.Spec.MinHealthy = &invalidInt
-				err := k8sClient.Create(context.Background(), underTest)
-				Expect(errors.IsInvalid(err)).To(BeTrue())
+			Context("maxUnhealthy", func() {
+				It("fails creation on percentage > 100%", func() {
+					invalidPercentage := intstr.FromString("150%")
+					underTest.Spec.MaxUnhealthy = &invalidPercentage
+					err := k8sClient.Create(context.Background(), underTest)
+					Expect(errors.IsInvalid(err)).To(BeTrue())
+				})
+
+				It("fails creation on negative number", func() {
+					// This test does not work yet, because the "minimum" validation
+					// of kubebuilder does not work for IntOrString.
+					// Un-skip this as soon as this is supported.
+					// For now negative minHealthy is validated via webhook.
+					Skip("Does not work yet")
+					invalidInt := intstr.FromInt(-10)
+					underTest.Spec.MaxUnhealthy = &invalidInt
+					err := k8sClient.Create(context.Background(), underTest)
+					Expect(errors.IsInvalid(err)).To(BeTrue())
+				})
+
+				It("succeeds creation on percentage between 0%-100%", func() {
+					validPercentage := intstr.FromString("30%")
+					underTest.Spec.MaxUnhealthy = &validPercentage
+					err := k8sClient.Create(context.Background(), underTest)
+					Expect(errors.IsInvalid(err)).To(BeFalse())
+				})
 			})
 
-			It("succeeds creation on percentage between 0%-100%", func() {
-				validPercentage := intstr.FromString("30%")
-				underTest.Spec.MinHealthy = &validPercentage
-				err := k8sClient.Create(context.Background(), underTest)
-				Expect(errors.IsInvalid(err)).To(BeFalse())
-			})
 		})
 	})
 
@@ -2243,6 +2273,146 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 	})
+
+	Context("getMinHealthy", func() {
+		DescribeTable("should return absolute minHealthy",
+			func(minHealthy, maxUnhealthy *intstr.IntOrString, totalNodes, expectedAbsoluteMinHealthy int, expectedErr error) {
+				nhc := &v1alpha1.NodeHealthCheck{
+					Spec: v1alpha1.NodeHealthCheckSpec{
+						MinHealthy:   minHealthy,
+						MaxUnhealthy: maxUnhealthy,
+					},
+				}
+				absoluteMinHealthy, err := getMinHealthy(nhc, totalNodes)
+				if expectedErr != nil {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(expectedErr))
+				} else {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(absoluteMinHealthy).To(Equal(expectedAbsoluteMinHealthy))
+				}
+			},
+			Entry("minHealthy - positive value",
+				ptrToIntStr("8"),
+				nil,
+				10,
+				8,
+				nil,
+			),
+			Entry("minHealthy - positive percentage value",
+				ptrToIntStr("80%"),
+				nil,
+				10,
+				8,
+				nil,
+			),
+			Entry("minHealthy - positive percentage value with round-up",
+				ptrToIntStr("75%"),
+				nil,
+				10,
+				8,
+				nil,
+			),
+			Entry("minHealthy - 0%",
+				ptrToIntStr("0%"),
+				nil,
+				10,
+				0,
+				nil,
+			),
+			Entry("minHealthy - 100%",
+				ptrToIntStr("100%"),
+				nil,
+				10,
+				10,
+				nil,
+			),
+			Entry("minHealthy - negative value",
+				ptrToIntStr("-3"),
+				nil,
+				10,
+				-3,
+				fmt.Errorf("minHealthy must not be negative: -3"),
+			),
+			Entry("minHealthy - negative percentage value",
+				ptrToIntStr("-30%"),
+				nil,
+				10,
+				-3,
+				fmt.Errorf("minHealthy is negative: -3"),
+			),
+			Entry("maxUnhealthy - positive value",
+				nil,
+				ptrToIntStr("8"),
+				10,
+				2,
+				nil,
+			),
+			Entry("maxUnhealthy - positive percentage value",
+				nil,
+				ptrToIntStr("80%"),
+				10,
+				2,
+				nil,
+			),
+			Entry("maxUnhealthy - positive percentage value with round-up",
+				nil,
+				ptrToIntStr("75%"),
+				10,
+				2,
+				nil,
+			),
+			Entry("maxUnhealthy - 0%",
+				nil,
+				ptrToIntStr("0%"),
+				10,
+				10,
+				nil,
+			),
+			Entry("maxUnhealthy - 100%",
+				nil,
+				ptrToIntStr("100%"),
+				10,
+				0,
+				nil,
+			),
+			Entry("maxUnhealthy - negative value",
+				nil,
+				ptrToIntStr("-3"),
+				10,
+				0,
+				fmt.Errorf("maxUnhealthy must not be negative: -3"),
+			),
+			Entry("maxUnhealthy - negative percentage value",
+				nil,
+				ptrToIntStr("-30%"),
+				10,
+				-3,
+				fmt.Errorf("maxUnhealthy is negative: -3"),
+			),
+			Entry("maxUnhealthy > number of selected nodes",
+				nil,
+				ptrToIntStr("12"),
+				10,
+				12,
+				fmt.Errorf("maxUnhealthy is greater than the number of selected nodes: 12"),
+			),
+			Entry("minHealthy and maxUnhealthy at the same time",
+				ptrToIntStr("2"),
+				ptrToIntStr("2"),
+				10,
+				-3,
+				fmt.Errorf("minHealthy and maxUnhealthy cannot be specified at the same time"),
+			),
+			Entry("nor minHealthy nor maxUnhealthy",
+				nil,
+				nil,
+				10,
+				0,
+				fmt.Errorf("one of minHealthy and maxUnhealthy should be specified"),
+			),
+		)
+	})
 })
 
 func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer time.Duration) {
@@ -2511,4 +2681,9 @@ func isEventOccurred(eventType string, reason string, message string) bool {
 		fakeRecorder.Events <- unMatchedEvent
 	}
 	return isEventMatch
+}
+
+func ptrToIntStr(val string) *intstr.IntOrString {
+	v := intstr.Parse(val)
+	return &v
 }
