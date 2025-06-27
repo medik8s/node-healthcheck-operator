@@ -103,7 +103,11 @@ func RemediationCRMapperFunc(logger logr.Logger, watchType WatchType) handler.Ma
 			logger.Info("Request info", "owner ref", owner)
 			if isCrNeedWatching(owner, watchType) {
 				logger.Info(fmt.Sprintf("mapper: found %s for remediation CR", watchType), fmt.Sprintf("%s Name", watchType), owner.Name, "Remediation CR Name", o.GetName(), "Remediation CR Kind", o.GetObjectKind().GroupVersionKind().Kind)
-				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: owner.Name}})
+				namespacedName := types.NamespacedName{Name: owner.Name}
+				if watchType == MHC {
+					namespacedName.Namespace = o.GetNamespace()
+				}
+				requests = append(requests, reconcile.Request{NamespacedName: namespacedName})
 				return requests
 			}
 		}
@@ -117,7 +121,7 @@ func isCrNeedWatching(owner metav1.OwnerReference, watchType WatchType) bool {
 	if watchType == NHC {
 		return owner.Kind == "NodeHealthCheck" && owner.APIVersion == remediationv1alpha1.GroupVersion.String()
 	} else {
-		return owner.Kind == "Machine" && owner.APIVersion == machinev1beta1.GroupVersion.String()
+		return owner.Kind == "MachineHealthCheck" && owner.APIVersion == machinev1beta1.GroupVersion.String()
 	}
 }
 
