@@ -117,6 +117,11 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	if in.MaxUnhealthy != nil {
+		in, out := &in.MaxUnhealthy, &out.MaxUnhealthy
+		*out = new(intstr.IntOrString)
+		**out = **in
+	}
 	if in.RemediationTemplate != nil {
 		in, out := &in.RemediationTemplate, &out.RemediationTemplate
 		*out = new(v1.ObjectReference)
