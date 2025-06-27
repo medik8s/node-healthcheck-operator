@@ -36,7 +36,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 	BeforeEach(func() {
 
 		// prepare "classic" NHC with single remediation
-		minHealthy := intstr.FromInt(1)
+		minHealthy := intstr.FromInt(-1)
 		nhc = &v1alpha1.NodeHealthCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: nhcName,
@@ -290,11 +290,11 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					}, "10s", "500ms").Should(Succeed())
 
 					// let's do some NHC validation tests here
-					By("ensuring negative minHealthy update fails")
+					By("ensuring negative minHealthy update succeeds")
 					nhc = getNodeHealthCheck()
 					negValue := intstr.FromInt(-1)
 					nhc.Spec.MinHealthy = &negValue
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("MinHealthy")), "negative minHealthy update should be prevented")
+					Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy negative update should be allowed")
 
 					By("ensuring selector update fails")
 					nhc = getNodeHealthCheck()

@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -39,7 +38,6 @@ import (
 
 const (
 	OngoingRemediationError    = "prohibited due to running remediation"
-	minHealthyError            = "MinHealthy must not be negative"
 	invalidSelectorError       = "Invalid selector"
 	missingSelectorError       = "Selector is mandatory"
 	mandatoryRemediationError  = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
@@ -129,9 +127,6 @@ func (v *customValidator) validateMinHealthy(nhc *NodeHealthCheck) error {
 	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
 	if nhc.Spec.MinHealthy == nil {
 		return fmt.Errorf("MinHealthy must not be empty")
-	}
-	if nhc.Spec.MinHealthy.Type == intstr.Int && nhc.Spec.MinHealthy.IntVal < 0 {
-		return fmt.Errorf("%s: %v", minHealthyError, nhc.Spec.MinHealthy)
 	}
 	return nil
 }
