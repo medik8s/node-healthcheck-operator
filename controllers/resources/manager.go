@@ -27,6 +27,14 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils/annotations"
 )
 
+const (
+	HealthyDelayContextKey = "healthyDelay"
+	// RemediationHealthyDelayAnnotationKey annotation storing the time in minutes to postponed node regaining health
+	RemediationHealthyDelayAnnotationKey = "remediation.medik8s.io/healthy-delay"
+	// RemediationManuallyConfirmedHealthyAnnotationKey annotation is placed by the user on the node to indelicate a node is healthy, it's relevant when Healthy Delay is applied
+	RemediationManuallyConfirmedHealthyAnnotationKey = "remediation.medik8s.io/manually-confirmed-healthy"
+)
+
 type Manager interface {
 	GetCurrentTemplateWithTimeout(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck) (*unstructured.Unstructured, *time.Duration, error)
 	GetTemplate(mhc *machinev1beta1.MachineHealthCheck) (*unstructured.Unstructured, error)
@@ -42,8 +50,8 @@ type Manager interface {
 	ListRemediationCRs(remediationTemplates []*corev1.ObjectReference, remediationCRFilter func(r unstructured.Unstructured) bool) ([]unstructured.Unstructured, error)
 	GetNodes(labelSelector metav1.LabelSelector) ([]corev1.Node, error)
 	GetMHCTargets(mhc *machinev1beta1.MachineHealthCheck) ([]Target, error)
-	HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, error)
-	CleanUp(nodeName string) error
+	HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, *time.Duration, error)
+	CleanUp(nodeName string, isManuallyConfirmedHealthy bool) error
 }
 
 type RemediationCRNotOwned struct{ msg string }
@@ -310,37 +318,149 @@ func IsOwner(remediationCR *unstructured.Unstructured, owner client.Object) bool
 	return false
 }
 
-func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, error) {
+func (m *manager) HandleHealthyNode(nodeName string, crName string, owner client.Object) ([]unstructured.Unstructured, *time.Duration, error) {
 	remediationCRs, err := m.ListRemediationCRs(utils.GetAllRemediationTemplates(owner), func(cr unstructured.Unstructured) bool {
 		return (cr.GetName() == crName || utils.GetNodeNameFromCR(cr) == nodeName) && IsOwner(&cr, owner)
 	})
 	if err != nil {
 		m.log.Error(err, "failed to get remediation CRs for healthy node", "node", nodeName)
-		return remediationCRs, err
+		return remediationCRs, nil, err
+	}
+
+	isManuallyConfirmedHealthy, err := m.isManuallyConfirmedHealthyAnnotationSet(nodeName)
+	if err != nil {
+		m.log.Error(err, fmt.Sprintf("failed to check whether node was set with %s annotation", RemediationManuallyConfirmedHealthyAnnotationKey), "node", nodeName)
+		return remediationCRs, nil, err
 	}
 
 	if len(remediationCRs) == 0 {
 		// when all CRs are gone, the node is considered healthy
-		if err = m.CleanUp(nodeName); err != nil {
+		if err = m.CleanUp(nodeName, isManuallyConfirmedHealthy); err != nil {
 			m.log.Error(err, "failed to handle healthy node", "node", nodeName)
-			return remediationCRs, err
+			return remediationCRs, nil, err
 		}
-		return remediationCRs, nil
+
+		return remediationCRs, nil, nil
 	}
+	var requeueAfter *time.Duration
 
 	for _, cr := range remediationCRs {
-		if deleted, err := m.DeleteRemediationCR(&cr, owner); err != nil {
-			m.log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
-			return remediationCRs, err
-		} else if deleted {
-			m.log.Info("deleted remediation CR", "name", cr.GetName())
+		shouldDelete := true
+		if !isManuallyConfirmedHealthy {
+			crCalculatedDelay, err := m.calcCrDeletionDelay(cr)
+			if err != nil {
+				m.log.Error(err, "failed to check whether remediation deletion should be delayed, remediation isn't delayed", "node", nodeName, "CR name", cr.GetName())
+			} else if crCalculatedDelay < 0 {
+				// Remediation deletion is permanently delayed and requires manual intervention.
+				shouldDelete = false
+			} else if crCalculatedDelay > 0 {
+				// Remediation deletion is temporarily delayed.
+				if requeueAfter == nil || crCalculatedDelay < *requeueAfter {
+					requeueAfter = &crCalculatedDelay
+				}
+				shouldDelete = false
+			}
 		}
+		if shouldDelete {
+			if deleted, err := m.DeleteRemediationCR(&cr, owner); err != nil {
+				m.log.Error(err, "failed to delete remediation CR", "name", cr.GetName())
+				return remediationCRs, nil, err
+			} else if deleted {
+				m.log.Info("deleted remediation CR", "name", cr.GetName())
+			}
+		}
+
 	}
 
-	return remediationCRs, nil
+	nhc, isNhcOwner := owner.(*remediationv1alpha1.NodeHealthCheck)
+	// Offset by 1 second in order to make sure remediation can be deleted when requeue happens.
+	if requeueAfter != nil && isNhcOwner {
+		*requeueAfter += time.Second
+		UpdateStatusNodeDelayedHealthy(nodeName, nhc, remediationCRs)
+	}
+
+	return remediationCRs, requeueAfter, nil
 }
 
-func (m *manager) CleanUp(nodeName string) error {
+func (m *manager) calcCrDeletionDelay(cr unstructured.Unstructured) (time.Duration, error) {
+	healthyDelay, isDelayConfigured := m.ctx.Value(HealthyDelayContextKey).(time.Duration)
+	// Delay isn't configured stick with regular flow and delete the CR without delay.
+	if !isDelayConfigured {
+		return 0, nil
+	}
+	switch {
+	case healthyDelay == 0: // Delete the CR
+		return 0, nil
+	case healthyDelay < 0: // Negative value is an indication to never automatically delete the CR.
+		return -1, nil
+	default:
+		if cr.GetAnnotations() == nil {
+			cr.SetAnnotations(make(map[string]string))
+		}
+		delayStartTimeStr, isDelayAnnotationExist := cr.GetAnnotations()[RemediationHealthyDelayAnnotationKey]
+		if isDelayAnnotationExist {
+			delayStartTime, err := time.Parse(time.RFC3339, delayStartTimeStr)
+			if err != nil {
+				return 0, err
+			}
+			var remainingTime time.Duration
+			now := time.Now().UTC()
+			delayUntil := delayStartTime.Add(healthyDelay)
+			if now.Before(delayUntil) {
+				remainingTime = delayUntil.Sub(now)
+				m.log.Info("delaying node getting healthy", "node name", utils.GetNodeNameFromCR(cr), "remaining time in seconds", remainingTime.Seconds())
+			} else {
+				m.log.Info("delaying for node getting healthy is done, about to remove the remediation CR", "node name", utils.GetNodeNameFromCR(cr))
+			}
+			return remainingTime, nil
+
+		}
+		// Set current time as the baseline for delaying node healthy.
+		crAnnotations := cr.GetAnnotations()
+		crAnnotations[RemediationHealthyDelayAnnotationKey] = time.Now().UTC().Format(time.RFC3339)
+		cr.SetAnnotations(crAnnotations)
+		m.log.Info("setting a delay for node getting healthy", "node name", utils.GetNodeNameFromCR(cr), "delay in seconds", healthyDelay.Seconds())
+		return healthyDelay, m.UpdateRemediationCR(&cr)
+	}
+}
+
+func (m *manager) isManuallyConfirmedHealthyAnnotationSet(nodeName string) (bool, error) {
+	node := &corev1.Node{}
+	err := m.Get(m.ctx, client.ObjectKey{Name: nodeName}, node)
+	if err != nil {
+		m.log.Error(err, "failed to get node", "node", nodeName)
+		return false, err
+	}
+	_, found := node.GetAnnotations()[RemediationManuallyConfirmedHealthyAnnotationKey]
+	return found, nil
+}
+
+func (m *manager) removeConfirmedHealthyAnnotation(nodeName string) error {
+	node := &corev1.Node{}
+	err := m.Get(m.ctx, client.ObjectKey{Name: nodeName}, node)
+	if err != nil {
+		m.log.Error(err, "failed to get node", "node", nodeName)
+		return err
+	}
+	ann := node.GetAnnotations()
+	if _, found := ann[RemediationManuallyConfirmedHealthyAnnotationKey]; !found {
+		return nil
+	}
+	delete(ann, RemediationManuallyConfirmedHealthyAnnotationKey)
+	node.SetAnnotations(ann)
+
+	return m.Update(m.ctx, node)
+
+}
+
+func (m *manager) CleanUp(nodeName string, isManuallyConfirmedHealthy bool) error {
+	if isManuallyConfirmedHealthy {
+		// Remove the annotation once all the CRs were removed
+		if err := m.removeConfirmedHealthyAnnotation(nodeName); err != nil {
+			m.log.Error(err, fmt.Sprintf("failed to remove node annotation %s", RemediationManuallyConfirmedHealthyAnnotationKey), "node", nodeName)
+			return err
+		}
+	}
 	return m.leaseManager.InvalidateLease(m.ctx, nodeName)
 }
 
@@ -349,7 +469,7 @@ func (m *manager) getOwningMachineWithNamespace(node *corev1.Node) (*metav1.Owne
 	if err != nil {
 		if errors.Is(err, utils.MachineAnnotationNotFoundError) {
 			m.log.Info("didn't find machine annotation for Openshift machine", "node", node.GetName())
-			// nothing we can do, continue without owning machine
+			// Nothing we can do, continue without owning machine.
 			return nil, "", nil
 		}
 		return nil, "", err

@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+
+	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 )
 
 func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
@@ -25,7 +27,8 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 	}
 
 	return labelsNeedReconcile(oldNode.Labels, newNode.Labels) ||
-		conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions)
+		conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions) ||
+		annotationsNeedReconcile(oldNode.Annotations, newNode.Annotations)
 }
 
 func labelsNeedReconcile(oldLabels, newLabels map[string]string) bool {
@@ -69,6 +72,14 @@ func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bo
 		}
 	}
 	return false
+}
+
+func annotationsNeedReconcile(oldAnnotations, newAnnotations map[string]string) bool {
+	// Check if the RemediationManuallyConfirmedHealthy annotation was added or removed
+	_, existsInOldAnnotations := oldAnnotations[resources.RemediationManuallyConfirmedHealthyAnnotationKey]
+	_, existsInNewAnnotations := newAnnotations[resources.RemediationManuallyConfirmedHealthyAnnotationKey]
+
+	return existsInOldAnnotations != existsInNewAnnotations
 }
 
 type ObjectWithStatus interface {
