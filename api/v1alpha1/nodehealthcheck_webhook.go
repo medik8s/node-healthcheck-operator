@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,7 +40,8 @@ import (
 
 const (
 	OngoingRemediationError    = "prohibited due to running remediation"
-	minHealthyError            = "MinHealthy must not be negative"
+	minHealthyError            = "minHealthy must not be negative"
+	maxUnhealthyError          = "maxUnhealthy must not be negative"
 	invalidSelectorError       = "Invalid selector"
 	missingSelectorError       = "Selector is mandatory"
 	mandatoryRemediationError  = "Either RemediationTemplate or at least one EscalatingRemediations must be set"
@@ -105,7 +107,7 @@ func (v *customValidator) ValidateDelete(_ context.Context, obj runtime.Object) 
 
 func (v *customValidator) validate(ctx context.Context, nhc *NodeHealthCheck) error {
 	aggregated := errors.NewAggregate([]error{
-		v.validateMinHealthy(nhc),
+		ValidateMinHealthyMaxUnhealthy(nhc),
 		v.validateSelector(nhc),
 		v.validateMutualRemediations(nhc),
 		v.validateEscalatingRemediations(ctx, nhc),
@@ -121,17 +123,6 @@ func (v *customValidator) validate(ctx context.Context, nhc *NodeHealthCheck) er
 func (v *customValidator) validateControlPlaneTopology() error {
 	if !v.caps.IsSupportedControlPlaneTopology {
 		return fmt.Errorf(unsupportedCpTopologyError)
-	}
-	return nil
-}
-
-func (v *customValidator) validateMinHealthy(nhc *NodeHealthCheck) error {
-	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
-	if nhc.Spec.MinHealthy == nil {
-		return fmt.Errorf("MinHealthy must not be empty")
-	}
-	if nhc.Spec.MinHealthy.Type == intstr.Int && nhc.Spec.MinHealthy.IntVal < 0 {
-		return fmt.Errorf("%s: %v", minHealthyError, nhc.Spec.MinHealthy)
 	}
 	return nil
 }
@@ -241,4 +232,33 @@ func (nhc *NodeHealthCheck) isRemediating() bool {
 		}
 	}
 	return false
+}
+
+func ValidateMinHealthyMaxUnhealthy(nhc *NodeHealthCheck) error {
+	// Using Minimum kubebuilder marker for IntOrStr does not work (yet)
+	if nhc.Spec.MinHealthy != nil && nhc.Spec.MaxUnhealthy != nil {
+		return fmt.Errorf("minHealthy and maxUnhealthy cannot be specified at the same time")
+	}
+	if nhc.Spec.MinHealthy == nil && nhc.Spec.MaxUnhealthy == nil {
+		return fmt.Errorf("one of minHealthy and maxUnhealthy should be specified")
+	}
+	if nhc.Spec.MinHealthy != nil && nhc.Spec.MinHealthy.Type == intstr.Int && nhc.Spec.MinHealthy.IntVal < 0 {
+		return fmt.Errorf("%s: %v", minHealthyError, nhc.Spec.MinHealthy)
+	}
+	if nhc.Spec.MaxUnhealthy != nil && nhc.Spec.MaxUnhealthy.Type == intstr.Int && nhc.Spec.MaxUnhealthy.IntVal < 0 {
+		return fmt.Errorf("%s: %v", maxUnhealthyError, nhc.Spec.MaxUnhealthy)
+	}
+	if nhc.Spec.MaxUnhealthy != nil &&
+		nhc.Spec.RemediationTemplate != nil &&
+		strings.EqualFold(nhc.Spec.RemediationTemplate.Kind, "MachineDeletionRemediationTemplate") {
+		return fmt.Errorf("maxUnhealthy can't be used with MachineDeletionRemediationTemplate")
+	}
+	if nhc.Spec.MaxUnhealthy != nil && nhc.Spec.EscalatingRemediations != nil {
+		for _, erem := range nhc.Spec.EscalatingRemediations {
+			if strings.EqualFold(erem.RemediationTemplate.Kind, "MachineDeletionRemediationTemplate") {
+				return fmt.Errorf("maxUnhealthy can't be used with MachineDeletionRemediationTemplate escalating remediation")
+			}
+		}
+	}
+	return nil
 }

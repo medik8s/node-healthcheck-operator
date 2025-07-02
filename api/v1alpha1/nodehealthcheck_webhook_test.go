@@ -72,10 +72,86 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			BeforeEach(func() {
 				mh := intstr.FromInt(-1)
 				nhc.Spec.MinHealthy = &mh
+				nhc.Spec.MaxUnhealthy = nil
 			})
 
 			It("should be denied", func() {
 				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(minHealthyError)))
+			})
+		})
+
+		Context("with negative maxUnhealthy", func() {
+			BeforeEach(func() {
+				mh := intstr.FromInt(-1)
+				nhc.Spec.MinHealthy = nil
+				nhc.Spec.MaxUnhealthy = &mh
+			})
+
+			It("should be denied", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring(maxUnhealthyError)))
+			})
+		})
+
+		Context("with minHealthy and maxUnhealthy at the same time", func() {
+			BeforeEach(func() {
+				mh := intstr.FromString("51%")
+				nhc.Spec.MinHealthy = &mh
+				nhc.Spec.MaxUnhealthy = &mh
+			})
+
+			It("should be denied", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("minHealthy and maxUnhealthy cannot be specified at the same time")))
+			})
+		})
+
+		Context("nor minHealthy, nor maxUnhealthy", func() {
+			BeforeEach(func() {
+				nhc.Spec.MinHealthy = nil
+				nhc.Spec.MaxUnhealthy = nil
+			})
+
+			It("should be denied", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("one of minHealthy and maxUnhealthy should be specified")))
+			})
+		})
+
+		Context("with only maxUnhealthy", func() {
+			BeforeEach(func() {
+				mh := intstr.FromString("51%")
+				nhc.Spec.MinHealthy = nil
+				nhc.Spec.MaxUnhealthy = &mh
+			})
+
+			It("should be allowed", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(Succeed())
+			})
+		})
+
+		Context("with maxUnhealthy and MachineDeletionRemediationTemplate", func() {
+			BeforeEach(func() {
+				mh := intstr.FromInt(1)
+				nhc.Spec.MinHealthy = nil
+				nhc.Spec.MaxUnhealthy = &mh
+				nhc.Spec.RemediationTemplate.Kind = "MachineDeletionRemediationTemplate"
+			})
+
+			It("should be denied", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("maxUnhealthy can't be used with MachineDeletionRemediationTemplate")))
+			})
+		})
+
+		Context("with maxUnhealthy and MachineDeletionRemediationTemplate as escalating remediation", func() {
+			BeforeEach(func() {
+				mh := intstr.FromInt(1)
+				nhc.Spec.MinHealthy = nil
+				nhc.Spec.MaxUnhealthy = &mh
+				nhc.Spec.EscalatingRemediations = []EscalatingRemediation{{
+					RemediationTemplate: v1.ObjectReference{Kind: "MachineDeletionRemediationTemplate"},
+				}}
+			})
+
+			It("should be denied", func() {
+				Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("maxUnhealthy can't be used with MachineDeletionRemediationTemplate escalating remediation")))
 			})
 		})
 
