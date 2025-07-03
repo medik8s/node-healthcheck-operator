@@ -129,6 +129,12 @@ spec:
                   - timeout
                   type: object
                 type: array
+              healthyDelay:
+                description: |-
+                  HealthyDelay is the time before NHC would allow a node to be healthy again.
+                  A negative value means that NHC will never consider the node healthy and a manual intervention is expected
+                pattern: ^-?([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                type: string
               maxUnhealthy:
                 anyOf:
                 - type: integer
@@ -443,6 +449,11 @@ spec:
                         remediation CRs are actually deleted, when remediators finished cleanup and removed their finalizers.
                       format: date-time
                       type: string
+                    healthyDelayed:
+                      description: HealthyDelayed notes whether a node should be considered
+                        healthy, but isn't due to NodeHealthCheckSpec.HealthyDelay
+                        configuration.
+                      type: boolean
                     name:
                       description: Name is the name of the unhealthy node
                       type: string

@@ -96,6 +96,11 @@ spec:
           are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\"."
         displayName: Timeout
         path: escalatingRemediations[0].timeout
+      - description: HealthyDelay is the time before NHC would allow a node to be
+          healthy again. A negative value means that NHC will never consider the node
+          healthy and a manual intervention is expected
+        displayName: Healthy Delay
+        path: healthyDelay
       - description: Remediation is allowed if no more than "MaxUnhealthy" nodes selected
           by "selector" are not healthy. Expects either a non-negative integer value
           or a percentage value. Percentage values must be positive whole numbers
@@ -194,6 +199,10 @@ spec:
           and removed their finalizers.
         displayName: Conditions Healthy Timestamp
         path: unhealthyNodes[0].conditionsHealthyTimestamp
+      - description: HealthyDelayed notes whether a node should be considered healthy,
+          but isn't due to NodeHealthCheckSpec.HealthyDelay configuration.
+        displayName: Healthy Delayed
+        path: unhealthyNodes[0].healthyDelayed
       - description: Name is the name of the unhealthy node
         displayName: Name
         path: unhealthyNodes[0].name
