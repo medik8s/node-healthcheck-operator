@@ -48,36 +48,6 @@ exitCode=0
 echo "Running NodeHealthCheck e2e tests"
 goTest "NHC" || exitCode=$((exitCode+1))
 
-# check if on OCP, and minimum OCP version met (4.14) for MHC tests
-MHC_MIN_OCP_MINOR=14
-
-if ! (which oc 2>/dev/null 1>&2); then
-  echo "skipping MHC test, oc binary not found"
-  exit $exitCode
-fi
-
-OCP_VERSION=$(oc version -o=json | jq -r '.openshiftVersion')
-if [[ -z ${OCP_VERSION} ]]; then
-  echo "skipping MHC test, not on OCP"
-  exit $exitCode
-fi
-
-# sed explained:
-# s/ replace
-# .  single char (major version)
-# \. literal "."
-# \( start group
-# .. two chars (the minor version we want to get)
-# \) close group
-# \. literal "."
-# .* all remaining chars
-# /\1/ replace all with first group
-OCP_MINOR=$(echo ${OCP_VERSION} | sed 's/.\.\(..\)\..*/\1/')
-if [[ ${OCP_MINOR} -lt ${MHC_MIN_OCP_MINOR} ]]; then
-  echo "skipping MHC test on OCP version ${OCP_VERSION}, it needs 4.${MHC_MIN_OCP_MINOR} at least"
-  exit $exitCode
-fi
-
 echo "Preparing MachineHealthCheck e2e tests"
 
 echo "Pausing MachineConfigPools in order to prevent reboots after enabling feature gate"
