@@ -48,25 +48,51 @@ exitCode=0
 echo "Running NodeHealthCheck e2e tests"
 goTest "NHC" || exitCode=$((exitCode+1))
 
+if ! command -v oc &>/dev/null; then
+  echo "skipping MHC test, oc binary not found in PATH"
+  exit $exitCode
+fi
+
 echo "Preparing MachineHealthCheck e2e tests"
 
+retry() {
+  local retries=$1
+  local wait=$2
+  shift 2
+  local n=0
+  # The 'until' command repeatedly executes the given command(s) until they succeed (i.e., return a zero exit status).
+  # In this context, "$@" represents the command and its arguments passed to the retry function.
+  # The loop will continue to run the command until it succeeds or the maximum number of retries is reached.
+  until "$@"; do
+    n=$((n+1))
+    if [ $n -ge $retries ]; then
+      echo "Command failed after $retries attempts: $*"
+      return 1
+    fi
+    echo "Retry $n/$retries failed. Retrying in $wait seconds..."
+    sleep $wait
+  done
+}
+
 echo "Pausing MachineConfigPools in order to prevent reboots after enabling feature gate"
-oc patch machineconfigpool worker --type=merge --patch='{"spec":{"paused":true}}'
-oc patch machineconfigpool master --type=merge --patch='{"spec":{"paused":true}}'
+retry 3 5 oc patch machineconfigpool worker --type=merge --patch='{"spec":{"paused":true}}'
+retry 3 5 oc patch machineconfigpool master --type=merge --patch='{"spec":{"paused":true}}'
 sleep 5
 
 echo "Enabling MachineAPIOperatorDisableMachineHealthCheckController feature gate and waiting a bit to let machine-controllers redeploy."
 echo "HEADS UP: This will disable OCP upgrades forever!"
-oc patch featuregate cluster --type merge --patch \
+retry 3 5 oc patch featuregate cluster --type merge --patch \
   '{"spec":{"featureSet": "CustomNoUpgrade","customNoUpgrade":{"enabled":["MachineAPIOperatorDisableMachineHealthCheckController"],"disabled":[]}}}'
 sleep 15
 
 SNRT_TARGET_NS=openshift-machine-api
-oc get selfnoderemediationtemplates ${SNRT_NAME} --namespace ${SNRT_TARGET_NS} \
-  || echo "Copying SNR template to ${SNRT_TARGET_NS}" \
-  && oc get selfnoderemediationtemplates ${SNRT_NAME} --namespace=${OPERATOR_NS} -o yaml \
-    | grep -v '^\s*namespace:\s' \
-    | oc create --namespace=${SNRT_TARGET_NS} -f -
+retry 3 5 bash -c "
+  oc get selfnoderemediationtemplates ${SNRT_NAME} --namespace ${SNRT_TARGET_NS} \
+    || (echo 'Copying SNR template to ${SNRT_TARGET_NS}' \
+      && oc get selfnoderemediationtemplates ${SNRT_NAME} --namespace=${OPERATOR_NS} -o yaml \
+        | grep -v '^\s*namespace:\s' \
+        | oc create --namespace=${SNRT_TARGET_NS} -f -)
+"
 
 echo "Running MachineHealthCheck e2e tests"
 goTest "MHC" || exitCode=$((exitCode+1))
