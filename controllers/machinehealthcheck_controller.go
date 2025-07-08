@@ -212,7 +212,7 @@ func (r *MachineHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.R
 	healthyCount := 0
 	for _, healthyTarget := range healthy {
 		log.Info("handling healthy target", "target", healthyTarget.String())
-		if remainingCRs, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc); err != nil {
+		if remainingCRs, _, err := resourceManager.HandleHealthyNode(healthyTarget.Node.GetName(), healthyTarget.Machine.GetName(), mhc); err != nil {
 			log.Error(err, "failed to handle healthy target", "target", healthyTarget.String())
 			return result, err
 		} else if len(remainingCRs) > 0 {
