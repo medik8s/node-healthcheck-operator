@@ -53,6 +53,11 @@ if ! command -v oc &>/dev/null; then
   exit $exitCode
 fi
 
+if [[ -z "${OPENSHIFT_CI}" ]]; then
+  echo "not running in Openshift CI, skipping MHC test"
+  exit $exitCode
+fi
+
 echo "Preparing MachineHealthCheck e2e tests"
 
 retry() {
