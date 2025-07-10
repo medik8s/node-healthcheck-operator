@@ -78,6 +78,22 @@ if [[ ${OCP_MINOR} -lt ${MHC_MIN_OCP_MINOR} ]]; then
   exit $exitCode
 fi
 
+# Loop for 10 minutes, repeating every 30 seconds.
+start_time=$(date +%s)
+while true; do
+  echo "Debug: $(date) - API check"
+
+  oc get clusterversion version -o yaml || true
+  oc get clusteroperator || true
+
+  sleep 30
+  now=$(date +%s)
+  elapsed=$((now - start_time))
+  if [[ $elapsed -ge 600 ]]; then
+    break
+  fi
+done
+
 echo "Preparing MachineHealthCheck e2e tests"
 
 echo "Pausing MachineConfigPools in order to prevent reboots after enabling feature gate"
