@@ -58,8 +58,6 @@ if [[ -z "${OPENSHIFT_CI}" ]]; then
   exit $exitCode
 fi
 
-echo "Preparing MachineHealthCheck e2e tests"
-
 retry() {
   local retries=$1
   local wait=$2
@@ -78,6 +76,11 @@ retry() {
     sleep $wait
   done
 }
+
+echo "Waiting until cluster is healthy after NHC tests"
+retry 5 30 oc wait --for=condition=Progressing=False --timeout=2m --all clusteroperators
+
+echo "Preparing MachineHealthCheck e2e tests"
 
 echo "Pausing MachineConfigPools in order to prevent reboots after enabling feature gate"
 retry 3 5 oc patch machineconfigpool worker --type=merge --patch='{"spec":{"paused":true}}'
