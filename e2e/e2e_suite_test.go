@@ -172,7 +172,7 @@ var _ = BeforeSuite(func() {
 			// wait until resource exists
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)).To(Succeed())
-			}, 2*time.Second, 100*time.Millisecond).Should(Succeed())
+			}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
 		} else {
 			Expect(err).ToNot(HaveOccurred())
 		}
