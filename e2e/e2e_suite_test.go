@@ -165,17 +165,18 @@ var _ = BeforeSuite(func() {
 	dummyTemplate := newTestRemediationTemplateCR(dummyKind, testNsName, dummyTemplateName)
 	clusterRole := newExtRemediationClusterRole()
 	for _, obj := range []ctrl.Object{dummyTemplateCRD, dummyCRD, dummyTemplate, clusterRole} {
-		err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)
-		if errors.IsNotFound(err) {
-			// no need to cleanup, just reuse for next round of tests
-			Expect(k8sClient.Create(context.Background(), obj)).To(Succeed())
-			// wait until resource exists
-			Eventually(func(g Gomega) {
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)
+			if errors.IsNotFound(err) {
+				// create missing resource
+				g.Expect(k8sClient.Create(context.Background(), obj)).To(Succeed())
+				// wait until resource exists
+				time.Sleep(1 * time.Second)
 				g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)).To(Succeed())
-			}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
-		} else {
-			Expect(err).ToNot(HaveOccurred())
-		}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
 	}
 	debug()
 })
