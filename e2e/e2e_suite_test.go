@@ -164,15 +164,19 @@ var _ = BeforeSuite(func() {
 	}
 	dummyTemplate := newTestRemediationTemplateCR(dummyKind, testNsName, dummyTemplateName)
 	clusterRole := newExtRemediationClusterRole()
-	DeferCleanup(func() {
-		for _, obj := range []ctrl.Object{dummyTemplate, dummyTemplateCRD, dummyCRD, clusterRole} {
-			Expect(k8sClient.Delete(context.Background(), obj)).To(Succeed())
-			time.Sleep(1 * time.Second)
-		}
-	})
 	for _, obj := range []ctrl.Object{dummyTemplateCRD, dummyCRD, dummyTemplate, clusterRole} {
-		Expect(k8sClient.Create(context.Background(), obj)).To(Succeed())
-		time.Sleep(1 * time.Second)
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)
+			if errors.IsNotFound(err) {
+				// create missing resource
+				g.Expect(k8sClient.Create(context.Background(), obj)).To(Succeed())
+				// wait until resource exists
+				time.Sleep(1 * time.Second)
+				g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(obj), obj)).To(Succeed())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
 	}
 	debug()
 })
@@ -307,7 +311,7 @@ func newExtRemediationClusterRole() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{dummyRemediationTemplateGVK.Group},
 				Resources: []string{strings.ToLower(dummyRemediationTemplateGVK.Kind) + "s"},
-				Verbs:     []string{"get"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{dummyRemediationGVK.Group},

@@ -477,9 +477,11 @@ var _ = Describe("Node Health Check CR", func() {
 					Expect(cr).ToNot(BeNil())
 
 					By("verifying CR owned by us has deletion timestamp")
-					cr = findRemediationCRForNHC("healthy-worker-node-2", underTest)
-					Expect(cr).ToNot(BeNil())
-					Expect(cr.GetDeletionTimestamp()).ToNot(BeNil())
+					Eventually(func(g Gomega) {
+						cr = findRemediationCRForNHC("healthy-worker-node-2", underTest)
+						g.Expect(cr).ToNot(BeNil())
+						g.Expect(cr.GetDeletionTimestamp()).ToNot(BeNil())
+					}, "2s", "100ms").Should(Succeed())
 
 					By("verifying node with CR is still considered unhealthy")
 					Expect(*underTest.Status.HealthyNodes).To(Equal(1))
@@ -496,7 +498,7 @@ var _ = Describe("Node Health Check CR", func() {
 					Eventually(func(g Gomega) {
 						err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 						g.Expect(errors.IsNotFound(err)).To(BeTrue())
-					}, "2s", "100s").Should(Succeed())
+					}, "2s", "100ms").Should(Succeed())
 
 					By("verifying next node remediated now")
 					Eventually(func(g Gomega) {
