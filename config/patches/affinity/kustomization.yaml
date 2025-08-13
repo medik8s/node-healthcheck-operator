@@ -4,3 +4,7 @@ patches:
 - path: node_affinity_patch.yaml
   target:
     kind: Deployment
+- path: podantiaffinity_patch.yaml
+  target:
+    kind: Deployment
+    name: controller-manager
