@@ -122,6 +122,11 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	if in.StormRecoveryThreshold != nil {
+		in, out := &in.StormRecoveryThreshold, &out.StormRecoveryThreshold
+		*out = new(int)
+		**out = **in
+	}
 	if in.RemediationTemplate != nil {
 		in, out := &in.RemediationTemplate, &out.RemediationTemplate
 		*out = new(v1.ObjectReference)
@@ -191,6 +196,15 @@ func (in *NodeHealthCheckStatus) DeepCopyInto(out *NodeHealthCheckStatus) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.StormRecoveryActive != nil {
+		in, out := &in.StormRecoveryActive, &out.StormRecoveryActive
+		*out = new(bool)
+		**out = **in
+	}
+	if in.StormRecoveryStartTime != nil {
+		in, out := &in.StormRecoveryStartTime, &out.StormRecoveryStartTime
+		*out = (*in).DeepCopy()
 	}
 	if in.LastUpdateTime != nil {
 		in, out := &in.LastUpdateTime, &out.LastUpdateTime
