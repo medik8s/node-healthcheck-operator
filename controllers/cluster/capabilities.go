@@ -69,10 +69,7 @@ func NewCapabilities(config *rest.Config, reader client.Reader, logger logr.Logg
 		// see https://github.com/openshift/api/blob/c1fdeb0788c16659238d93ec45ce2e798c14eb88/config/v1/types_infrastructure.go#L129-L147
 		if cpTopology == configv1.HighlyAvailableTopologyMode ||
 			cpTopology == configv1.SingleReplicaTopologyMode ||
-			// quick fix without updating openshift/api dependency, it would need too many other updates
-			// see https://github.com/openshift/api/blob/017e9dd0276e4ed0242a759dffd419d728337876/config/v1/types_infrastructure.go#L142
-			// update to const once deps are updated
-			cpTopology == "HighlyAvailableArbiter" ||
+			cpTopology == configv1.HighlyAvailableArbiterMode ||
 			cpTopology == configv1.ExternalTopologyMode {
 
 			logger.Info("supported control plane topology", "topology", cpTopology)
