@@ -39,6 +39,11 @@ const (
 //
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:path=configs,scope=Cluster
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/519
+// +openshift:file-pattern=operatorOrdering=00
 type Config struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -77,6 +82,7 @@ type ImageRegistrySpec struct {
 	// requests controls how many parallel requests a given registry instance
 	// will handle before queuing additional requests.
 	// +optional
+	// +structType=atomic
 	Requests ImageRegistryConfigRequests `json:"requests,omitempty"`
 	// defaultRoute indicates whether an external facing route for the registry
 	// should be created using the default generated hostname.
@@ -85,6 +91,7 @@ type ImageRegistrySpec struct {
 	// routes defines additional external facing routes which should be
 	// created for the registry.
 	// +optional
+	// +listType=atomic
 	Routes []ImageRegistryConfigRoute `json:"routes,omitempty"`
 	// replicas determines the number of registry instances to run.
 	Replicas int32 `json:"replicas"`
@@ -93,6 +100,7 @@ type ImageRegistrySpec struct {
 	Logging int64 `json:"logging,omitempty"`
 	// resources defines the resource requests+limits for the registry pod.
 	// +optional
+	// +structType=atomic
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// nodeSelector defines the node selection constraints for the registry
 	// pod.
@@ -100,6 +108,7 @@ type ImageRegistrySpec struct {
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// tolerations defines the tolerations for the registry pod.
 	// +optional
+	// +listType=atomic
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 	// rolloutStrategy defines rollout strategy for the image registry
 	// deployment.
@@ -111,6 +120,7 @@ type ImageRegistrySpec struct {
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 	// topologySpreadConstraints specify how to spread matching pods among the given topology.
 	// +optional
+	// +listType=atomic
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 }
 
@@ -195,6 +205,17 @@ type ImageRegistryConfigStorageS3 struct {
 	// Optional, defaults based on the Region that is provided.
 	// +optional
 	RegionEndpoint string `json:"regionEndpoint,omitempty"`
+	// chunkSizeMiB defines the size of the multipart upload chunks of the S3 API.
+	// The S3 API requires multipart upload chunks to be at least 5MiB.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default value is 10 MiB.
+	// The value is an integer number of MiB.
+	// The minimum value is 5 and the maximum value is 5120 (5 GiB).
+	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Maximum=5120
+	// +openshift:enable:FeatureGate=ChunkSizeMiB
+	// +optional
+	ChunkSizeMiB int32 `json:"chunkSizeMiB,omitempty"`
 	// encrypt specifies whether the registry stores the image in encrypted
 	// format or not.
 	// Optional, defaults to false.
@@ -456,7 +477,7 @@ const (
 // EncryptionAlibaba this a union type in kube parlance.  Depending on the value for the AlibabaEncryptionMethod,
 // different pointers may be used
 type EncryptionAlibaba struct {
-	// Method defines the different encrytion modes available
+	// method defines the different encrytion modes available
 	// Empty value means no opinion and the platform chooses the a default, which is subject to change over time.
 	// Currently the default is `AES256`.
 	// +kubebuilder:validation:Enum="KMS";"AES256"
@@ -464,14 +485,14 @@ type EncryptionAlibaba struct {
 	// +optional
 	Method AlibabaEncryptionMethod `json:"method"`
 
-	// KMS (key management service) is an encryption type that holds the struct for KMS KeyID
+	// kms (key management service) is an encryption type that holds the struct for KMS KeyID
 	// +optional
 	KMS *KMSEncryptionAlibaba `json:"kms,omitempty"`
 }
 
 type KMSEncryptionAlibaba struct {
-	// KeyID holds the KMS encryption key ID
-	// +kubebuilder:validation:Required
+	// keyID holds the KMS encryption key ID
+	// +required
 	// +kubebuilder:validation:MinLength=1
 	KeyID string `json:"keyID"`
 }
@@ -480,7 +501,7 @@ type KMSEncryptionAlibaba struct {
 // Configures the registry to use Alibaba Cloud Object Storage Service for backend storage.
 // More about oss, you can look at the [official documentation](https://www.alibabacloud.com/help/product/31815.htm)
 type ImageRegistryConfigStorageAlibabaOSS struct {
-	// Bucket is the bucket name in which you want to store the registry's data.
+	// bucket is the bucket name in which you want to store the registry's data.
 	// About Bucket naming, more details you can look at the [official documentation](https://www.alibabacloud.com/help/doc-detail/257087.htm)
 	// Empty value means no opinion and the platform chooses the a default, which is subject to change over time.
 	// Currently the default will be autogenerated in the form of <clusterid>-image-registry-<region>-<random string 27 chars>
@@ -489,20 +510,20 @@ type ImageRegistryConfigStorageAlibabaOSS struct {
 	// +kubebuilder:validation:Pattern=`^[0-9a-z]+(-[0-9a-z]+)*$`
 	// +optional
 	Bucket string `json:"bucket,omitempty"`
-	// Region is the Alibaba Cloud Region in which your bucket exists.
+	// region is the Alibaba Cloud Region in which your bucket exists.
 	// For a list of regions, you can look at the [official documentation](https://www.alibabacloud.com/help/doc-detail/31837.html).
 	// Empty value means no opinion and the platform chooses the a default, which is subject to change over time.
 	// Currently the default will be based on the installed Alibaba Cloud Region.
 	// +optional
 	Region string `json:"region,omitempty"`
-	// EndpointAccessibility specifies whether the registry use the OSS VPC internal endpoint
+	// endpointAccessibility specifies whether the registry use the OSS VPC internal endpoint
 	// Empty value means no opinion and the platform chooses the a default, which is subject to change over time.
 	// Currently the default is `Internal`.
 	// +kubebuilder:validation:Enum="Internal";"Public";""
 	// +kubebuilder:default="Internal"
 	// +optional
 	EndpointAccessibility EndpointAccessibility `json:"endpointAccessibility,omitempty"`
-	// Encryption specifies whether you would like your data encrypted on the server side.
+	// encryption specifies whether you would like your data encrypted on the server side.
 	// More details, you can look cat the [official documentation](https://www.alibabacloud.com/help/doc-detail/117914.htm)
 	// +optional
 	Encryption *EncryptionAlibaba `json:"encryption,omitempty"`
@@ -535,7 +556,7 @@ type ImageRegistryConfigStorage struct {
 	// ibmcos represents configuration that uses IBM Cloud Object Storage.
 	// +optional
 	IBMCOS *ImageRegistryConfigStorageIBMCOS `json:"ibmcos,omitempty"`
-	// Oss represents configuration that uses Alibaba Cloud Object Storage Service.
+	// oss represents configuration that uses Alibaba Cloud Object Storage Service.
 	// +optional
 	OSS *ImageRegistryConfigStorageAlibabaOSS `json:"oss,omitempty"`
 	// managementState indicates if the operator manages the underlying

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -21,6 +20,11 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/yaml"
+)
+
+const (
+	progressingConditionTimeout = 15 * time.Minute
 )
 
 // SetOperandVersion sets the new version and returns the previous value.
@@ -197,7 +201,7 @@ func UpdateStatus(ctx context.Context, client OperatorClient, updateFuncs ...Upd
 			updatedOperatorStatus = newStatus
 			return nil
 		}
-		if klog.V(2).Enabled() {
+		if klog.V(4).Enabled() {
 			klog.Infof("Operator status changed: %v", operatorStatusJSONPatchNoError(oldStatus, newStatus))
 		}
 
@@ -273,7 +277,7 @@ func UpdateStaticPodStatus(ctx context.Context, client StaticPodOperatorClient, 
 			updatedOperatorStatus = newStatus
 			return nil
 		}
-		if klog.V(2).Enabled() {
+		if klog.V(4).Enabled() {
 			klog.Infof("Operator status changed: %v", staticPodOperatorStatusJSONPatchNoError(oldStatus, newStatus))
 		}
 
@@ -352,6 +356,10 @@ func NewMultiLineAggregate(errList []error) error {
 	if len(errs) == 0 {
 		return nil
 	}
+	// We sort errors to allow for consistent output for testing.
+	sort.SliceStable(errs, func(i, j int) bool {
+		return errs[i].Error() < errs[j].Error()
+	})
 	return aggregate(errs)
 }
 
@@ -549,4 +557,11 @@ func IsConditionPresentAndEqual(conditions []metav1.Condition, conditionType str
 		}
 	}
 	return false
+}
+
+// IsUpdatingTooLong determines if updating operands condition takes too long.
+// It returns true if the given condition was found and has been set to True longer than progressingConditionTimeout.
+func IsUpdatingTooLong(operatorStatus *operatorv1.OperatorStatus, progressingConditionType string) bool {
+	progressing := FindOperatorCondition(operatorStatus.Conditions, progressingConditionType)
+	return progressing != nil && progressing.Status == operatorv1.ConditionTrue && time.Now().After(progressing.LastTransitionTime.Add(progressingConditionTimeout))
 }
