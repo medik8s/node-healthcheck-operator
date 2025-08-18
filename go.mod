@@ -1,25 +1,25 @@
 module github.com/medik8s/node-healthcheck-operator
 
-go 1.23.0
+go 1.24.4
 
 require (
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/medik8s/common v1.17.0
-	github.com/onsi/ginkgo/v2 v2.22.0
-	github.com/onsi/gomega v1.34.2
+	github.com/onsi/ginkgo/v2 v2.23.4
+	github.com/onsi/gomega v1.36.3
 	github.com/openshift/api v0.0.0-20240124164020-e2ce40831f2e // release-4.16
 	github.com/openshift/client-go v0.0.0-20240115204758-e6bf7d631d5e // release-4.16
 	github.com/openshift/library-go v0.0.0-20240124134907-4dfbf6bc7b11 // release-4.16
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.18.0
-	go.uber.org/zap v1.26.0
-	k8s.io/api v0.29.1
-	k8s.io/apiextensions-apiserver v0.29.1
-	k8s.io/apimachinery v0.29.1
-	k8s.io/apiserver v0.29.1
-	k8s.io/client-go v0.29.1
+	github.com/prometheus/client_golang v1.23.0
+	go.uber.org/zap v1.27.0
+	k8s.io/api v0.29.15
+	k8s.io/apiextensions-apiserver v0.29.2
+	k8s.io/apimachinery v0.29.15
+	k8s.io/apiserver v0.29.15
+	k8s.io/client-go v0.29.15
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // latest
-	sigs.k8s.io/controller-runtime v0.17.0
+	sigs.k8s.io/controller-runtime v0.17.5
 )
 
 require (
