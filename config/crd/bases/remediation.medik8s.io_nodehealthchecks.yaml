@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.18.0
   name: nodehealthchecks.remediation.medik8s.io
 spec:
   group: remediation.medik8s.io
@@ -48,7 +48,6 @@ spec:
                   gets healthy within the timeout of the currently processed remediation. The order of
                   remediation is defined by the "order" field of each "escalatingRemediation".
 
-
                   Mutually exclusive with RemediationTemplate
                 items:
                   description: EscalatingRemediation defines a remediation template
@@ -65,7 +64,6 @@ spec:
                         RemediationTemplate is a reference to a remediation template
                         provided by a remediation provider.
 
-
                         If a node needs remediation the controller will create an object from this template
                         and then it should be picked up by a remediation provider.
                       properties:
@@ -81,7 +79,6 @@ spec:
                             the event) or if no container name is specified "spec.containers[2]" (container with
                             index 2 in this pod). This syntax is chosen only to have some well-defined way of
                             referencing a part of an object.
-                            TODO: this design is not final and this field is subject to change in the future.
                           type: string
                         kind:
                           description: |-
@@ -116,7 +113,6 @@ spec:
                         before the next remediation (if any) will be used. When the last remediation times out,
                         the overall remediation is considered as failed.
                         As a safeguard for preventing parallel remediations, a minimum of 60s is enforced.
-
 
                         Expects a string of decimal numbers each with optional
                         fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
@@ -177,10 +173,8 @@ spec:
                   RemediationTemplate is a reference to a remediation template
                   provided by an infrastructure provider.
 
-
                   If a node needs remediation the controller will create an object from this template
                   and then it should be picked up by a remediation provider.
-
 
                   Mutually exclusive with EscalatingRemediations
                 properties:
@@ -196,7 +190,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-
@@ -229,10 +222,8 @@ spec:
                 description: |-
                   Label selector to match nodes whose health will be exercised.
 
-
                   Selecting both control-plane and worker nodes in one NHC CR is
                   highly discouraged and can result in undesired behaviour.
-
 
                   Note: mandatory now for above reason, but for backwards compatibility existing
                   CRs will continue to work with an empty selector, which matches all nodes.
@@ -300,7 +291,6 @@ spec:
                       description: |-
                         Duration of the condition specified when a node is considered unhealthy.
 
-
                         Expects a string of decimal numbers each with optional
                         fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
                         Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
@@ -336,16 +326,8 @@ spec:
                   Represents the observations of a NodeHealthCheck's current state.
                   Known .status.conditions.type are: "Disabled"
                 items:
-                  description: "Condition contains details for one aspect of the current
-                    state of this API Resource.\n---\nThis struct is intended for
-                    direct use as an array at the field path .status.conditions.  For
-                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
-                    observations of a foo's current state.\n\t    // Known .status.conditions.type
-                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
-                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
-                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
-                    \   // other fields\n\t}"
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
                     lastTransitionTime:
                       description: |-
@@ -386,12 +368,7 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: |-
-                        type of condition in CamelCase or in foo.example.com/CamelCase.
-                        ---
-                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
-                        useful (see .node.status.conditions), the ability to deconflict is important.
-                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
@@ -480,7 +457,6 @@ spec:
                                   the event) or if no container name is specified "spec.containers[2]" (container with
                                   index 2 in this pod). This syntax is chosen only to have some well-defined way of
                                   referencing a part of an object.
-                                  TODO: this design is not final and this field is subject to change in the future.
                                 type: string
                               kind:
                                 description: |-
