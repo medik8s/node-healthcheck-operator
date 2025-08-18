@@ -6,13 +6,13 @@ OPERATOR_SDK_VERSION = v1.33.0
 # https://pkg.go.dev/github.com/operator-framework/operator-registry?tab=versions
 OPM_VERSION = v1.56.0
 # https://pkg.go.dev/sigs.k8s.io/controller-tools?tab=versions
-CONTROLLER_GEN_VERSION = v0.18.0
+CONTROLLER_GEN_VERSION = v0.17.3
 # update for major version updates to KUSTOMIZE_VERSION!
 KUSTOMIZE_API_VERSION = v5
 # https://pkg.go.dev/sigs.k8s.io/kustomize/kustomize/v5?tab=versions
 KUSTOMIZE_VERSION = v5.3.0
 # https://pkg.go.dev/sigs.k8s.io/controller-runtime/tools/setup-envtest/env?tab=versions
-ENVTEST_VERSION = v0.0.0-20240123110158-b88ed7a3602b
+ENVTEST_VERSION = v0.0.0-20250813191507-c7df6d0236ed
 # https://pkg.go.dev/golang.org/x/tools/cmd/goimports?tab=versions
 GOIMPORTS_VERSION = v0.36.0
 # https://pkg.go.dev/github.com/slintes/sort-imports?tab=versions
@@ -22,7 +22,7 @@ YQ_API_VERSION = v4
 YQ_VERSION = v4.47.1
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.28
+ENVTEST_K8S_VERSION = 1.32
 
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
