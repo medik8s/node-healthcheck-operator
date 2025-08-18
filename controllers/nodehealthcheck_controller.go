@@ -109,8 +109,8 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			),
 		).
 		WatchesRawSource(
-			&source.Channel{Source: r.MHCEvents},
-			handler.EnqueueRequestsFromMapFunc(utils.NHCByMHCEventMapperFunc(mgr.GetClient(), mgr.GetLogger())),
+			source.Channel(r.MHCEvents,
+				handler.EnqueueRequestsFromMapFunc(utils.NHCByMHCEventMapperFunc(mgr.GetClient(), mgr.GetLogger()))),
 		).
 		Build(r)
 

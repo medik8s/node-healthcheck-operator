@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	consolev1 "github.com/openshift/api/console/v1"
+	_ "github.com/openshift/api/console/v1/zz_generated.crd-manifests"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 )
@@ -67,7 +68,7 @@ var _ = BeforeSuite(func() {
 	testEnv = &envtest.Environment{
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Paths: []string{
-				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "console", "v1alpha1"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "console", "v1", "zz_generated.crd-manifests", "90_consoleplugins.crd.yaml"),
 				filepath.Join("..", "..", "config", "crd", "bases"),
 			},
 			ErrorIfPathMissing: true,
