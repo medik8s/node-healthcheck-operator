@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/errors"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -106,8 +106,9 @@ func (v *customValidator) ValidateDelete(_ context.Context, obj runtime.Object) 
 }
 
 func (v *customValidator) validate(ctx context.Context, nhc *NodeHealthCheck) error {
-	aggregated := errors.NewAggregate([]error{
+	aggregated := utilerrors.NewAggregate([]error{
 		ValidateMinHealthyMaxUnhealthy(nhc),
+		v.validateStormRecoveryThreshold(ctx, nhc),
 		v.validateSelector(nhc),
 		v.validateMutualRemediations(nhc),
 		v.validateEscalatingRemediations(ctx, nhc),
@@ -152,7 +153,7 @@ func (v *customValidator) validateEscalatingRemediations(ctx context.Context, nh
 		return nil
 	}
 
-	aggregated := errors.NewAggregate([]error{
+	aggregated := utilerrors.NewAggregate([]error{
 		v.validateEscalatingRemediationsUniqueOrder(nhc),
 		v.validateEscalatingRemediationsTimeout(nhc),
 		v.validateEscalatingRemediationsUniqueRemediator(ctx, nhc),
@@ -261,4 +262,73 @@ func ValidateMinHealthyMaxUnhealthy(nhc *NodeHealthCheck) error {
 		}
 	}
 	return nil
+}
+
+func (v *customValidator) validateStormRecoveryThreshold(ctx context.Context, nhc *NodeHealthCheck) error {
+	// StormRecoveryThreshold is optional, so skip validation if not specified
+	if nhc.Spec.StormRecoveryThreshold == nil {
+		return nil
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(&nhc.Spec.Selector)
+	if err != nil {
+		return fmt.Errorf("invalid selector for storm recovery validation: %v", err)
+	}
+
+	var nodes corev1.NodeList
+	// Fetch nodes matching the selector to get actual total count for comprehensive validation
+	if err := v.Client.List(ctx, &nodes, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		// Storm recovery validation requires actual node count - cannot proceed without it
+		return fmt.Errorf("failed to fetch nodes for storm recovery validation: %v", err)
+	}
+
+	totalNodes := len(nodes.Items)
+	if totalNodes == 0 {
+		return fmt.Errorf("no nodes match the selector, cannot validate storm recovery threshold")
+	}
+
+	// Get the storm recovery threshold value
+	stormThreshold := *nhc.Spec.StormRecoveryThreshold
+
+	// Calculate minHealthy directly to validate the critical constraint
+	minHealthy, err := GetMinHealthy(nhc, totalNodes)
+	if err != nil {
+		nodehealthchecklog.Error(err, "failed to calculate the number of minimum healthy nodes")
+		return err
+	}
+
+	// Critical validation: stormRecoveryThreshold < (totalNodes - minHealthy)
+	// This ensures storm recovery can actually be exited and prevents permanent storm recovery lock
+	maxAllowedStormThreshold := totalNodes - minHealthy
+	if stormThreshold >= maxAllowedStormThreshold {
+		return fmt.Errorf("stormRecoveryThreshold (%d) must be less than (totalNodes - minHealthy) = (%d - %d) = %d to prevent permanent storm recovery lock",
+			stormThreshold, totalNodes, minHealthy, maxAllowedStormThreshold)
+	}
+
+	return nil
+}
+
+func GetMinHealthy(nhc *NodeHealthCheck, total int) (int, error) {
+	err := ValidateMinHealthyMaxUnhealthy(nhc)
+	if err != nil {
+		return 0, err
+	}
+	if nhc.Spec.MinHealthy != nil {
+		minHealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MinHealthy, total, true)
+		if minHealthy < 0 && err == nil {
+			err = fmt.Errorf("minHealthy is negative: %d", minHealthy)
+		}
+		return minHealthy, err
+	}
+	if nhc.Spec.MaxUnhealthy != nil {
+		maxUnhealthy, err := intstr.GetScaledValueFromIntOrPercent(nhc.Spec.MaxUnhealthy, total, true)
+		if maxUnhealthy < 0 && err == nil {
+			err = fmt.Errorf("maxUnhealthy is negative: %d", maxUnhealthy)
+		}
+		if maxUnhealthy > total && err == nil {
+			err = fmt.Errorf("maxUnhealthy is greater than the number of selected nodes: %d", maxUnhealthy)
+		}
+		return total - maxUnhealthy, err
+	}
+	return 0, fmt.Errorf("one of minHealthy and maxUnhealthy should be specified")
 }

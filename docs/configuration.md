@@ -59,6 +59,7 @@ spec:
 | _pauseRequests_          | no                                                  | n/a                                                                                             | A string list. See details below.                                                                                                                                                                                                                                                                                                                               |
 | _unhealthyConditions_    | no                                                  | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | List of UnhealthyCondition, which defines node unhealthiness. See details below.                                                                                                                                                                                                                                                                                |
 | _healthyDelay_           | no                                                  | 0                                                                                               | The time before NHC would allow a node to be healthy again. A negative value means that NHC will never consider the node healthy, and manual intervention is expected.                                                                                                                                                                                          |
+| _stormRecoveryThreshold_ | no                                                  | n/a                                                                                             | The threshold for proceeding with remediation during storm scenarios. When storm mode is triggered by number of remediation reaching minHealthy/maxUnhealthy maximum, NHC waits for the unhealthy count to drop to this threshold before resuming normal remediation. See Storm Recovery section below.                                                         |
 
 ### Selector
 
@@ -224,21 +225,213 @@ There are two methods for manual intervention:
     - Once the node meets all other healthy criteria, NHC will delete the remediation.medik8s.io/manually-confirmed-healthy annotation from the Node, and proceed with deleting the remediation CR for that node.
     - This approach provides a precise, node-specific mechanism for an administrator to signal that a node is healthy and ready to exit the healthyDelay period, without affecting the healthyDelay configuration for other nodes under the same NodeHealthCheck CR.
 
+## Storm Recovery
+
+Storm recovery is an **optional advanced feature** that provides system stabilization through remediation restraint during mass failure scenarios.
+
+### Concept & Philosophy
+
+**Core Principle**: Storm recovery is about **system stabilization through remediation restraint**.
+
+**The Philosophy**:
+- **Recognition**: When many nodes fail, creating more remediations may be counterproductive
+- **Assumption**: The system needs time to stabilize before additional remediation attempts
+- **Strategy**: Temporary restraint to prevent making a bad situation worse
+- **Acceptance**: Some scenarios may be beyond automated recovery (same as minHealthy)
+
+**Real-World Example**:
+```
+Scenario: 20 nodes, minHealthy=11, stormRecoveryThreshold=5
+
+Normal operation: 15 healthy, 5 unhealthy → 5 remediations created
+Storm hits: 11 healthy, 9 unhealthy → 9 remediations created (minHealthy limit reached)
+Additional failures: 9 healthy, 11 unhealthy → 9 remediations continue, 2 nodes wait due to minHealthy constraint
+
+Key insight: Those 2 additional failed nodes get NO remediation
+- It's intentional restraint
+- Assumption: At this stage creating more remediations might destabilize the system further
+- Strategy: Wait for system to stabilize (unhealthy count ≤ 5) before creating remediations for the 2 additional failed nodes.
+- Risk: If more nodes keep failing, storm mode continues indefinitely even if current remediations finish successfully
+- Reality: In such cases, the cluster may be beyond automated help anyway
+```
+
+### How Storm Recovery Works
+
+**The Key Insight**: Storm recovery provides a **controlled exit strategy** when maximum number of remediation is reached due to minHealthy/maxUnhealthy constraint.
+
+**Normal minHealthy Behavior**:
+```
+If (Maximum number of remediation is reached):
+  → Block creation of new remediations
+  → Existing remediations continue
+  → Wait until current remediations are below maximum before creating more (as defined by minHealthy/maxUnhealthy)
+```
+
+**Storm Recovery Enhancement**:
+```
+If (Maximum number of remediation is reached AND stormRecoveryThreshold configured):
+  → Enter storm recovery mode  
+  → Block creation of new remediations as long as in storm recovery mode 
+  → BUT: Exit storm recovery when (unhealthyNodes ≤ stormRecoveryThreshold)
+  → Resume normal remediation for remaining unhealthy nodes
+```
+
+### When to Use Storm Recovery
+
+**Storm Recovery is Appropriate When**:
+- Your infrastructure can be overwhelmed by too many concurrent remediations
+- You want controlled recovery during mass failure events
+- You prefer "wait and see" over "aggressive remediation" during storms
+- You accept that some failure scenarios are beyond automated recovery
+
+**Storm Recovery is NOT Appropriate When**:
+- You need aggressive remediation regardless of system load
+- Your infrastructure can handle unlimited concurrent remediations
+- You can't accept any remediation delays during mass failures
+
+### Calculating Thresholds
+
+**Step-by-Step Guide**:
+```
+1. Choose minHealthy based on availability requirements (unchanged)
+2. Consider: "At what point is it safe to resume creating new remediations ?"
+3. Set stormRecoveryThreshold = acceptable unhealthy count for resumption
+4. Validate: stormRecoveryThreshold < (totalNodes - minHealthy)
+
+Example:
+- 20 worker nodes
+- minHealthy=11 (55% availability requirement)
+- Can handle 5 concurrent remediations safely
+- Choose: stormRecoveryThreshold=5
+- Meaning: "After a 9 remediation storm, resume normal remediation only when ≤5 nodes need remediation"
+```
+
+### Storm Recovery States
+
+**State 1: Normal Operation**
+```
+healthyNodes > minHealthy
+→ Create remediations for unhealthy nodes (up to minHealthy limit)
+```
+
+**State 2: Storm Recovery Triggered**
+```
+healthyNodes <= minHealthy
+→ Block new remediations until storm recovery exit
+```
+
+**State 3: Storm Recovery Active**  
+```
+unhealthyNodes > stormRecoveryThreshold
+→ Block new remediations
+→ Wait for existing remediations to become healthy and reduce unhealthy count
+```
+
+**State 4: Storm Recovery Exit**
+```
+unhealthyNodes ≤ stormRecoveryThreshold  
+→ Exit storm recovery mode
+→ Resume creating remediations for unhealthy nodes
+```
+
+**Example State Transitions**:
+```
+20 nodes, minHealthy=11, stormRecoveryThreshold=5
+
+1. Storm hits: 11 healthy, 9 unhealthy → 9 remediations active
+2. More failures: 9 healthy, 11 unhealthy → still 9 remediations, 2 nodes wait
+3. System stabilizes: 15 healthy, 5 unhealthy (3 remediations remain) → storm recovery exits
+4. Resume remediation: Create remediations for remaining 2 unhealthy nodes
+5. Final recovery: All nodes healthy
+
+Risk scenario:
+1. Storm hits: 11 healthy, 9 unhealthy → 9 remediations active  
+2. Continuous failures: 5 healthy, 15 unhealthy → still 9 remediations, 6 nodes wait
+3. Storm never ends even if the 9 remediations will recover: System overwhelmed, storm recovery stays active
+4. Outcome: Cluster beyond automated recovery (manual intervention needed)
+```
+
+### Storm Recovery Behavior
+
+**What Storm Recovery Does**:
+- ✅ **Preserves existing remediations** (let them complete)
+- ❌ **Blocks new remediations** (even for newly failed nodes)
+- ⏳ **Waits for system stabilization** (unhealthy count to drop)
+- 🔄 **Resumes when safe** (unhealthy ≤ threshold)
+
+**What Storm Recovery Does NOT Do**:
+- ❌ Does NOT guarantee all nodes will be remediated
+- ❌ Does NOT provide unlimited recovery capability
+
+### Risk Assessment
+
+**Accepted Risks**:
+```
+Risk: Storm recovery may never exit if failures continue
+Reality: Such scenarios likely indicate cluster-wide catastrophic failure
+Philosophy: Automated remediation isn't the solution for every failure mode
+Mitigation: Manual intervention, cluster replacement, or disaster recovery procedures
+```
+
+**Risk vs. Benefit Analysis**:
+```
+Without Storm Recovery:
+✅ All unhealthy nodes get remediations (until minHealthy limit)
+❌ Risk of overwhelming system during mass failures
+❌ Potential to make storms worse through remediation load
+
+With Storm Recovery:
+✅ Controlled system load during storms
+✅ Natural stabilization opportunities
+❌ Some nodes may not get remediations during extended storms
+❌ Relies on manual intervention for extreme scenarios
+```
+
+### Configuration Examples
+
+**Example 1: minHealthy (percentage)**:
+```yaml
+spec:
+  minHealthy: "60%"           # 12 out of 20 nodes
+  stormRecoveryThreshold: 3   # Resume when ≤3 unhealthy
+# Philosophy: Percentage-based minHealthy scales for dynamic cluster sizes
+# Trade-off: minHealthy scales with cluster growth/shrinkage automatically
+```
+
+**Example 2: maxUnhealthy (fixed number)**:
+```yaml
+spec:
+  maxUnhealthy: 5             # Allow max 5 unhealthy nodes
+  stormRecoveryThreshold: 3   # Resume when ≤3 unhealthy
+# Philosophy: Fixed maxUnhealthy limit regardless of cluster size
+# Trade-off: maxUnhealthy doesn't scale with cluster changes
+```
+
+**Example 3: minHealthy (fixed number)**:
+```yaml
+spec:
+  minHealthy: 12              # Require exactly 12 healthy nodes
+  stormRecoveryThreshold: 5   # Resume when ≤5 unhealthy
+# Philosophy: Absolute minimum healthy node requirement
+# Trade-off: minHealthy doesn't scale with cluster changes
+```
 
 ## NodeHealthCheck Status
 
 The status section of the NodeHealthCheck custom resource provides detailed
 information about what the operator is doing. It contains these fields:
 
-| Field                  | Description                                                                                                                                                                                                                                                |
-|------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| _observedNodes_        | The number of nodes observed according to the selector.                                                                                                                                                                                                    |
-| _healthyNodes_         | The number of observed healthy nodes.                                                                                                                                                                                                                      |
-| _inFlightRemediations_ | ** DEPRECATED ** A list of "timestamp - node name" pairs of ongoing remediations. Replaced by unhealthyNodes.                                                                                                                                              |
-| _unhealthyNodes_       | A list of unhealthy nodes and their remediations. See details below.                                                                                                                                                                                       |
-| _conditions_           | A list of conditions representing NHC's current state. Currently the only used type is "Disabled", and it is true when the controller detects problems which prevent it to work correctly. See the [workflow page](./workflow.md) for further information. |
-| _phase_                | A short human readable representation of NHC's current state. Known phases are Disabled, Paused, Remediating and Enabled.                                                                                                                                  |
-| _reason_               | A longer human readable explanation of the phase.                                                                                                                                                                                                          |
+| Field                    | Description                                                                                                                                                                                                                                                |
+|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| _observedNodes_          | The number of nodes observed according to the selector.                                                                                                                                                                                                    |
+| _healthyNodes_           | The number of observed healthy nodes.                                                                                                                                                                                                                      |
+| _inFlightRemediations_   | ** DEPRECATED ** A list of "timestamp - node name" pairs of ongoing remediations. Replaced by unhealthyNodes.                                                                                                                                              |
+| _unhealthyNodes_         | A list of unhealthy nodes and their remediations. See details below.                                                                                                                                                                                       |
+| _conditions_             | A list of conditions representing NHC's current state. Currently the only used type is "Disabled", and it is true when the controller detects problems which prevent it to work correctly. See the [workflow page](./workflow.md) for further information. |
+| _phase_                  | A short human readable representation of NHC's current state. Known phases are Disabled, Paused, Remediating and Enabled.                                                                                                                                  |
+| _reason_                 | A longer human readable explanation of the phase.                                                                                                                                                                                                          |
+| _stormRecoveryActive_    | Boolean indicating if storm recovery mode is currently active. Present only when stormRecoveryThreshold is configured.                                                                                                                                     |
+| _stormRecoveryStartTime_ | Timestamp when storm recovery mode was activated. Present only when stormRecoveryActive is true.                                                                                                                                                           |
 
 ### UnhealthyNodes
 

@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -426,6 +427,119 @@ var _ = Describe("NodeHealthCheck Validation", func() {
 			})
 			It("should return true", func() {
 				Expect(nhc.isRemediating()).To(BeTrue())
+			})
+		})
+
+		Context("Storm Recovery Validation", func() {
+			When("valid storm recovery configuration", func() {
+				BeforeEach(func() {
+					// Setup: 10 nodes, minHealthy=60% (6), stormRecoveryThreshold=2
+					// Valid because: 2 < (10-6) = 4
+					mh := intstr.FromString("60%")
+					nhc.Spec.MinHealthy = &mh
+					stormThreshold := 2
+					nhc.Spec.StormRecoveryThreshold = &stormThreshold
+					// Keep the RemediationTemplate from parent BeforeEach
+					nhc.Spec.RemediationTemplate = &v1.ObjectReference{
+						Kind:       "R",
+						Namespace:  "dummy",
+						Name:       "r",
+						APIVersion: "r",
+					}
+					nhc.Spec.Selector = metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{
+								Key:      "node-role.kubernetes.io/control-plane",
+								Operator: metav1.LabelSelectorOpDoesNotExist,
+							},
+						},
+					}
+
+					// Mock 10 nodes
+					mockValidatorClient.listFunc = func(ctx context.Context, nodesList client.ObjectList, opts ...client.ListOption) error {
+						nodeList := nodesList.(*v1.NodeList)
+						nodeList.Items = make([]v1.Node, 10)
+						for i := 0; i < 10; i++ {
+							nodeList.Items[i] = v1.Node{
+								ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+							}
+						}
+						return nil
+					}
+				})
+
+				It("should be allowed", func() {
+					Expect(validator.validate(context.Background(), nhc)).To(Succeed())
+				})
+			})
+
+			When("storm recovery threshold too high with percentage minHealthy", func() {
+				BeforeEach(func() {
+					// Setup: 5 nodes, minHealthy=60% (3), stormRecoveryThreshold=3
+					// Invalid because: 3 >= (5-3) = 2
+					mh := intstr.FromString("60%")
+					nhc.Spec.MinHealthy = &mh
+					stormThreshold := 3
+					nhc.Spec.StormRecoveryThreshold = &stormThreshold
+					// Keep the RemediationTemplate from parent BeforeEach
+					nhc.Spec.RemediationTemplate = &v1.ObjectReference{
+						Kind:       "R",
+						Namespace:  "dummy",
+						Name:       "r",
+						APIVersion: "r",
+					}
+
+					// Mock 5 nodes
+					mockValidatorClient.listFunc = func(ctx context.Context, nodesList client.ObjectList, opts ...client.ListOption) error {
+						nodeList := nodesList.(*v1.NodeList)
+						nodeList.Items = make([]v1.Node, 5)
+						for i := 0; i < 5; i++ {
+							nodeList.Items[i] = v1.Node{
+								ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+							}
+						}
+						return nil
+					}
+				})
+
+				It("should be denied", func() {
+					Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("stormRecoveryThreshold (3) must be less than (totalNodes - minHealthy) = (5 - 3) = 2 to prevent permanent storm recovery lock")))
+				})
+			})
+
+			When("storm recovery threshold too high with fixed maxUnhealthy", func() {
+				BeforeEach(func() {
+					// Setup: 6 nodes, maxUnhealthy=2 (minHealthy=4), stormRecoveryThreshold=3
+					// Invalid because: 3 >= (6-4) = 2
+					nhc.Spec.MinHealthy = nil
+					maxUnhealthy := intstr.FromInt(2)
+					nhc.Spec.MaxUnhealthy = &maxUnhealthy
+					stormThreshold := 3
+					nhc.Spec.StormRecoveryThreshold = &stormThreshold
+					// Keep the RemediationTemplate from parent BeforeEach
+					nhc.Spec.RemediationTemplate = &v1.ObjectReference{
+						Kind:       "R",
+						Namespace:  "dummy",
+						Name:       "r",
+						APIVersion: "r",
+					}
+
+					// Mock 6 nodes
+					mockValidatorClient.listFunc = func(ctx context.Context, nodesList client.ObjectList, opts ...client.ListOption) error {
+						nodeList := nodesList.(*v1.NodeList)
+						nodeList.Items = make([]v1.Node, 6)
+						for i := 0; i < 6; i++ {
+							nodeList.Items[i] = v1.Node{
+								ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+							}
+						}
+						return nil
+					}
+				})
+
+				It("should be denied", func() {
+					Expect(validator.validate(context.Background(), nhc)).To(MatchError(ContainSubstring("stormRecoveryThreshold (3) must be less than (totalNodes - minHealthy) = (6 - 4) = 2 to prevent permanent storm recovery lock")))
+				})
 			})
 		})
 	})

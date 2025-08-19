@@ -273,6 +273,17 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              stormRecoveryThreshold:
+                description: |-
+                  StormRecoveryThreshold defines the number of unhealthy nodes at which storm recovery mode should exit.
+                  When the number of unhealthy nodes drops to this threshold or below, the storm recovery mode will deactivate,
+                  allowing creation of new remediations.
+
+
+                  This threshold must be less than (totalNodes - minHealthy) to prevent permanent storm recovery lock.
+                  This parameter is optional and when not specified, the original minHealthy/maxUnhealthy behavior is preserved.
+                minimum: 0
+                type: integer
               unhealthyConditions:
                 default:
                 - duration: 300s
@@ -416,6 +427,19 @@ spec:
                 type: string
               reason:
                 description: Reason explains the current phase in more detail.
+                type: string
+              stormRecoveryActive:
+                description: |-
+                  StormRecoveryActive indicates if storm recovery mode is currently active.
+                  Storm recovery mode is activated when the number of healthy nodes drops to or below minHealthy,
+                  and remediation is delayed until the number of unhealthy nodes reaches stormRecoveryThreshold.
+                type: boolean
+              stormRecoveryStartTime:
+                description: |-
+                  StormRecoveryStartTime records when storm recovery mode was activated.
+                  This field is set when StormRecoveryActive becomes true and helps track
+                  how long the system has been in storm recovery mode.
+                format: date-time
                 type: string
               unhealthyNodes:
                 description: UnhealthyNodes tracks currently unhealthy nodes and their
