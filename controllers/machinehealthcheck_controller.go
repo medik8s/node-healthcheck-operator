@@ -94,8 +94,8 @@ func (r *MachineHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		handler.EnqueueRequestsFromMapFunc(utils.MHCByMachineMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates)),
 	)
 	bldr = bldr.WatchesRawSource(
-		&source.Channel{Source: r.FeatureGateMHCControllerEvents},
-		handler.EnqueueRequestsFromMapFunc(utils.MHCByFeatureGateEventMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates)),
+		source.Channel(r.FeatureGateMHCControllerEvents,
+			handler.EnqueueRequestsFromMapFunc(utils.MHCByFeatureGateEventMapperFunc(mgr.GetClient(), mgr.GetLogger(), r.FeatureGates))),
 	)
 
 	if controller, err := bldr.Build(r); err == nil {

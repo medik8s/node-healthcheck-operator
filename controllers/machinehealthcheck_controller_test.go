@@ -166,7 +166,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -197,7 +197,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(1),
 				RemediationsAllowed: 1,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -219,7 +219,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -238,7 +238,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(0),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -257,7 +257,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(0),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -276,7 +276,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -297,7 +297,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -316,7 +316,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -335,7 +335,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(1),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -356,7 +356,7 @@ func TestReconcile(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					{
 						Type:     machinev1.RemediationAllowedCondition,
 						Status:   corev1.ConditionFalse,
@@ -419,7 +419,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(1),
 				RemediationsAllowed: 1,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -441,7 +441,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -463,7 +463,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},
@@ -485,7 +485,7 @@ func TestReconcileExternalRemediationTemplate(t *testing.T) {
 				ExpectedMachines:    pointer.Int(1),
 				CurrentHealthy:      pointer.Int(0),
 				RemediationsAllowed: 0,
-				Conditions: machinev1.Conditions{
+				Conditions: []machinev1.Condition{
 					remediationAllowedCondition,
 				},
 			},

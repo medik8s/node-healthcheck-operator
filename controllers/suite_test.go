@@ -52,6 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	_ "github.com/openshift/api/machine/v1beta1/zz_generated.crd-manifests"
 
 	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
@@ -152,7 +153,8 @@ var _ = BeforeSuite(func() {
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Scheme: testScheme,
 			Paths: []string{
-				filepath.Join("..", "vendor", "github.com", "openshift", "api", "machine", "v1beta1"),
+				filepath.Join("..", "vendor", "github.com", "openshift", "api", "machine", "v1beta1", "zz_generated.crd-manifests", "0000_10_machine-api_01_machinehealthchecks.crd.yaml"),
+				filepath.Join("..", "vendor", "github.com", "openshift", "api", "machine", "v1beta1", "zz_generated.crd-manifests", "0000_10_machine-api_01_machines-Default.crd.yaml"),
 				filepath.Join("..", "config", "crd", "bases"),
 			},
 			ErrorIfPathMissing: true,

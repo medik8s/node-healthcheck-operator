@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -13,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/api/machine/v1beta1"
@@ -103,16 +105,24 @@ func (wm *watchManager) addRemediationTemplateCRWatch(templateCR *unstructured.U
 		mapperFunc = utils.MHCByRemediationTemplateCRMapperFunc(wm.client, wm.log)
 	}
 
-	if err := wm.controller.Watch(
-		source.Kind(wm.cache, templateCR),
-		handler.EnqueueRequestsFromMapFunc(mapperFunc),
-		predicate.Funcs{
-			// we are just interested in update and delete events for now
-			// template CR updates: validate
-			// template CR deletion: update NHC/MHC status
-			CreateFunc:  func(_ event.CreateEvent) bool { return false },
-			GenericFunc: func(_ event.GenericEvent) bool { return false },
+	// Create typed handler using the mapper function
+	typedHandler := handler.TypedEnqueueRequestsFromMapFunc[*unstructured.Unstructured](
+		func(ctx context.Context, obj *unstructured.Unstructured) []reconcile.Request {
+			return mapperFunc(ctx, obj)
 		},
+	)
+
+	if err := wm.controller.Watch(
+		source.Kind(wm.cache, templateCR,
+			typedHandler,
+			predicate.TypedFuncs[*unstructured.Unstructured]{
+				// we are just interested in update and delete events for now
+				// template CR updates: validate
+				// template CR deletion: update NHC/MHC status
+				CreateFunc:  func(_ event.TypedCreateEvent[*unstructured.Unstructured]) bool { return false },
+				GenericFunc: func(_ event.TypedGenericEvent[*unstructured.Unstructured]) bool { return false },
+			},
+		),
 	); err != nil {
 		return err
 	}
@@ -130,16 +140,25 @@ func (wm *watchManager) addRemediationCRWatch(remediationCR *unstructured.Unstru
 		return nil
 	}
 
-	if err := wm.controller.Watch(
-		source.Kind(wm.cache, remediationCR),
-		handler.EnqueueRequestsFromMapFunc(utils.RemediationCRMapperFunc(wm.log, watchType)),
-		predicate.Funcs{
-			// we are just interested in update and delete events for now
-			// remediation CR update: watch conditions
-			// remediation CR deletion: clean up
-			CreateFunc:  func(_ event.CreateEvent) bool { return false },
-			GenericFunc: func(_ event.GenericEvent) bool { return false },
+	// Create typed handler using the mapper function
+	mapperFunc := utils.RemediationCRMapperFunc(wm.log, watchType)
+	typedHandler := handler.TypedEnqueueRequestsFromMapFunc[*unstructured.Unstructured](
+		func(ctx context.Context, obj *unstructured.Unstructured) []reconcile.Request {
+			return mapperFunc(ctx, obj)
 		},
+	)
+
+	if err := wm.controller.Watch(
+		source.Kind(wm.cache, remediationCR,
+			typedHandler,
+			predicate.TypedFuncs[*unstructured.Unstructured]{
+				// we are just interested in update and delete events for now
+				// remediation CR update: watch conditions
+				// remediation CR deletion: clean up
+				CreateFunc:  func(_ event.TypedCreateEvent[*unstructured.Unstructured]) bool { return false },
+				GenericFunc: func(_ event.TypedGenericEvent[*unstructured.Unstructured]) bool { return false },
+			},
+		),
 	); err != nil {
 		return err
 	}

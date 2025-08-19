@@ -13,10 +13,11 @@ import (
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
-	osconfigv1 "github.com/openshift/api/config/v1"
+	osfeatures "github.com/openshift/api/features"
 	osclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -81,7 +82,7 @@ func (fga *accessor) Start(ctx context.Context) error {
 	clusterVersionsInformer := configSharedInformer.Config().V1().ClusterVersions()
 	featureGatesInformer := configSharedInformer.Config().V1().FeatureGates()
 
-	recorder := events.NewLoggingEventRecorder("accessor")
+	recorder := events.NewLoggingEventRecorder("accessor", clock.RealClock{})
 
 	// using the same version for desiredVersion and missingVersion will let the accessor just use
 	// the current deployed version, which is what we want...
@@ -123,7 +124,7 @@ func (fga *accessor) featureGateChanged(fc featuregates.FeatureChange) {
 	defer fga.isMaoMhcDisabledLock.Unlock()
 
 	for _, fg := range fc.New.Enabled {
-		if fg == osconfigv1.FeatureGateMachineAPIOperatorDisableMachineHealthCheckController {
+		if fg == osfeatures.FeatureGateMachineAPIOperatorDisableMachineHealthCheckController {
 			if !fga.isMaoMhcDisabled {
 				fga.isMaoMhcDisabled = true
 				fga.log.Info("MachineAPIOperatorDisableMachineHealthCheckController feature gate is enabled")
