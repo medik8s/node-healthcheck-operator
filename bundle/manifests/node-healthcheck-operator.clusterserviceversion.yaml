@@ -452,6 +452,21 @@ spec:
                       - key: node-role.kubernetes.io/control-plane
                         operator: Exists
                     weight: 1
+                podAntiAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                  - podAffinityTerm:
+                      labelSelector:
+                        matchExpressions:
+                        - key: app.kubernetes.io/component
+                          operator: In
+                          values:
+                          - controller-manager
+                        - key: app.kubernetes.io/name
+                          operator: In
+                          values:
+                          - node-healthcheck-operator
+                      topologyKey: kubernetes.io/hostname
+                    weight: 100
               containers:
               - args:
                 - --secure-listen-address=0.0.0.0:8443
