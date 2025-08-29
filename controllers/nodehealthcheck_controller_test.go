@@ -1959,6 +1959,78 @@ var _ = Describe("Node Health Check CR", func() {
 
 		})
 
+		Context("Storm Recovery", func() {
+			When("storm recovery activates and then exits", func() {
+				BeforeEach(func() {
+					underTest = newNodeHealthCheckWithStormRecovery()
+					setupObjects(2, 5, true) // 2 unhealthy, 5 healthy = 7 total
+				})
+
+				It("should enter storm recovery when minHealthy is hit and exit when threshold is met", func() {
+					var node *v1.Node
+
+					// Phase 1: Verify initial state - normal operation
+					By("verifying initial normal operation")
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(5))
+						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(2))
+						g.Expect(underTest.Status.StormRecoveryActive).To(BeNil())
+					}, "10s", "1s").Should(Succeed())
+
+					// Phase 2: Make one more node unhealthy - triggers storm recovery
+					By("making one more node unhealthy - triggers storm recovery")
+					node = &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: "healthy-worker-node-1"}, node)).To(Succeed())
+					node.Status.Conditions[0].Status = v1.ConditionFalse
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
+						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(3))
+						g.Expect(underTest.Status.StormRecoveryActive).ToNot(BeNil())
+						g.Expect(*underTest.Status.StormRecoveryActive).To(BeTrue())
+						g.Expect(underTest.Status.StormRecoveryStartTime).ToNot(BeNil())
+					}, "15s", "1s").Should(Succeed())
+
+					// Phase 3: Recover one node - storm recovery remains active (2 unhealthy > threshold of 1)
+					By("recovering one node - storm recovery remains active")
+					node = &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: "unhealthy-worker-node-1"}, node)).To(Succeed())
+					node.Status.Conditions[0].Status = v1.ConditionTrue
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(5))
+						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(2))
+						g.Expect(underTest.Status.StormRecoveryActive).ToNot(BeNil())
+						g.Expect(*underTest.Status.StormRecoveryActive).To(BeTrue())
+					}, "10s", "1s").Should(Succeed())
+
+					// Phase 4: Recover 1 more node - exits storm recovery (1 unhealthy <= threshold of 1)
+					By("recovering one more node - exits storm recovery")
+					node = &v1.Node{}
+					Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: "unhealthy-worker-node-2"}, node)).To(Succeed())
+					node.Status.Conditions[0].Status = v1.ConditionTrue
+					node.Status.Conditions[0].LastTransitionTime = metav1.Now()
+					Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(6))
+						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(1))
+						g.Expect(underTest.Status.StormRecoveryActive).ToNot(BeNil())
+						g.Expect(*underTest.Status.StormRecoveryActive).To(BeFalse())
+						g.Expect(underTest.Status.StormRecoveryStartTime).To(BeNil())
+					}, "10s", "1s").Should(Succeed())
+				})
+			})
+		})
+
 	})
 
 	// TODO move to new suite in utils package
@@ -2382,7 +2454,7 @@ var _ = Describe("Node Health Check CR", func() {
 						MaxUnhealthy: maxUnhealthy,
 					},
 				}
-				absoluteMinHealthy, err := getMinHealthy(nhc, totalNodes)
+				absoluteMinHealthy, err := v1alpha1.GetMinHealthy(nhc, totalNodes)
 				if expectedErr != nil {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(expectedErr))
@@ -2656,6 +2728,16 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			RemediationTemplate: infraMultipleRemediationTemplateRef.DeepCopy(),
 		},
 	}
+}
+
+func newNodeHealthCheckWithStormRecovery() *v1alpha1.NodeHealthCheck {
+	nhc := newNodeHealthCheck()
+	// 7-node cluster: minHealthy=4, stormRecoveryThreshold=1
+	minHealthy := intstr.FromInt(4)
+	stormThreshold := 1
+	nhc.Spec.MinHealthy = &minHealthy
+	nhc.Spec.StormRecoveryThreshold = &stormThreshold
+	return nhc
 }
 
 func newNodes(unhealthy int, healthy int, isControlPlane bool, unhealthyNow bool) []client.Object {
