@@ -425,7 +425,11 @@ spec:
             matchLabels:
               app.kubernetes.io/component: controller-manager
               app.kubernetes.io/name: node-healthcheck-operator
-          strategy: {}
+          strategy:
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
+            type: RollingUpdate
           template:
             metadata:
               annotations:
