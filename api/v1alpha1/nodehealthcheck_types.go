@@ -34,6 +34,11 @@ const (
 	ConditionReasonDisabledTemplateInvalid = "RemediationTemplateInvalid"
 	// ConditionReasonEnabled is the condition reason for type Disabled and status False
 	ConditionReasonEnabled = "NodeHealthCheckEnabled"
+
+	// ConditionTypeStormActive is the condition type used when NHC will get disabled
+	ConditionTypeStormActive = "StormActive"
+	// ConditionReasonStormThresholdChange is the condition reason for a storm change from active to inactive and vice versa
+	ConditionReasonStormThresholdChange = "HealthyNodeThresholdChange"
 )
 
 // NHCPhase is the string used for NHC.Status.Phase
@@ -106,6 +111,23 @@ type NodeHealthCheckSpec struct {
 	//+kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
+
+	// StormTerminationDelay introduces a configurable delay after storm recovery
+	// exit criteria are satisfied (for example, when the number of healthy nodes
+	// rises above the configured minHealthy constraint). While this
+	// delay is in effect, NHC remains in storm recovery mode and does not create
+	// new remediations. Once the delay elapses, storm recovery mode exits and normal
+	// remediation resumes.
+	//
+	// Expects a string of decimal numbers each with optional fraction and a unit
+	// suffix, e.g. "300ms", "1.5h" or "2h45m". Valid time units are "ns", "us"
+	// (or "µs"), "ms", "s", "m", "h".
+	//
+	//+kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	//+kubebuilder:validation:Type=string
+	//+optional
+	//+operator-sdk:csv:customresourcedefinitions:type=spec
+	StormTerminationDelay *metav1.Duration `json:"stormTerminationDelay,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template
 	// provided by an infrastructure provider.
@@ -265,6 +287,25 @@ type NodeHealthCheckStatus struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase:reason"
 	Reason string `json:"reason,omitempty"`
+
+	// StormRecoveryStartTime records when storm recovery mode was activated.
+	// This field is set when StormRecoveryActive becomes true and helps track
+	// how long the system has been in storm recovery mode.
+	//
+	//+optional
+	//+kubebuilder:validation:Type=string
+	//+kubebuilder:validation:Format=date-time
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	StormRecoveryStartTime *metav1.Time `json:"stormRecoveryStartTime,omitempty"`
+
+	// StormTerminationStartTime records when storm recovery mode regained the minHealthy/maxUnhealthy constraint
+	// and the storm is about to end (after NodeHealthCheckSpec.StormTerminationDelay has passed).
+	//
+	//+optional
+	//+kubebuilder:validation:Type=string
+	//+kubebuilder:validation:Format=date-time
+	//+operator-sdk:csv:customresourcedefinitions:type=status
+	StormTerminationStartTime *metav1.Time `json:"stormTerminationStartTime,omitempty"`
 
 	// LastUpdateTime is the last time the status was updated.
 	//

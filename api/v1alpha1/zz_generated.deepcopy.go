@@ -21,8 +21,8 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -122,9 +122,14 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	if in.StormTerminationDelay != nil {
+		in, out := &in.StormTerminationDelay, &out.StormTerminationDelay
+		*out = new(v1.Duration)
+		**out = **in
+	}
 	if in.RemediationTemplate != nil {
 		in, out := &in.RemediationTemplate, &out.RemediationTemplate
-		*out = new(v1.ObjectReference)
+		*out = new(corev1.ObjectReference)
 		**out = **in
 	}
 	if in.EscalatingRemediations != nil {
@@ -139,7 +144,7 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 	}
 	if in.HealthyDelay != nil {
 		in, out := &in.HealthyDelay, &out.HealthyDelay
-		*out = new(metav1.Duration)
+		*out = new(v1.Duration)
 		**out = **in
 	}
 }
@@ -180,17 +185,25 @@ func (in *NodeHealthCheckStatus) DeepCopyInto(out *NodeHealthCheckStatus) {
 	}
 	if in.InFlightRemediations != nil {
 		in, out := &in.InFlightRemediations, &out.InFlightRemediations
-		*out = make(map[string]metav1.Time, len(*in))
+		*out = make(map[string]v1.Time, len(*in))
 		for key, val := range *in {
 			(*out)[key] = *val.DeepCopy()
 		}
 	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]metav1.Condition, len(*in))
+		*out = make([]v1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.StormRecoveryStartTime != nil {
+		in, out := &in.StormRecoveryStartTime, &out.StormRecoveryStartTime
+		*out = (*in).DeepCopy()
+	}
+	if in.StormTerminationStartTime != nil {
+		in, out := &in.StormTerminationStartTime, &out.StormTerminationStartTime
+		*out = (*in).DeepCopy()
 	}
 	if in.LastUpdateTime != nil {
 		in, out := &in.LastUpdateTime, &out.LastUpdateTime
