@@ -199,11 +199,6 @@ spec:
         path: reason
         x-descriptors:
         - urn:alm:descriptor:io.kubernetes.phase:reason
-      - description: StormRecoveryStartTime records when storm recovery mode was activated.
-          This field is set when StormRecoveryActive becomes true and helps track
-          how long the system has been in storm recovery mode.
-        displayName: Storm Recovery Start Time
-        path: stormRecoveryStartTime
       - description: StormTerminationStartTime records when storm recovery mode regained
           the minHealthy/maxUnhealthy constraint and the storm is about to end (after
           NodeHealthCheckSpec.StormTerminationDelay has passed).

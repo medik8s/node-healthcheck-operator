@@ -429,13 +429,6 @@ spec:
               reason:
                 description: Reason explains the current phase in more detail.
                 type: string
-              stormRecoveryStartTime:
-                description: |-
-                  StormRecoveryStartTime records when storm recovery mode was activated.
-                  This field is set when StormRecoveryActive becomes true and helps track
-                  how long the system has been in storm recovery mode.
-                format: date-time
-                type: string
               stormTerminationStartTime:
                 description: |-
                   StormTerminationStartTime records when storm recovery mode regained the minHealthy/maxUnhealthy constraint

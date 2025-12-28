@@ -59,7 +59,7 @@ spec:
 | _pauseRequests_          | no                                                  | n/a                                                                                             | A string list. See details below.                                                                                                                                                                                                                                                                                                                               |
 | _unhealthyConditions_    | no                                                  | `[{type: Ready, status: False, duration: 300s},{type: Ready, status: Unknown, duration: 300s}]` | List of UnhealthyCondition, which defines node unhealthiness. See details below.                                                                                                                                                                                                                                                                                |
 | _healthyDelay_           | no                                                  | 0                                                                                               | The time before NHC would allow a node to be healthy again. A negative value means that NHC will never consider the node healthy, and manual intervention is expected.                                                                                                                                                                                          |
-| _stormTerminationDelay_  | no                                                  | n/a                                                                                             | Optional duration. When storm recovery regains the minHealthy/maxUnhealthy constraint, NHC waits this additional time before exiting storm mode. While waiting, no new remediations are created. Example: 30s, 2m, 1h.                                                                                                                                          |
+| _stormTerminationDelay_  | no                                                  | n/a                                                                                             | When storm recovery regains the minHealthy/maxUnhealthy constraint, NHC waits this additional time before exiting storm mode. While waiting, no new remediations are created. Example: 30s, 2m, 1h.                                                                                                                                                             |
 
 ### Selector
 
@@ -225,19 +225,9 @@ There are two methods for manual intervention:
     - Once the node meets all other healthy criteria, NHC will delete the remediation.medik8s.io/manually-confirmed-healthy annotation from the Node, and proceed with deleting the remediation CR for that node.
     - This approach provides a precise, node-specific mechanism for an administrator to signal that a node is healthy and ready to exit the healthyDelay period, without affecting the healthyDelay configuration for other nodes under the same NodeHealthCheck CR.
 
-## Storm Recovery
+### Storm Recovery
 
 Storm recovery is an **optional advanced feature** that provides system stabilization through remediation restraint during mass failure scenarios.
-
-### Concept & Philosophy
-
-**Core Principle**: Storm recovery is about **system stabilization through remediation restraint**.
-
-**The Philosophy**:
-- **Recognition**: When many nodes fail, creating more remediations may be counterproductive
-- **Assumption**: The system needs time to stabilize before additional remediation attempts
-- **Strategy**: Temporary restraint to prevent making a bad situation worse
-- **Acceptance**: Some scenarios may be beyond automated recovery (same as minHealthy)
 
 **Real-World Example**:
 ```
@@ -249,30 +239,7 @@ Normal operation: 15 healthy, 5 unhealthy  → 5 remediations created
 Exit: after 30s elapse → storm recovery deactivates, resume creating remediations for the 5 additional nodes 
 ```
 
-### How Storm Recovery Works
-
-**The Key Insight**: Storm recovery provides a **controlled exit strategy** when maximum number of remediation is reached due to minHealthy/maxUnhealthy constraint.
-
-**Normal minHealthy Behavior**:
-```
-If (Maximum number of remediation is reached):
-  → Block creation of new remediations
-  → Existing remediations continue
-  → Wait until current remediations are below maximum before creating more (as defined by minHealthy/maxUnhealthy)
-```
-
-**Storm Recovery Enhancement**:
-```
-If (minHealthy/maxUnhealthy blocks creation of new remediations AND stormTerminationDelay is configured):
-  → Enter storm recovery mode
-  → Block creation of new remediations while storm is active
-  → When constraint is satisfied (healthyNodes ≥ minHealthy or maxUnhealthy satisfied):
-       - Start stormTerminationDelay timer
-       - Exit storm recovery after delay
-       - Resume normal remediation creation
-```
-
-### When to Use Storm Recovery
+#### When to Use Storm Recovery
 
 **Storm Recovery is Appropriate When**:
 - Your infrastructure can be overwhelmed by too many concurrent remediations
@@ -285,13 +252,13 @@ If (minHealthy/maxUnhealthy blocks creation of new remediations AND stormTermina
 - Your infrastructure can handle unlimited concurrent remediations
 - You can't accept any remediation delays during mass failures
 
-### Configuring Storm Recovery
+#### Configuring Storm Recovery
 
 - Enable by setting `spec.stormTerminationDelay` on the `NodeHealthCheck` CR.
 - Choose a delay that matches your environment's stabilization time. While the delay is counting down, new remediations remain blocked.
 - If `stormTerminationDelay` is not set, storm recovery mode is disabled and only the standard `minHealthy`/`maxUnhealthy` gating applies.
 
-### Storm Recovery States
+#### Storm Recovery States
 
 **State 1: Normal Operation**
 ```
@@ -325,17 +292,16 @@ after stormTerminationDelay
 The status section of the NodeHealthCheck custom resource provides detailed
 information about what the operator is doing. It contains these fields:
 
-| Field                       | Description                                                                                                                                                                                                                                                |
-|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| _observedNodes_             | The number of nodes observed according to the selector.                                                                                                                                                                                                    |
-| _healthyNodes_              | The number of observed healthy nodes.                                                                                                                                                                                                                      |
-| _inFlightRemediations_      | ** DEPRECATED ** A list of "timestamp - node name" pairs of ongoing remediations. Replaced by unhealthyNodes.                                                                                                                                              |
-| _unhealthyNodes_            | A list of unhealthy nodes and their remediations. See details below.                                                                                                                                                                                       |
-| _conditions_                | A list of conditions representing NHC's current state. Currently the only used type is "Disabled", and it is true when the controller detects problems which prevent it to work correctly. See the [workflow page](./workflow.md) for further information. |
-| _phase_                     | A short human readable representation of NHC's current state. Known phases are Disabled, Paused, Remediating and Enabled.                                                                                                                                  |
-| _reason_                    | A longer human readable explanation of the phase.                                                                                                                                                                                                          |
-| _stormRecoveryStartTime_    | Timestamp when storm recovery mode was activated. Present when storm mode is/was active.                                                                                                                                                                   |
-| _stormTerminationStartTime_ | Timestamp when minHealthy/maxUnhealthy constraint was satisfied and the exit delay countdown started. Present while storm exit delay is in progress.                                                                                                       |
+| Field                       | Description                                                                                                                                                                                                                                                                                                                                                                               |
+|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| _observedNodes_             | The number of nodes observed according to the selector.                                                                                                                                                                                                                                                                                                                                   |
+| _healthyNodes_              | The number of observed healthy nodes.                                                                                                                                                                                                                                                                                                                                                     |
+| _inFlightRemediations_      | ** DEPRECATED ** A list of "timestamp - node name" pairs of ongoing remediations. Replaced by unhealthyNodes.                                                                                                                                                                                                                                                                             |
+| _unhealthyNodes_            | A list of unhealthy nodes and their remediations. See details below.                                                                                                                                                                                                                                                                                                                      |
+| _conditions_                | A list of conditions representing NHC's current state. Currently using "Disabled" and "StormActive". "Disabled" is true when the controller detects problems which prevent it to work correctly. "StormActive" is true when a remediation storm is occuring (in case NHC is configured to opt in to storm recovery mode). See the [workflow page](./workflow.md) for further information. |
+| _phase_                     | A short human readable representation of NHC's current state. Known phases are Disabled, Paused, Remediating and Enabled.                                                                                                                                                                                                                                                                 |
+| _reason_                    | A longer human readable explanation of the phase.                                                                                                                                                                                                                                                                                                                                         |
+| _stormTerminationStartTime_ | Timestamp when minHealthy/maxUnhealthy constraint was satisfied and the exit delay countdown started. Present while storm exit delay is in progress.                                                                                                                                                                                                                                      |
 
 ### UnhealthyNodes
 

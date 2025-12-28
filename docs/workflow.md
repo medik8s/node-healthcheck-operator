@@ -27,6 +27,7 @@ when debugging issues, since many steps can potentially fail. See also our
 - Processing stops when minHealthy check fails
 - Unhealthy nodes are remediated:
   - if it's a control plane node, and there are ongoing remediations for other control plane nodes, remediation is skipped for that node
+  - when storm recovery is active (triggered when healthy nodes < minHealthy and stormTerminationDelay is configured), creation of new remediations is blocked
   - if a remediation CR already exists:
     - in all cases, when it is older than 48 hours, a Prometheus metric is increased, which can be used for triggering an alert
     - when using escalating remediations:

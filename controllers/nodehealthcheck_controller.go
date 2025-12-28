@@ -41,7 +41,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -175,8 +174,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}()
 
 	// set counters to zero for disabled NHC
-	nhc.Status.ObservedNodes = pointer.Int(0)
-	nhc.Status.HealthyNodes = pointer.Int(0)
+	nhc.Status.ObservedNodes = ptr.To(0)
+	nhc.Status.HealthyNodes = ptr.To(0)
 	//clear deprecated field before it's removed from the API
 	nhc.Status.InFlightRemediations = nil
 
@@ -316,7 +315,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
+	nhc.Status.ObservedNodes = ptr.To(len(selectedNodes))
 	nhc.Status.HealthyNodes = &healthyCount
 
 	// log currently unhealthy nodes with only soon unhealthy conditions left
@@ -457,7 +456,7 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(nhc *remediationv
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
 				thisExpiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now)
 				r.Log.Info("Node is going to match unhealthy condition", "node", node.GetName(), "condition type", c.Type, "condition status", c.Status, "duration left", thisExpiresAfter)
-				expiresAfter = utils.MinRequeueDuration(expiresAfter, pointer.Duration(thisExpiresAfter+1*time.Second))
+				expiresAfter = utils.MinRequeueDuration(expiresAfter, ptr.To(thisExpiresAfter+1*time.Second))
 			}
 		}
 	}
@@ -540,7 +539,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		} else if !isAllowed {
 			log.Info("skipping remediation for preventing control plane / etcd quorum loss, going to retry in a minute", "node", node.GetName())
 			commonevents.WarningEventf(r.Recorder, nhc, utils.EventReasonRemediationSkipped, "Skipping remediation of %s for preventing control plane / etcd quorum loss, going to retry in a minute", node.GetName())
-			return pointer.Duration(1 * time.Minute), nil
+			return ptr.To(1 * time.Minute), nil
 		}
 	}
 	// generate remediation CR
@@ -623,7 +622,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		var requeueIn *time.Duration
 		if timeout != nil {
 			// come back when timeout expires
-			requeueIn = pointer.Duration(*timeout + 1*time.Second)
+			requeueIn = ptr.To(*timeout + 1*time.Second)
 		}
 		return utils.MinRequeueDuration(leaseRequeueIn, requeueIn), nil
 	}
@@ -657,7 +656,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 	if !timedOut && !failed {
 		// not timed out yet, come back when we do so
-		return utils.MinRequeueDuration(leaseRequeueIn, pointer.Duration(timeoutAt.Sub(now.Time))), nil
+		return utils.MinRequeueDuration(leaseRequeueIn, ptr.To(timeoutAt.Sub(now.Time))), nil
 	}
 
 	// handle timeout and failure
@@ -679,7 +678,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	startedRemediation.TimedOut = &now
 
 	// try next remediation asap
-	return pointer.Duration(1 * time.Second), nil
+	return ptr.To(1 * time.Second), nil
 }
 
 func (r *NodeHealthCheckReconciler) addTimeOutAnnotation(rm resources.Manager, remediationCR *unstructured.Unstructured, now metav1.Time) error {
@@ -958,6 +957,14 @@ func isMinHealthyConstraintSatisfied(nhc *remediationv1alpha1.NodeHealthCheck, m
 	return healthyCount >= minHealthy
 }
 
+type stormMode int
+
+const (
+	activate stormMode = iota
+	deactivate
+	setDelay
+)
+
 // evaluateStormRecovery updates the state of the storm recover (active or not) and returns it current state
 func (r *NodeHealthCheckReconciler) evaluateStormRecovery(nhc *remediationv1alpha1.NodeHealthCheck, minHealthy int) (bool, *time.Duration) {
 	if nhc.Spec.StormTerminationDelay == nil {
@@ -1000,24 +1007,6 @@ func calculateRequeue(active bool, nhc *remediationv1alpha1.NodeHealthCheck) *ti
 	return requeueAfter
 }
 
-func (r *NodeHealthCheckReconciler) getRemediationCount(nhc *remediationv1alpha1.NodeHealthCheck) int {
-	inProgressRemediations := 0
-	for _, unhealthyNode := range nhc.Status.UnhealthyNodes {
-		if len(unhealthyNode.Remediations) > 0 {
-			inProgressRemediations++
-		}
-	}
-	return inProgressRemediations
-}
-
-type stormMode int
-
-const (
-	activate stormMode = iota
-	deactivate
-	setDelay
-)
-
 func (r *NodeHealthCheckReconciler) updateStormRecoveryStatus(nhc *remediationv1alpha1.NodeHealthCheck, sm stormMode) {
 
 	switch sm {
@@ -1027,10 +1016,8 @@ func (r *NodeHealthCheckReconciler) updateStormRecoveryStatus(nhc *remediationv1
 				Type:    remediationv1alpha1.ConditionTypeStormActive,
 				Status:  metav1.ConditionTrue,
 				Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
-				Message: "Storm mode is activated preventing any remediations until done",
+				Message: "Storm mode is activated - preventing any new remediations until the storm is over",
 			})
-			now := metav1.Time{Time: currentTime()}
-			nhc.Status.StormRecoveryStartTime = &now
 			r.Log.Info("Storm recovery mode activated", "nhc", nhc.Name)
 			commonevents.WarningEvent(r.Recorder, nhc, "StormRecoveryStarted", "Storm recovery mode activated - delaying remediation until threshold is reached")
 		}
@@ -1042,7 +1029,6 @@ func (r *NodeHealthCheckReconciler) updateStormRecoveryStatus(nhc *remediationv1
 				Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
 				Message: "Storm mode is deactivated remediations can occur normally",
 			})
-			nhc.Status.StormRecoveryStartTime = nil
 			nhc.Status.StormTerminationStartTime = nil
 			r.Log.Info("Storm recovery mode deactivated", "nhc", nhc.Name)
 			commonevents.NormalEvent(r.Recorder, nhc, "StormRecoveryEnded", "Storm recovery mode deactivated - normal remediation resumed")
@@ -1050,8 +1036,7 @@ func (r *NodeHealthCheckReconciler) updateStormRecoveryStatus(nhc *remediationv1
 	case setDelay:
 		now := metav1.Time{Time: currentTime()}
 		nhc.Status.StormTerminationStartTime = &now
-		r.Log.Info("Storm regained health starting delay count until storm ends", "nhc", nhc.Name)
+		r.Log.Info("The cluster regained health after the storm, and it now begins a delay count until the storm is completely over", "nhc", nhc.Name)
 		commonevents.WarningEvent(r.Recorder, nhc, "StormRecoveryDelayStarted", "Storm recovery mode will exit after delay")
 	}
-
 }

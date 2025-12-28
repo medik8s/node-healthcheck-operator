@@ -16,6 +16,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -918,7 +919,7 @@ var _ = Describe("Node Health Check CR", func() {
 			firstRemediationTimeout := time.Second
 			secondRemediationTimeout := 4 * time.Second
 			thirdRemediationTimeout := time.Second
-			forthRemediationTimeout := time.Second
+			fourthRemediationTimeout := time.Second
 			BeforeEach(func() {
 				mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
 
@@ -949,7 +950,7 @@ var _ = Describe("Node Health Check CR", func() {
 					{
 						RemediationTemplate: *secondMultiSupportTemplateRef,
 						Order:               8,
-						Timeout:             metav1.Duration{Duration: forthRemediationTimeout},
+						Timeout:             metav1.Duration{Duration: fourthRemediationTimeout},
 					},
 				}
 
@@ -1073,14 +1074,14 @@ var _ = Describe("Node Health Check CR", func() {
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
 				// Wait for 4th remediation to start
-				var forthCR *unstructured.Unstructured
+				var fourthCR *unstructured.Unstructured
 				Eventually(func(g Gomega) {
-					forthCR = findRemediationCRForTemplate(unhealthyNodeName, underTest, *secondMultiSupportTemplateRef)
-					g.Expect(forthCR).ToNot(BeNil())
-					g.Expect(forthCR.GetName()).ToNot(Equal(unhealthyNodeName))
-					g.Expect(forthCR.GetAnnotations()[commonannotations.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
-					g.Expect(forthCR.GetAnnotations()[annotations.TemplateNameAnnotation]).To(Equal(secondMultiSupportTemplateRef.Name))
-					g.Expect(forthCR.GetAnnotations()).ToNot(HaveKey(Equal("remediation.medik8s.io/nhc-timed-out")))
+					fourthCR = findRemediationCRForTemplate(unhealthyNodeName, underTest, *secondMultiSupportTemplateRef)
+					g.Expect(fourthCR).ToNot(BeNil())
+					g.Expect(fourthCR.GetName()).ToNot(Equal(unhealthyNodeName))
+					g.Expect(fourthCR.GetAnnotations()[commonannotations.NodeNameAnnotation]).To(Equal(unhealthyNodeName))
+					g.Expect(fourthCR.GetAnnotations()[annotations.TemplateNameAnnotation]).To(Equal(secondMultiSupportTemplateRef.Name))
+					g.Expect(fourthCR.GetAnnotations()).ToNot(HaveKey(Equal("remediation.medik8s.io/nhc-timed-out")))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
 				//Verify lease still exist (since long expire time wasn't reached)
@@ -1123,7 +1124,7 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(errors.IsNotFound(err)).To(BeTrue())
 					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(thirdCR), thirdCR)
 					g.Expect(errors.IsNotFound(err)).To(BeTrue())
-					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(forthCR), forthCR)
+					err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(fourthCR), fourthCR)
 					g.Expect(errors.IsNotFound(err)).To(BeTrue())
 				}, "5s", "200ms").Should(Succeed(), "CR wasn't deleted")
 			})
@@ -1960,8 +1961,9 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		Context("Storm Recovery", func() {
+			var stormTerminationDelay = time.Second * 2
 			BeforeEach(func() {
-				underTest = newNodeHealthCheckWithStormRecovery()
+				underTest = newNodeHealthCheckWithStormRecovery(stormTerminationDelay)
 				setupObjects(3, 4, true) // 2 unhealthy, 5 healthy = 7 total
 			})
 			When("consecutive storms are triggered", func() {
@@ -1977,7 +1979,7 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 					}, "5s", "1s").Should(Succeed())
 
-					// Phase 2: Make the forth node unhealthy - triggers first storm recovery
+					// Phase 2: Make the fourth node unhealthy - triggers first storm recovery
 					By("making one more node unhealthy - triggers storm recovery")
 					mockNodeGettingUnhealthy("healthy-worker-node-1")
 					// wait for node to turn unhealthy
@@ -1994,7 +1996,6 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-						g.Expect(underTest.Status.StormRecoveryStartTime).ToNot(BeNil())
 					}, "5s", "100ms").Should(Succeed())
 
 					// Phase 3: Recover one node - storm recovery remains active due to 2-second delay
@@ -2017,7 +2018,7 @@ var _ = Describe("Node Health Check CR", func() {
 					//expected termination time of the first storm
 					firstStormTerminationTime := underTest.Status.StormTerminationStartTime.Time.Add(underTest.Spec.StormTerminationDelay.Duration)
 					// Phase 4: wait for the delay to pass
-					time.Sleep(time.Millisecond * 1500)
+					time.Sleep(stormTerminationDelay)
 					//Expect Storm Recovery mode to end
 					// 7 total, 4 healthy, 3 unhealthy, 3 remediations (pending remediation created when storm is done)
 					Eventually(func(g Gomega) {
@@ -2027,7 +2028,7 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 					}, "1500ms", "100ms").Should(Succeed())
 
-					// Phase 5:  Make the forth node unhealthy - triggers the second storm
+					// Phase 5:  Make the fourth node unhealthy - triggers the second storm
 					By("making the 4th node unhealthy - triggers second storm recovery")
 					mockNodeGettingUnhealthy("healthy-worker-node-2")
 					// wait for node to turn unhealthy
@@ -2044,9 +2045,9 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-						g.Expect(underTest.Status.StormRecoveryStartTime).ToNot(BeNil())
+						stormActiveCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive)
 						// Verifies StormRecoveryStartTime is updated properly when a second storm starts
-						g.Expect(underTest.Status.StormRecoveryStartTime.Time.After(firstStormTerminationTime)).To(BeTrue())
+						g.Expect(stormActiveCondition.LastTransitionTime.After(firstStormTerminationTime)).To(BeTrue())
 						// Verifies StormTerminationStartTime of the first storm is cleared
 						g.Expect(underTest.Status.StormTerminationStartTime).To(BeNil())
 					}, "5s", "100ms").Should(Succeed())
@@ -2775,12 +2776,12 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	}
 }
 
-func newNodeHealthCheckWithStormRecovery() *v1alpha1.NodeHealthCheck {
+func newNodeHealthCheckWithStormRecovery(delay time.Duration) *v1alpha1.NodeHealthCheck {
 	nhc := newNodeHealthCheck()
 	// 7-node cluster: minHealthy=4, stormRecoveryThreshold=1
 	minHealthy := intstr.FromInt(4)
 	nhc.Spec.MinHealthy = &minHealthy
-	nhc.Spec.StormTerminationDelay = &metav1.Duration{Duration: 2 * time.Second}
+	nhc.Spec.StormTerminationDelay = &metav1.Duration{Duration: delay}
 	return nhc
 }
 
