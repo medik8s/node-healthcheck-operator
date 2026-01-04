@@ -77,11 +77,17 @@ func isHealthy(unhealthyConditions []unhealthyCondition, nodeConditions []corev1
 
 // IsConditionTrue return true when the conditions contain a condition of given type and reason with status true
 func IsConditionTrue(conditions []metav1.Condition, conditionType string, reason string) bool {
-	condition := meta.FindStatusCondition(conditions, conditionType)
-	if condition == nil {
+	if !IsConditionSet(conditions, conditionType, reason) {
 		return false
 	}
-	if condition.Status != metav1.ConditionTrue {
+	condition := meta.FindStatusCondition(conditions, conditionType)
+	return condition.Status == metav1.ConditionTrue
+}
+
+// IsConditionSet return true when the conditions contain a condition of given type and reason
+func IsConditionSet(conditions []metav1.Condition, conditionType string, reason string) bool {
+	condition := meta.FindStatusCondition(conditions, conditionType)
+	if condition == nil {
 		return false
 	}
 	if condition.Reason != reason {
