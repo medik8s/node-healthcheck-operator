@@ -99,7 +99,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(
 				predicate.Funcs{
 					// check for modified conditions on updates in order to prevent unneeded reconciliations
-					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev) },
+					UpdateFunc: func(ev event.UpdateEvent) bool { return nodeUpdateNeedsReconcile(ev, mgr.GetClient(), r.Log) },
 					// potentially delete orphaned remediation CRs when new node will have new name
 					DeleteFunc: func(_ event.DeleteEvent) bool { return true },
 					// create (new nodes don't have correct conditions yet), and generic events are not interesting for now

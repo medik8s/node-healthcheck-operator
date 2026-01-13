@@ -1908,6 +1908,45 @@ var _ = Describe("Node Health Check CR", func() {
 
 			})
 		})
+
+		When("Node label changes", func() {
+
+			var unlabeledNode *v1.Node
+
+			BeforeEach(func() {
+				setupObjects(0, 3, false)
+
+				// set label on some of the nodes
+				nrLabeled := 0
+				for _, obj := range objects {
+					switch obj.(type) {
+					case *v1.Node:
+						if nrLabeled < 2 {
+							obj.(*v1.Node).Labels = map[string]string{"foo": "bar"}
+							nrLabeled++
+						} else {
+							unlabeledNode = obj.(*v1.Node)
+						}
+					}
+				}
+				setSelectorOnNHC(objects, metav1.LabelSelector{
+					MatchLabels: map[string]string{"foo": "bar"},
+				})
+			})
+
+			It("should reconcile and update observed nodes", func() {
+				Expect(*underTest.Status.ObservedNodes).To(Equal(2), "expected 2 observed nodes")
+
+				// update label and wait for update nr of observed nodes
+				unlabeledNode.Labels = map[string]string{"foo": "bar"}
+				Expect(k8sClient.Update(context.Background(), unlabeledNode)).To(Succeed())
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+					g.Expect(*underTest.Status.ObservedNodes).To(Equal(3), "expected 3 observed nodes after label update")
+				}, "2s", "100ms").Should(Succeed())
+			})
+		})
+
 		Context("Machine owners", func() {
 			When("Metal3RemediationTemplate is in correct namespace", func() {
 
@@ -2133,200 +2172,344 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 	})
 
-	Context("Node updates", func() {
+	Describe("Node updates", func() {
 		var oldConditions []v1.NodeCondition
 		var newConditions []v1.NodeCondition
 		var oldLabels map[string]string
 		var newLabels map[string]string
 
-		When("no Ready condition exists on new node", func() {
-			BeforeEach(func() {
-				newConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeDiskPressure,
-						Status: v1.ConditionTrue,
-					},
-				}
-			})
-			It("should not request reconcile", func() {
-				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeFalse())
-			})
-		})
-
-		When("condition types and statuses equal", func() {
-			BeforeEach(func() {
-				oldConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeDiskPressure,
-						Status: v1.ConditionTrue,
-					},
-					{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-				}
-				newConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-					{
-						Type:   v1.NodeDiskPressure,
-						Status: v1.ConditionTrue,
-					},
-				}
-			})
-			It("should not request reconcile", func() {
-				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeFalse())
-			})
-		})
-
-		When("condition type changed", func() {
-			BeforeEach(func() {
-				oldConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeDiskPressure,
-						Status: v1.ConditionTrue,
-					},
-				}
-				newConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-				}
-			})
-			It("should request reconcile", func() {
-				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
-			})
-		})
-
-		When("condition status changed", func() {
-			BeforeEach(func() {
-				oldConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-				}
-				newConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionFalse,
-					},
-				}
-			})
-			It("should request reconcile", func() {
-				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
-			})
-		})
-
-		When("condition was added", func() {
-			BeforeEach(func() {
-				oldConditions = append(newConditions,
-					v1.NodeCondition{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-				)
-				newConditions = []v1.NodeCondition{
-					{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-					{
-						Type:   v1.NodeDiskPressure,
-						Status: v1.ConditionFalse,
-					},
-				}
-			})
-			It("should request reconcile", func() {
-				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
-			})
-		})
-
-		When("condition was removed", func() {
-			BeforeEach(func() {
-				oldConditions = append(newConditions,
-					v1.NodeCondition{
-						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
-					},
-					v1.NodeCondition{
-						Type:   v1.NodeDiskPressure,
-						Status: v1.ConditionTrue,
-					},
-				)
-
-				newConditions = append(newConditions, v1.NodeCondition{
-					Type:   v1.NodeReady,
-					Status: v1.ConditionTrue,
+		Context("conditions", func() {
+			When("no Ready condition exists on new node", func() {
+				BeforeEach(func() {
+					newConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeDiskPressure,
+							Status: v1.ConditionTrue,
+						},
+					}
+				})
+				It("should not request reconcile", func() {
+					Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeFalse())
 				})
 			})
-			It("should request reconcile", func() {
-				Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
+
+			When("condition types and statuses equal", func() {
+				BeforeEach(func() {
+					oldConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeDiskPressure,
+							Status: v1.ConditionTrue,
+						},
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+					}
+					newConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+						{
+							Type:   v1.NodeDiskPressure,
+							Status: v1.ConditionTrue,
+						},
+					}
+				})
+				It("should not request reconcile", func() {
+					Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeFalse())
+				})
+			})
+
+			When("condition type changed", func() {
+				BeforeEach(func() {
+					oldConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeDiskPressure,
+							Status: v1.ConditionTrue,
+						},
+					}
+					newConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+					}
+				})
+				It("should request reconcile", func() {
+					Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
+				})
+			})
+
+			When("condition status changed", func() {
+				BeforeEach(func() {
+					oldConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+					}
+					newConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionFalse,
+						},
+					}
+				})
+				It("should request reconcile", func() {
+					Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
+				})
+			})
+
+			When("condition was added", func() {
+				BeforeEach(func() {
+					oldConditions = append(newConditions,
+						v1.NodeCondition{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+					)
+					newConditions = []v1.NodeCondition{
+						{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+						{
+							Type:   v1.NodeDiskPressure,
+							Status: v1.ConditionFalse,
+						},
+					}
+				})
+				It("should request reconcile", func() {
+					Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
+				})
+			})
+
+			When("condition was removed", func() {
+				BeforeEach(func() {
+					oldConditions = append(newConditions,
+						v1.NodeCondition{
+							Type:   v1.NodeReady,
+							Status: v1.ConditionTrue,
+						},
+						v1.NodeCondition{
+							Type:   v1.NodeDiskPressure,
+							Status: v1.ConditionTrue,
+						},
+					)
+
+					newConditions = append(newConditions, v1.NodeCondition{
+						Type:   v1.NodeReady,
+						Status: v1.ConditionTrue,
+					})
+				})
+				It("should request reconcile", func() {
+					Expect(conditionsNeedReconcile(oldConditions, newConditions)).To(BeTrue())
+				})
 			})
 		})
 
-		When("labels are equal", func() {
-			BeforeEach(func() {
-				oldLabels = map[string]string{
-					commonLabels.ExcludeFromRemediation: "true",
-				}
-				newLabels = map[string]string{
-					commonLabels.ExcludeFromRemediation: "true",
-				}
-			})
-			It("should not request reconcile", func() {
-				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeFalse())
-			})
-		})
+		Context("labels", func() {
 
-		When("label ExcludeFromRemediation is added", func() {
-			BeforeEach(func() {
-				oldLabels = map[string]string{}
-				newLabels = map[string]string{
-					commonLabels.ExcludeFromRemediation: "true",
-				}
-			})
-			It("should request reconcile", func() {
-				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeTrue())
-			})
-		})
+			var (
+				underTest *v1alpha1.NodeHealthCheck
+				objects   []client.Object
+				logger    = controllerruntime.Log.WithName("test")
+			)
 
-		When("label ExcludeFromRemediation is removed", func() {
 			BeforeEach(func() {
-				oldLabels = map[string]string{
-					commonLabels.ExcludeFromRemediation: "true",
-				}
-				newLabels = map[string]string{}
+				underTest = newNodeHealthCheck()
+				objects = []client.Object{underTest}
 			})
-			It("should request reconcile", func() {
-				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeTrue())
-			})
-		})
 
-		When("A label different than ExcludeFromRemediation is added", func() {
-			BeforeEach(func() {
-				oldLabels = map[string]string{}
-				newLabels = map[string]string{
-					"some-random-label": "true",
-				}
+			JustBeforeEach(func() {
+				createObjects(objects...)
+				// give the reconciler some time
+				time.Sleep(2 * time.Second)
 			})
-			It("should not request reconcile", func() {
-				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeFalse())
-			})
-		})
 
-		When("A label different than ExcludeFromRemediation is removed", func() {
-			BeforeEach(func() {
-				oldLabels = map[string]string{
-					"some-random-label": "true",
-				}
-				newLabels = map[string]string{}
+			AfterEach(func() {
+				// delete all created objects
+				deleteObjects(objects...)
 			})
-			It("should not request reconcile", func() {
-				Expect(labelsNeedReconcile(oldLabels, newLabels)).To(BeFalse())
+
+			When("label ExcludeFromRemediation is added", func() {
+				BeforeEach(func() {
+					oldLabels = map[string]string{}
+					newLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "true",
+					}
+				})
+				It("should request reconcile", func() {
+					Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+				})
+			})
+
+			When("label ExcludeFromRemediation is removed", func() {
+				BeforeEach(func() {
+					oldLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "true",
+					}
+					newLabels = map[string]string{}
+				})
+				It("should request reconcile", func() {
+					Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+				})
+			})
+
+			Context("A label different than ExcludeFromRemediation is added", func() {
+				When("the label is used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{}
+						newLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchLabels: map[string]string{"some-random-label": "true"},
+						})
+					})
+					It("should request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+					})
+				})
+				When("the label is not used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{}
+						newLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchLabels: map[string]string{"wrong-label": "true"},
+						})
+					})
+					It("should not request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeFalse())
+					})
+				})
+				When("the NHC selector is empty", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{}
+						newLabels = map[string]string{
+							"some-random-label": "true",
+						}
+					})
+					It("should not request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeFalse())
+					})
+				})
+			})
+
+			Context("A label different than ExcludeFromRemediation is removed", func() {
+				When("the label is used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						newLabels = map[string]string{}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{Key: "some-random-label", Operator: metav1.LabelSelectorOpExists},
+							},
+						})
+					})
+					It("should request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+					})
+				})
+				When("the label is not used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						newLabels = map[string]string{}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{Key: "wrong-label", Operator: metav1.LabelSelectorOpExists},
+							},
+						})
+					})
+					It("should not request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeFalse())
+					})
+				})
+			})
+
+			Context("A label different than ExcludeFromRemediation is updated", func() {
+				When("the label is used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						newLabels = map[string]string{
+							"some-random-label": "false",
+						}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{Key: "some-random-label", Operator: metav1.LabelSelectorOpExists},
+							},
+						})
+					})
+					It("should request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+					})
+				})
+				When("the label is not used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						newLabels = map[string]string{
+							"some-random-label": "false",
+						}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{Key: "wrong-label", Operator: metav1.LabelSelectorOpExists},
+							},
+						})
+					})
+					It("should not request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeFalse())
+					})
+				})
+			})
+
+			Context("A label different than ExcludeFromRemediation is unmodified", func() {
+				When("the label is used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						newLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{Key: "some-random-label", Operator: metav1.LabelSelectorOpExists},
+							},
+						})
+					})
+					It("should not request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeFalse())
+					})
+				})
+				When("the label is not used in a NHC selector", func() {
+					BeforeEach(func() {
+						oldLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						newLabels = map[string]string{
+							"some-random-label": "true",
+						}
+						setSelectorOnNHC(objects, metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{Key: "wrong-label", Operator: metav1.LabelSelectorOpExists},
+							},
+						})
+					})
+					It("should not request reconcile", func() {
+						Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeFalse())
+					})
+				})
 			})
 		})
 	})
@@ -2773,6 +2956,15 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 			},
 			RemediationTemplate: infraMultipleRemediationTemplateRef.DeepCopy(),
 		},
+	}
+}
+
+func setSelectorOnNHC(objects []client.Object, selector metav1.LabelSelector) {
+	for _, obj := range objects {
+		switch obj.(type) {
+		case *v1alpha1.NodeHealthCheck:
+			obj.(*v1alpha1.NodeHealthCheck).Spec.Selector = selector
+		}
 	}
 }
 
