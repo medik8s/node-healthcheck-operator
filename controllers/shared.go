@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	commonLabels "github.com/medik8s/common/pkg/labels"
@@ -12,10 +13,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
+	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 )
 
-func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
+func nodeUpdateNeedsReconcile(ev event.UpdateEvent, c client.Client, logger logr.Logger) bool {
 	var oldNode *v1.Node
 	var newNode *v1.Node
 	var ok bool
@@ -26,17 +28,62 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent) bool {
 		return false
 	}
 
-	return labelsNeedReconcile(oldNode.Labels, newNode.Labels) ||
+	return labelsNeedReconcile(c, oldNode.Labels, newNode.Labels, logger) ||
 		conditionsNeedReconcile(oldNode.Status.Conditions, newNode.Status.Conditions) ||
 		annotationsNeedReconcile(oldNode.Annotations, newNode.Annotations)
 }
 
-func labelsNeedReconcile(oldLabels, newLabels map[string]string) bool {
+func labelsNeedReconcile(c client.Client, oldLabels, newLabels map[string]string, logger logr.Logger) bool {
 	// Check if the ExcludeFromRemediation label was added or removed
 	_, existsInOldLabels := oldLabels[commonLabels.ExcludeFromRemediation]
 	_, existsInNewLabels := newLabels[commonLabels.ExcludeFromRemediation]
 
-	return existsInOldLabels != existsInNewLabels
+	if existsInOldLabels != existsInNewLabels {
+		return true
+	}
+
+	// check if any node label, which is used as NHC selector, was added or removed, or its value updated
+	nhcList := &v1alpha1.NodeHealthCheckList{}
+	// we don't have a context here... limit request to 10s
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.List(ctx, nhcList); err != nil {
+		// If we can't list NHCs, trigger reconcile to be safe
+		logger.Error(err, "Failed to list NodeHealthChecks for label check, will trigger reconcile")
+		return true
+	}
+
+	for _, nhc := range nhcList.Items {
+		selector := nhc.Spec.Selector
+
+		// Check MatchLabels keys
+		for labelKey := range selector.MatchLabels {
+			if labelWasModified(oldLabels, newLabels, labelKey) {
+				return true
+			}
+		}
+
+		// Check MatchExpressions keys
+		for _, expr := range selector.MatchExpressions {
+			if labelWasModified(oldLabels, newLabels, expr.Key) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func labelWasModified(oldLabels, newLabels map[string]string, labelKey string) bool {
+	_, inOld := oldLabels[labelKey]
+	_, inNew := newLabels[labelKey]
+	if inOld != inNew {
+		return true
+	}
+	if inOld && inNew {
+		return oldLabels[labelKey] != newLabels[labelKey]
+	}
+	return false
 }
 
 func conditionsNeedReconcile(oldConditions, newConditions []v1.NodeCondition) bool {
