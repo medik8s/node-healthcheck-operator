@@ -84,6 +84,15 @@ func IsConditionTrue(conditions []metav1.Condition, conditionType string, reason
 	return condition.Status == metav1.ConditionTrue
 }
 
+// IsConditionTrueAnyReason returns true when the conditions contain a condition of given type with status true, regardless of reason
+func IsConditionTrueAnyReason(conditions []metav1.Condition, conditionType string) bool {
+	condition := meta.FindStatusCondition(conditions, conditionType)
+	if condition == nil {
+		return false
+	}
+	return condition.Status == metav1.ConditionTrue
+}
+
 // IsConditionSet return true when the conditions contain a condition of given type and reason
 func IsConditionSet(conditions []metav1.Condition, conditionType string, reason string) bool {
 	condition := meta.FindStatusCondition(conditions, conditionType)
