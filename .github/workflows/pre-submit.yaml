@@ -42,11 +42,11 @@ jobs:
       IMAGE_REGISTRY: kind-registry:5000
       DEPLOY_NAMESPACE: k8s-test
       # see https://github.com/kubernetes-sigs/kind/tags
-      KIND_VERSION: v0.20.0
+#      KIND_VERSION: v0.31.0
       # see https://hub.docker.com/r/kindest/node/tags for available versions!
-      K8S_VERSION: v1.27.3
+#      K8S_VERSION: v1.33.7
       # https://github.com/operator-framework/operator-lifecycle-manager/releases
-      OLM_VERSION: v0.26.0
+      OLM_VERSION: v0.38.0
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -83,12 +83,13 @@ jobs:
         #sudo cat /etc/containers/registries.conf
 
     - name: Start kind cluster
-      uses: container-tools/kind-action@v2
+      uses: helm/kind-action@v1
       with:
-        version: ${{env.KIND_VERSION}}
+#        version: ${{env.KIND_VERSION}}
         config: ./hack/kind-config.yaml
-        node_image: kindest/node:${{env.K8S_VERSION}}
-        kubectl_version: ${{env.K8S_VERSION}}
+#        node_image: kindest/node:${{env.K8S_VERSION}}
+#        kubectl_version: ${{env.K8S_VERSION}}
+        cluster_name: medik8s-test
         registry: true
 
     - name: Cluster info
