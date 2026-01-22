@@ -272,11 +272,11 @@ healthyNodes < minHealthy
 → Block new remediations
 ```
 
-**State 3: Regaining Health (Delay)**
+**State 3: Regaining Health (Cooldown)**
 ```
 healthyNodes ≥ minHealthy
 → Start stormCooldownDuration timer
-→ Continue blocking new remediations until delay elapses
+→ Continue blocking new remediations until cooldown elapses
 ```
 
 **State 4: Storm Recovery Exit**

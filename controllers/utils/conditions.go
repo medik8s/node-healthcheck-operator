@@ -75,17 +75,20 @@ func isHealthy(unhealthyConditions []unhealthyCondition, nodeConditions []corev1
 	return true, nil
 }
 
-// IsConditionTrue return true when the conditions contain a condition of given type and reason with status true
-func IsConditionTrue(conditions []metav1.Condition, conditionType string, reason string) bool {
-	if !IsConditionSet(conditions, conditionType, reason) {
-		return false
-	}
+// IsConditionTrueWithReason return true when the conditions contain a condition of given type and reason with status true
+func IsConditionTrueWithReason(conditions []metav1.Condition, conditionType string, reason string) bool {
 	condition := meta.FindStatusCondition(conditions, conditionType)
-	return condition.Status == metav1.ConditionTrue
+	return condition != nil && condition.Status == metav1.ConditionTrue && condition.Reason == reason
 }
 
-// IsConditionTrueAnyReason returns true when the conditions contain a condition of given type with status true, regardless of reason
-func IsConditionTrueAnyReason(conditions []metav1.Condition, conditionType string) bool {
+// IsConditionFalseWithReason return true when the conditions contain a condition of given type and reason with status false, this isn't the logical opposite of IsConditionTrueWithReason because the condition is expected to be set with a false status.
+func IsConditionFalseWithReason(conditions []metav1.Condition, conditionType string, reason string) bool {
+	condition := meta.FindStatusCondition(conditions, conditionType)
+	return condition != nil && condition.Status == metav1.ConditionFalse && condition.Reason == reason
+}
+
+// IsConditionTrue returns true when the conditions contain a condition of given type with status true, regardless of reason
+func IsConditionTrue(conditions []metav1.Condition, conditionType string) bool {
 	condition := meta.FindStatusCondition(conditions, conditionType)
 	if condition == nil {
 		return false
@@ -93,16 +96,10 @@ func IsConditionTrueAnyReason(conditions []metav1.Condition, conditionType strin
 	return condition.Status == metav1.ConditionTrue
 }
 
-// IsConditionSet return true when the conditions contain a condition of given type and reason
-func IsConditionSet(conditions []metav1.Condition, conditionType string, reason string) bool {
+// IsConditionSet return true when the conditions contain a condition of given type
+func IsConditionSet(conditions []metav1.Condition, conditionType string) bool {
 	condition := meta.FindStatusCondition(conditions, conditionType)
-	if condition == nil {
-		return false
-	}
-	if condition.Reason != reason {
-		return false
-	}
-	return true
+	return condition != nil
 }
 
 func SetMachineCondition(mhc *v1beta1.MachineHealthCheck, condition *v1beta1.Condition) {

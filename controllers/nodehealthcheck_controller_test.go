@@ -2014,7 +2014,7 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(3))
-						g.Expect(utils.IsConditionSet(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeFalse())
+						g.Expect(utils.IsConditionSet(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive)).To(BeFalse())
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 					}, "5s", "1s").Should(Succeed())
 
@@ -2027,82 +2027,96 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 					}, "15s", "100ms").Should(Succeed())
 
-					// Verify Storm recovery is activated
+					// Wait for StormActive condition to be set
+					Eventually(func(g Gomega) {
+						g.Expect(utils.IsConditionTrueWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+					}, "5s", "100ms").Should(Succeed())
+
+					// Verify Storm recovery is activated and cooldown doesn't start
 					// 7 total, 3 healthy, 4 unhealthy, 3 remediations (additional remediation not created because of min healthy constraint)
 					Consistently(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(*underTest.Status.HealthyNodes).To(Equal(3))
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+						g.Expect(utils.IsConditionTrueWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
 					}, stormCooldownDuration+time.Second, "100ms").Should(Succeed())
 
-					// Phase 3: Recover one node - storm recovery remains active due to 2-second delay
-					By("recovering one node - storm recovery remains active due to 2-second delay")
+					// Phase 3: Recover one node - storm recovery remains active (in cooldown phase) due to 2-second delay
+					By("recovering one node - storm recovery remains active (in cooldown phase) due to 2-second delay")
 					mockNodeGettingHealthy("unhealthy-worker-node-1")
 
 					// wait for node to recover
+					// 7 total, 4 healthy, 3 unhealthy, 2 remediations (one removed due to healthy node), 1 remediation is pending to be created (not created because of storm)
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
 					}, "5s", "100ms").Should(Succeed())
-					// 7 total, 4 healthy, 3 unhealthy, 2 remediations (one removed due to healthy node), 1 remediation is pending to be created (not created because of storm)
 
-					var stormTerminationStartTime time.Time
+					var firstCooldownStartTime time.Time
 					// Wait for StormCooldownActive condition to be set
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						cooldownCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)
 						g.Expect(cooldownCondition).ToNot(BeNil())
 						g.Expect(cooldownCondition.Status).To(Equal(metav1.ConditionTrue))
-						stormTerminationStartTime = cooldownCondition.LastTransitionTime.Time
+						firstCooldownStartTime = cooldownCondition.LastTransitionTime.Time
 					}, "5s", "100ms").Should(Succeed())
 
-					timeUntilStormIsDone := stormTerminationStartTime.Add(stormCooldownDuration).Sub(time.Now())
-
-					Consistently(func(g Gomega) {
-						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
-						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(3))
-						g.Expect(getRemediationsCount(underTest)).To(Equal(2))
-						g.Expect(utils.IsConditionTrueAnyReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)).To(BeTrue())
-					}, timeUntilStormIsDone-time.Millisecond*100, "100ms").Should(Succeed())
-					// Expected termination time of the first storm
-					cooldownCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)
-					firstStormTerminationTime := cooldownCondition.LastTransitionTime.Time.Add(underTest.Spec.StormCooldownDuration.Duration)
-
-					// Expect Storm Recovery mode to end
-					// 7 total, 4 healthy, 3 unhealthy, 3 remediations (pending remediation created when storm is done)
-					Eventually(func(g Gomega) {
-						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						g.Expect(utils.IsConditionSet(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeFalse())
-						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
-					}, "2s", "100ms").Should(Succeed())
-
-					// Phase 5:  Make the fourth node unhealthy - triggers the second storm
-					By("making the 4th node unhealthy - triggers second storm recovery")
+					// Phase 4: Before first cooldown expires, make another node unhealthy - triggers second storm
+					By("making another node unhealthy before cooldown expires - triggers second storm")
 					mockNodeGettingUnhealthy("healthy-worker-node-2")
-					// wait for node to turn unhealthy
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 					}, "15s", "100ms").Should(Succeed())
 
-					// Verify Second Storm mode is activated
-					// 7 total, 3 healthy, 4 unhealthy, 3 remediations (additional remediation not created because of min healthy constraint)
+					// Verify the cooldown of the first storm is reset by triggering of the second storm
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						g.Expect(*underTest.Status.HealthyNodes).To(Equal(3))
-						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
-						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-						stormActiveCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive)
-						// Verifies StormRecoveryStartTime is updated properly when a second storm starts
-						g.Expect(stormActiveCondition.LastTransitionTime.After(firstStormTerminationTime)).To(BeTrue())
-						// Verifies StormCooldownActive condition of the first storm is cleared
+						g.Expect(utils.IsConditionTrueWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+						// StormCooldownActive should be False because it's reset by a new storm
+						g.Expect(utils.IsConditionFalseWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+					}, "5s", "100ms").Should(Succeed())
+
+					// Wait a bit, to make sure the second cooldown will be at a later timestamp
+					time.Sleep(time.Second)
+
+					// Phase 5: Recover one node - second cooldown should start with fresh LastTransitionTime
+					By("recovering one node - second cooldown should start with fresh LastTransitionTime")
+					mockNodeGettingHealthy("unhealthy-worker-node-2")
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
+					}, "5s", "100ms").Should(Succeed())
+
+					var secondCooldownStartTime time.Time
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						cooldownCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)
-						g.Expect(cooldownCondition.Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(cooldownCondition).ToNot(BeNil())
+						g.Expect(cooldownCondition.Status).To(Equal(metav1.ConditionTrue))
+						secondCooldownStartTime = cooldownCondition.LastTransitionTime.Time
+					}, "5s", "100ms").Should(Succeed())
+
+					// Verify that LastTransitionTime was refreshed and is later in the second cooldown
+					By("verifying cooldown LastTransitionTime was refreshed")
+					Expect(secondCooldownStartTime).To(BeTemporally(">", firstCooldownStartTime), "Second cooldown should have fresh LastTransitionTime, but it's using the old one from first cooldown")
+					// Verify cooldown doesn't exit immediately (it should wait full duration from second start time)
+					cooldownEndTime := secondCooldownStartTime.Add(stormCooldownDuration)
+					remainingCooldownDuration := time.Until(cooldownEndTime)
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)).To(BeTrue())
+					}, remainingCooldownDuration-time.Millisecond*100, "100ms").Should(Succeed(),
+						"Cooldown should not exit immediately - it should wait full duration from second start time")
+
+					// Expect Storm Recovery mode to end
+					// 7 total, 4 healthy, 3 unhealthy, 3 remediations (pending remediation created when storm is done)
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(utils.IsConditionFalseWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 					}, "5s", "100ms").Should(Succeed())
 				})
 			})
