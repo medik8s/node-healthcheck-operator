@@ -122,8 +122,8 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
-	if in.StormTerminationDelay != nil {
-		in, out := &in.StormTerminationDelay, &out.StormTerminationDelay
+	if in.StormCooldownDuration != nil {
+		in, out := &in.StormCooldownDuration, &out.StormCooldownDuration
 		*out = new(v1.Duration)
 		**out = **in
 	}
@@ -196,10 +196,6 @@ func (in *NodeHealthCheckStatus) DeepCopyInto(out *NodeHealthCheckStatus) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
-	}
-	if in.StormTerminationStartTime != nil {
-		in, out := &in.StormTerminationStartTime, &out.StormTerminationStartTime
-		*out = (*in).DeepCopy()
 	}
 	if in.LastUpdateTime != nil {
 		in, out := &in.LastUpdateTime, &out.LastUpdateTime

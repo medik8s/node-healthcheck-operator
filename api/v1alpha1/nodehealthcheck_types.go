@@ -38,6 +38,11 @@ const (
 	ConditionTypeStormActive = "StormActive"
 	// ConditionReasonStormThresholdChange is the condition reason for a storm change from active to inactive and vice versa
 	ConditionReasonStormThresholdChange = "HealthyNodeThresholdChange"
+	// ConditionTypeStormCooldownActive is a separate condition type used to track when storm cooldown delay is active.
+	// The reason this was added as a new condition and not as a reason on top of the existing StormActive condition is because we need to track the time cooldown was initiated and LastTransitionTime is only updated when the condition status changes (True/False),
+	// By using a separate condition type, we ensure LastTransitionTime is properly set when
+	// the cooldown delay starts, which is needed for accurate requeue timing calculations.
+	ConditionTypeStormCooldownActive = "StormCooldownActive"
 )
 
 // NHCPhase is the string used for NHC.Status.Phase
@@ -111,12 +116,13 @@ type NodeHealthCheckSpec struct {
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
-	// StormTerminationDelay introduces a configurable delay after storm recovery
-	// exit criteria are satisfied (for example, when the number of healthy nodes
-	// rises above the configured minHealthy constraint). While this
-	// delay is in effect, NHC remains in storm recovery mode and does not create
-	// new remediations. Once the delay elapses, storm recovery mode exits and normal
-	// remediation resumes.
+	// StormCooldownDuration defines the duration of an optional cooldown phase after a storm.
+	// A "storm" happens when the number of (un)healthy nodes exceeds the threshold defined by minHealthy or maxUnhealthy.
+	// Sometimes this is triggered by a single root cause.
+	// When that cause is fixed, there is a risk to remediate healthy nodes:
+	// the async nature of node status updates would result in only some nodes being detected as healthy by NHC in a first round of updates,
+	// which results in minHealthy or maxUnhealthy threshold being fulfilled (the storm ends) and triggering unneeded new remediation.
+	// The storm cooldown phase will prevent creation of new remediation for the given duration by giving NHC some time to get the latest node statuses.
 	//
 	// Expects a string of decimal numbers each with optional fraction and a unit
 	// suffix, e.g. "300ms", "1.5h" or "2h45m". Valid time units are "ns", "us"
@@ -126,7 +132,7 @@ type NodeHealthCheckSpec struct {
 	//+kubebuilder:validation:Type=string
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=spec
-	StormTerminationDelay *metav1.Duration `json:"stormTerminationDelay,omitempty"`
+	StormCooldownDuration *metav1.Duration `json:"stormCooldownDuration,omitempty"`
 
 	// RemediationTemplate is a reference to a remediation template
 	// provided by an infrastructure provider.
@@ -286,15 +292,6 @@ type NodeHealthCheckStatus struct {
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase:reason"
 	Reason string `json:"reason,omitempty"`
-
-	// StormTerminationStartTime records when storm recovery mode regained the minHealthy/maxUnhealthy constraint
-	// and the storm is about to end (after NodeHealthCheckSpec.StormTerminationDelay has passed).
-	//
-	//+optional
-	//+kubebuilder:validation:Type=string
-	//+kubebuilder:validation:Format=date-time
-	//+operator-sdk:csv:customresourcedefinitions:type=status
-	StormTerminationStartTime *metav1.Time `json:"stormTerminationStartTime,omitempty"`
 
 	// LastUpdateTime is the last time the status was updated.
 	//

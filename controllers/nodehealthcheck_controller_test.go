@@ -200,7 +200,7 @@ var _ = Describe("Node Health Check CR", func() {
 		var (
 			underTest *v1alpha1.NodeHealthCheck
 			objects   []client.Object
-			//Lease params
+			// Lease params
 			leaseName                             = fmt.Sprintf("%s-%s", "node", unhealthyNodeName)
 			mockRequeueDurationIfLeaseTaken       = time.Second * 2
 			mockDefaultLeaseDuration              = time.Second * 2
@@ -249,7 +249,7 @@ var _ = Describe("Node Health Check CR", func() {
 				}
 			}
 
-			//cleanup lease
+			// Cleanup lease
 			lease := &coordv1.Lease{}
 			err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: leaseNs, Name: leaseName}, lease)
 			if err == nil {
@@ -667,21 +667,21 @@ var _ = Describe("Node Health Check CR", func() {
 					It("node lease is removed", func() {
 						cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
 						Expect(cr).ToNot(BeNil())
-						//Verify lease exist
+						// Verify lease exist
 						lease := &coordv1.Lease{}
 						err := k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 						Expect(err).ToNot(HaveOccurred())
 
-						//Mock node becoming healthy
+						// Mock node becoming healthy
 						mockNodeGettingHealthy(unhealthyNodeName)
 
-						//Remediation should be removed
+						// Remediation should be removed
 						Eventually(func() bool {
 							err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 							return errors.IsNotFound(err)
 						}, "2s", "100ms").Should(BeTrue(), "remediation CR wasn't removed")
 
-						//Verify NHC removed the lease
+						// Verify NHC removed the lease
 						Eventually(func() bool {
 							err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 							return errors.IsNotFound(err)
@@ -693,7 +693,7 @@ var _ = Describe("Node Health Check CR", func() {
 						cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
 						Expect(cr).ToNot(BeNil())
 
-						//Verify lease exist
+						// Verify lease exist
 						lease := &coordv1.Lease{}
 						err := k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 						Expect(err).ToNot(HaveOccurred())
@@ -703,10 +703,10 @@ var _ = Describe("Node Health Check CR", func() {
 						lease.Spec.HolderIdentity = pointer.String(newLeaseOwner)
 						Expect(k8sClient.Update(context.Background(), lease)).To(Succeed(), "failed to update lease owner")
 
-						//Mock node becoming healthy
+						// Mock node becoming healthy
 						mockNodeGettingHealthy(unhealthyNodeName)
 
-						//Remediation should be removed
+						// Remediation should be removed
 						Eventually(func() bool {
 							err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 							return errors.IsNotFound(err)
@@ -718,7 +718,7 @@ var _ = Describe("Node Health Check CR", func() {
 							g.Expect(underTest.Status.UnhealthyNodes).To(BeEmpty())
 						}, "2s", "100ms").Should(Succeed(), "status update failed")
 
-						//Verify NHC didn't touch the lease
+						// Verify NHC didn't touch the lease
 						Consistently(func(g Gomega) {
 							g.Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)).To(Succeed(), "failed to get lease")
 							g.Expect(*lease.Spec.HolderIdentity).To(Equal(newLeaseOwner))
@@ -731,7 +731,7 @@ var _ = Describe("Node Health Check CR", func() {
 					BeforeEach(func() {
 						mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
 
-						//Create a mock lease that is already taken
+						// Create a mock lease that is already taken
 						now := metav1.NowMicro()
 						lease := &coordv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: leaseNs}, Spec: coordv1.LeaseSpec{HolderIdentity: pointer.String("notNHC"), LeaseDurationSeconds: &otherLeaseDurationInSeconds, RenewTime: &now, AcquireTime: &now}}
 						err := k8sClient.Create(context.Background(), lease)
@@ -756,13 +756,13 @@ var _ = Describe("Node Health Check CR", func() {
 								HaveField("Status", metav1.ConditionFalse),
 								HaveField("Reason", v1alpha1.ConditionReasonEnabled),
 							)))
-						//expecting NHC to acquire the lease now and create the CR - checking CR first
+						// Expecting NHC to acquire the lease now and create the CR - checking CR first
 						Eventually(func(g Gomega) {
 							cr = findRemediationCRForNHC(unhealthyNodeName, underTest)
 							g.Expect(cr).ToNot(BeNil())
 						}, mockRequeueDurationIfLeaseTaken*2+time.Millisecond*100, time.Millisecond*100).Should(Succeed())
 
-						//Verifying lease is created
+						// Verifying lease is created
 						lease := &coordv1.Lease{}
 						err := k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 						Expect(err).ToNot(HaveOccurred())
@@ -773,22 +773,22 @@ var _ = Describe("Node Health Check CR", func() {
 						verifyEvent("Warning", utils.EventReasonRemediationSkipped, fmt.Sprintf("Skipped remediation of node: %s, because node lease is already taken", unhealthyNodeName))
 						leaseExpireTime := lease.Spec.AcquireTime.Time.Add(mockRequeueDurationIfLeaseTaken*3 + mockLeaseBuffer)
 						timeLeftForLease := leaseExpireTime.Sub(time.Now())
-						//Wait for lease to be extended
+						// Wait for lease to be extended
 						time.Sleep(timeLeftForLease * 3 / 4)
 						lease = &coordv1.Lease{}
 						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
-						//Verify NHC extended the lease
+						// Verify NHC extended the lease
 						Expect(err).ToNot(HaveOccurred())
 						Expect(*lease.Spec.AcquireTime).ToNot(Equal(*lease.Spec.RenewTime))
 						Expect(lease.Spec.RenewTime.Sub(lease.Spec.AcquireTime.Time) > 0).To(BeTrue())
 
-						//Wait for lease to expire
+						// Wait for lease to expire
 						time.Sleep(timeLeftForLease/4 + time.Millisecond*100)
 						lease = &coordv1.Lease{}
 						err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
-						//Verify NHC removed the lease
+						// Verify NHC removed the lease
 						Expect(errors.IsNotFound(err)).To(BeTrue())
-						//Verify NHC sets timeout annotation
+						// Verify NHC sets timeout annotation
 						err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(cr), cr)
 						Expect(err).ToNot(HaveOccurred())
 						_, isNhcTimeOutSet := cr.GetAnnotations()[commonannotations.NhcTimedOut]
@@ -838,13 +838,13 @@ var _ = Describe("Node Health Check CR", func() {
 
 			When("node stays unhealthy", func() {
 				BeforeEach(func() {
-					//mocking lease in order to reassure lease extension will trigger a second reconcile (in which the event shouldn't be triggered)
+					// Mocking lease in order to reassure lease extension will trigger a second reconcile (in which the event shouldn't be triggered)
 					mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, mockLeaseBuffer)
 					setupObjects(1, 2, true)
 				})
 				It("Node unhealthy event should occur once", func() {
 					verifyEvent("Normal", utils.EventReasonDetectedUnhealthy, fmt.Sprintf("Node matches unhealthy condition. Node %q, condition type %q, condition status %q", unhealthyNodeName, "Ready", "Unknown"))
-					//After verification event is extracted so this is how we verify it occurred only once
+					// After verification event is extracted so this is how we verify it occurred only once
 					verifyNoEvent("Normal", utils.EventReasonDetectedUnhealthy, fmt.Sprintf("Node matches unhealthy condition. Node %q, condition type %q, condition status %q", unhealthyNodeName, "Ready", "Unknown"))
 
 				})
@@ -984,7 +984,7 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(underTest.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				//Verify lease is created
+				// Verify lease is created
 				lease := &coordv1.Lease{}
 				err := k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 				Expect(err).ToNot(HaveOccurred())
@@ -1000,14 +1000,14 @@ var _ = Describe("Node Health Check CR", func() {
 
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				// get new CR
+				// Get new CR
 				var newCr *unstructured.Unstructured
 				Eventually(func(g Gomega) {
 					newCr = findRemediationCRForNHCSecondRemediation(unhealthyNodeName, underTest)
 					g.Expect(newCr).ToNot(BeNil())
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				// get updated NHC
+				// Get updated NHC
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 					g.Expect(underTest.Status.UnhealthyNodes[0].Remediations[0].Resource.GroupVersionKind()).To(Equal(cr.GroupVersionKind()))
@@ -1028,7 +1028,7 @@ var _ = Describe("Node Health Check CR", func() {
 
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				//Verify lease was extended
+				// Verify lease was extended
 				err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(secondRemediationTimeout.Seconds() + mockLeaseBuffer.Seconds())))
@@ -1042,7 +1042,7 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(cr.GetAnnotations()).To(HaveKeyWithValue(Equal("remediation.medik8s.io/nhc-timed-out"), Not(BeNil())))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				// get updated NHC
+				// Get updated NHC
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 					g.Expect(underTest.Status.UnhealthyNodes[0].Remediations[1].Resource.GroupVersionKind()).To(Equal(newCr.GroupVersionKind()))
@@ -1084,7 +1084,7 @@ var _ = Describe("Node Health Check CR", func() {
 					g.Expect(fourthCR.GetAnnotations()).ToNot(HaveKey(Equal("remediation.medik8s.io/nhc-timed-out")))
 				}, time.Second*10, time.Millisecond*300).Should(Succeed())
 
-				//Verify lease still exist (since long expire time wasn't reached)
+				// Verify lease still exist (since long expire time wasn't reached)
 				Eventually(func(g Gomega) {
 					g.Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)).ToNot(HaveOccurred())
 					g.Expect(*lease.Spec.LeaseDurationSeconds).To(Equal(int32(secondRemediationTimeout.Seconds() + mockLeaseBuffer.Seconds())))
@@ -1098,18 +1098,18 @@ var _ = Describe("Node Health Check CR", func() {
 				node.Status.Conditions[0].Status = v1.ConditionTrue
 				Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
 
-				//calculating time left for lease
+				// Calculating time left for lease
 				timeLeftOnLease := time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second - time.Now().Sub(lease.Spec.RenewTime.Time)
 				// wait a bit
 				time.Sleep(2 * time.Second)
 				timeLeftOnLease = timeLeftOnLease - time.Second*2
-				//Verify lease has time left before it should expire
+				// Verify lease has time left before it should expire
 				Expect(timeLeftOnLease > time.Millisecond*500).To(BeTrue()) // a bit over 1 second at this stage
-				//Verify lease was removed because the CR was deleted (even though there was some time left)
+				// Verify lease was removed because the CR was deleted (even though there was some time left)
 				err = k8sClient.Get(context.Background(), client.ObjectKey{Name: leaseName, Namespace: leaseNs}, lease)
 				Expect(errors.IsNotFound(err)).To(BeTrue())
 
-				// get updated NHC
+				// Get updated NHC
 				Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 				Expect(*underTest.Status.HealthyNodes).To(Equal(3))
 				Expect(*underTest.Status.ObservedNodes).To(Equal(3))
@@ -1857,14 +1857,14 @@ var _ = Describe("Node Health Check CR", func() {
 				var currentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 				var desiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
 				BeforeEach(func() {
-					//Use a real upgrade checker instead of mock
+					// Use a real upgrade checker instead of mock
 					prevUpgradeChecker := nhcReconciler.ClusterUpgradeStatusChecker
 					nhcReconciler.ClusterUpgradeStatusChecker = ocpUpgradeChecker
 					DeferCleanup(func() {
 						nhcReconciler.ClusterUpgradeStatusChecker = prevUpgradeChecker
 					})
 
-					//Simulate HCP Upgrade on the unhealthy node
+					// Simulate HCP Upgrade on the unhealthy node
 					upgradingNode := objects[0]
 					upgradingNodeAnnotations := map[string]string{}
 					if upgradingNode.GetAnnotations() != nil {
@@ -1961,10 +1961,10 @@ var _ = Describe("Node Health Check CR", func() {
 		})
 
 		Context("Storm Recovery", func() {
-			var stormTerminationDelay = time.Second * 2
+			var stormCooldownDuration = time.Second * 2
 			BeforeEach(func() {
-				underTest = newNodeHealthCheckWithStormRecovery(stormTerminationDelay)
-				setupObjects(3, 4, true) // 2 unhealthy, 5 healthy = 7 total
+				underTest = newNodeHealthCheckWithStormRecovery(stormCooldownDuration, 4)
+				setupObjects(3, 4, true) // 3 unhealthy, 4 healthy = 7 total
 			})
 			When("consecutive storms are triggered", func() {
 				It("they should start and finish according delay and min max criteria", func() {
@@ -1975,7 +1975,7 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(3))
-						g.Expect(utils.IsConditionSet(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeFalse())
+						g.Expect(utils.IsConditionSet(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive)).To(BeFalse())
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
 					}, "5s", "1s").Should(Succeed())
 
@@ -1988,68 +1988,96 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 					}, "15s", "100ms").Should(Succeed())
 
-					// Verify Storm recovery is activated
-					// 7 total, 3 healthy, 4 unhealthy, 3 remediations (additional remediation not created because of min healthy constraint)
+					// Wait for StormActive condition to be set
 					Eventually(func(g Gomega) {
+						g.Expect(utils.IsConditionTrueWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+					}, "5s", "100ms").Should(Succeed())
+
+					// Verify Storm recovery is activated and cooldown doesn't start
+					// 7 total, 3 healthy, 4 unhealthy, 3 remediations (additional remediation not created because of min healthy constraint)
+					Consistently(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(*underTest.Status.HealthyNodes).To(Equal(3))
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-					}, "5s", "100ms").Should(Succeed())
+						g.Expect(utils.IsConditionTrueWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+					}, stormCooldownDuration+time.Second, "100ms").Should(Succeed())
 
-					// Phase 3: Recover one node - storm recovery remains active due to 2-second delay
-					By("recovering one node - storm recovery remains active due to 2-second delay")
+					// Phase 3: Recover one node - storm recovery remains active (in cooldown phase) due to 2-second delay
+					By("recovering one node - storm recovery remains active (in cooldown phase) due to 2-second delay")
 					mockNodeGettingHealthy("unhealthy-worker-node-1")
 
-					//wait for node to recover
+					// wait for node to recover
+					// 7 total, 4 healthy, 3 unhealthy, 2 remediations (one removed due to healthy node), 1 remediation is pending to be created (not created because of storm)
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
 					}, "5s", "100ms").Should(Succeed())
-					// 7 total, 4 healthy, 3 unhealthy, 2 remediations (one removed due to healthy node), 1 remediation is pending to be created (not created because of storm)
-					Consistently(func(g Gomega) {
-						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
-						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(3))
-						g.Expect(getRemediationsCount(underTest)).To(Equal(2))
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-					}, "2s", "100ms").Should(Succeed())
-					//expected termination time of the first storm
-					firstStormTerminationTime := underTest.Status.StormTerminationStartTime.Time.Add(underTest.Spec.StormTerminationDelay.Duration)
-					// Phase 4: wait for the delay to pass
-					time.Sleep(stormTerminationDelay)
-					//Expect Storm Recovery mode to end
-					// 7 total, 4 healthy, 3 unhealthy, 3 remediations (pending remediation created when storm is done)
+
+					var firstCooldownStartTime time.Time
+					// Wait for StormCooldownActive condition to be set
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						g.Expect(utils.IsConditionSet(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeFalse())
-						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
-					}, "1500ms", "100ms").Should(Succeed())
+						cooldownCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)
+						g.Expect(cooldownCondition).ToNot(BeNil())
+						g.Expect(cooldownCondition.Status).To(Equal(metav1.ConditionTrue))
+						firstCooldownStartTime = cooldownCondition.LastTransitionTime.Time
+					}, "5s", "100ms").Should(Succeed())
 
-					// Phase 5:  Make the fourth node unhealthy - triggers the second storm
-					By("making the 4th node unhealthy - triggers second storm recovery")
+					// Phase 4: Before first cooldown expires, make another node unhealthy - triggers second storm
+					By("making another node unhealthy before cooldown expires - triggers second storm")
 					mockNodeGettingUnhealthy("healthy-worker-node-2")
-					// wait for node to turn unhealthy
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
 					}, "15s", "100ms").Should(Succeed())
 
-					// Verify Second Storm mode is activated
-					// 7 total, 3 healthy, 4 unhealthy, 3 remediations (additional remediation not created because of min healthy constraint)
+					// Verify the cooldown of the first storm is reset by triggering of the second storm
 					Eventually(func(g Gomega) {
 						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-						g.Expect(*underTest.Status.HealthyNodes).To(Equal(3))
-						g.Expect(len(underTest.Status.UnhealthyNodes)).To(Equal(4))
+						g.Expect(utils.IsConditionTrueWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+						// StormCooldownActive should be False because it's reset by a new storm
+						g.Expect(utils.IsConditionFalseWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
+					}, "5s", "100ms").Should(Succeed())
+
+					// Wait a bit, to make sure the second cooldown will be at a later timestamp
+					time.Sleep(time.Second)
+
+					// Phase 5: Recover one node - second cooldown should start with fresh LastTransitionTime
+					By("recovering one node - second cooldown should start with fresh LastTransitionTime")
+					mockNodeGettingHealthy("unhealthy-worker-node-2")
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(*underTest.Status.HealthyNodes).To(Equal(4))
+					}, "5s", "100ms").Should(Succeed())
+
+					var secondCooldownStartTime time.Time
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						cooldownCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)
+						g.Expect(cooldownCondition).ToNot(BeNil())
+						g.Expect(cooldownCondition.Status).To(Equal(metav1.ConditionTrue))
+						secondCooldownStartTime = cooldownCondition.LastTransitionTime.Time
+					}, "5s", "100ms").Should(Succeed())
+
+					// Verify that LastTransitionTime was refreshed and is later in the second cooldown
+					By("verifying cooldown LastTransitionTime was refreshed")
+					Expect(secondCooldownStartTime).To(BeTemporally(">", firstCooldownStartTime), "Second cooldown should have fresh LastTransitionTime, but it's using the old one from first cooldown")
+					// Verify cooldown doesn't exit immediately (it should wait full duration from second start time)
+					cooldownEndTime := secondCooldownStartTime.Add(stormCooldownDuration)
+					remainingCooldownDuration := time.Until(cooldownEndTime)
+					Consistently(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormCooldownActive)).To(BeTrue())
+					}, remainingCooldownDuration-time.Millisecond*100, "100ms").Should(Succeed(),
+						"Cooldown should not exit immediately - it should wait full duration from second start time")
+
+					// Expect Storm Recovery mode to end
+					// 7 total, 4 healthy, 3 unhealthy, 3 remediations (pending remediation created when storm is done)
+					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+						g.Expect(utils.IsConditionFalseWithReason(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
 						g.Expect(getRemediationsCount(underTest)).To(Equal(3))
-						g.Expect(utils.IsConditionTrue(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive, v1alpha1.ConditionReasonStormThresholdChange)).To(BeTrue())
-						stormActiveCondition := meta.FindStatusCondition(underTest.Status.Conditions, v1alpha1.ConditionTypeStormActive)
-						// Verifies StormRecoveryStartTime is updated properly when a second storm starts
-						g.Expect(stormActiveCondition.LastTransitionTime.After(firstStormTerminationTime)).To(BeTrue())
-						// Verifies StormTerminationStartTime of the first storm is cleared
-						g.Expect(underTest.Status.StormTerminationStartTime).To(BeNil())
 					}, "5s", "100ms").Should(Succeed())
 				})
 			})
@@ -2614,7 +2642,7 @@ func mockLeaseParams(mockRequeueDurationIfLeaseTaken, mockDefaultLeaseDuration, 
 	orgRequeueIfLeaseTaken := resources.RequeueIfLeaseTaken
 	orgDefaultLeaseDuration := utils.DefaultRemediationDuration
 	orgLeaseBuffer := resources.LeaseBuffer
-	//set up mock values so tests can run in a reasonable time
+	// Set up mock values so tests can run in a reasonable time
 	resources.RequeueIfLeaseTaken = mockRequeueDurationIfLeaseTaken
 	utils.DefaultRemediationDuration = mockDefaultLeaseDuration
 	resources.LeaseBuffer = mockLeaseBuffer
@@ -2698,7 +2726,7 @@ func newBaseCR(nhc *v1alpha1.NodeHealthCheck, templateRef v1.ObjectReference) un
 			return cr
 		}
 	}
-	// can not happen...
+	// Can not happen...
 	return unstructured.Unstructured{}
 }
 
@@ -2708,7 +2736,7 @@ func newBaseCRs(nhc *v1alpha1.NodeHealthCheck) []unstructured.Unstructured {
 	appendCr := func(gvk schema.GroupVersionKind) {
 		cr := unstructured.Unstructured{}
 		kind := gvk.Kind
-		// remove trailing template
+		// Remove trailing template
 		kind = kind[:len(kind)-len("template")]
 		cr.SetGroupVersionKind(schema.GroupVersionKind{
 			Group:   gvk.Group,
@@ -2776,12 +2804,11 @@ func newNodeHealthCheck() *v1alpha1.NodeHealthCheck {
 	}
 }
 
-func newNodeHealthCheckWithStormRecovery(delay time.Duration) *v1alpha1.NodeHealthCheck {
+func newNodeHealthCheckWithStormRecovery(delay time.Duration, minHealthy int32) *v1alpha1.NodeHealthCheck {
 	nhc := newNodeHealthCheck()
-	// 7-node cluster: minHealthy=4, stormRecoveryThreshold=1
-	minHealthy := intstr.FromInt(4)
-	nhc.Spec.MinHealthy = &minHealthy
-	nhc.Spec.StormTerminationDelay = &metav1.Duration{Duration: delay}
+	minHealthyIntStr := intstr.FromInt32(minHealthy)
+	nhc.Spec.MinHealthy = &minHealthyIntStr
+	nhc.Spec.StormCooldownDuration = &metav1.Duration{Duration: delay}
 	return nhc
 }
 
@@ -2915,22 +2942,22 @@ func ptrToIntStr(val string) *intstr.IntOrString {
 }
 
 func mockNodeGettingHealthy(unhealthyNodeName string) {
+	setNodeReadyCondition(unhealthyNodeName, v1.ConditionTrue)
+}
+
+func mockNodeGettingUnhealthy(healthyNodeName string) {
+	setNodeReadyCondition(healthyNodeName, v1.ConditionFalse)
+}
+
+func setNodeReadyCondition(unhealthyNodeName string, conditionStatus v1.ConditionStatus) {
 	node := &v1.Node{}
 	err := k8sClient.Get(context.Background(), client.ObjectKey{Name: unhealthyNodeName}, node)
 	Expect(err).ToNot(HaveOccurred())
 	for i, c := range node.Status.Conditions {
 		if c.Type == v1.NodeReady {
-			node.Status.Conditions[i].Status = v1.ConditionTrue
+			node.Status.Conditions[i].Status = conditionStatus
 		}
 	}
 	err = k8sClient.Status().Update(context.Background(), node)
 	Expect(err).ToNot(HaveOccurred())
-}
-
-func mockNodeGettingUnhealthy(healthyNodeName string) {
-	node := &v1.Node{}
-	Expect(k8sClient.Get(context.Background(), client.ObjectKey{Name: healthyNodeName}, node)).To(Succeed())
-	node.Status.Conditions[0].Status = v1.ConditionFalse
-	node.Status.Conditions[0].LastTransitionTime = metav1.Now()
-	Expect(k8sClient.Status().Update(context.Background(), node)).To(Succeed())
 }
