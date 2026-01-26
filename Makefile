@@ -97,9 +97,9 @@ OPERATOR_NAMESPACE ?= openshift-workload-availability
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-bundle:$(IMAGE_TAG)
 
-# INDEX_IMG defines the image:tag used for the index.
-# You can use it as an arg. (E.g make bundle-build INDEX_IMG=<some-registry>/<project-name-index>:<tag>)
-INDEX_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-index:$(IMAGE_TAG)
+# The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
+# NOTE: keeping the `-index` appendix to keep the same name already used for the catalog.
+CATALOG_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-index:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME):$(IMAGE_TAG)
@@ -452,17 +452,45 @@ bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
 create-ns: ## Create namespace
 	$(KUBECTL) get ns $(OPERATOR_NAMESPACE) 2>&1> /dev/null || $(KUBECTL) create ns $(OPERATOR_NAMESPACE)
 
-# Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
-# This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
-# https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
-.PHONY: index-build
-index-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool podman --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
+# Build a file-based catalog image
+# https://docs.openshift.com/container-platform/4.14/operators/admin/olm-managing-custom-catalogs.html#olm-managing-custom-catalogs-fb
+# NOTE: CATALOG_DIR and CATALOG_DOCKERFILE items won't be deleted in case of recipe's failure
+CATALOG_DIR := catalog
+CATALOG_DOCKERFILE := ${CATALOG_DIR}.Dockerfile
+CATALOG_INDEX := $(CATALOG_DIR)/index.yaml
+
+.PHONY: add_channel_entry_for_the_bundle
+add_channel_entry_for_the_bundle:
+	@echo "---" >> ${CATALOG_INDEX}
+	@echo "schema: olm.channel" >> ${CATALOG_INDEX}
+	@echo "package: ${OPERATOR_NAME}" >> ${CATALOG_INDEX}
+	@echo "name: ${CHANNELS}" >> ${CATALOG_INDEX}
+	@echo "entries:" >> ${CATALOG_INDEX}
+	@echo "  - name: ${OPERATOR_NAME}.v${VERSION}" >> ${CATALOG_INDEX}
+
+.PHONY: catalog-build
+catalog-build: opm ## Build a file-based catalog image.
+	# Remove the catalog directory and Dockerfile if they exist
+	-rm -r ${CATALOG_DIR} ${CATALOG_DOCKERFILE}
+	@mkdir -p ${CATALOG_DIR}
+	$(OPM) generate dockerfile ${CATALOG_DIR}
+	$(OPM) init ${OPERATOR_NAME} \
+		--default-channel=${CHANNELS} \
+		--description=./README.md \
+		--icon=${BLUE_ICON_PATH} \
+		--output yaml \
+		> ${CATALOG_INDEX}
+	$(OPM) render ${BUNDLE_IMG} --output yaml >> ${CATALOG_INDEX}
+	$(MAKE) add_channel_entry_for_the_bundle
+	$(OPM) validate ${CATALOG_DIR}
+	docker build . -f ${CATALOG_DOCKERFILE} -t ${CATALOG_IMG}
+	# Clean up the catalog directory and Dockerfile
+	rm -r ${CATALOG_DIR} ${CATALOG_DOCKERFILE}
 
 # Push the catalog image.
-.PHONY: index-push
-index-push: ## Push a catalog image.
-	podman push $(INDEX_IMG)
+.PHONY: catalog-push
+catalog-push: ## Push a catalog image.
+	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
 .PHONY: test-e2e
 test-e2e: ## Run end to end tests
@@ -495,7 +523,7 @@ container-build-metrics: ## Build containers for K8s with metric related configu
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
-	make docker-push bundle-push index-build index-push
+	make docker-push bundle-push catalog-build catalog-push
 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run
