@@ -28,111 +28,141 @@ spec:
         name: nodehealthchecks
         version: v1alpha1
       specDescriptors:
-      - description: "EscalatingRemediations contain a list of ordered remediation
-          templates with a timeout. The remediation templates will be used one after
-          another, until the unhealthy node gets healthy within the timeout of the
-          currently processed remediation. The order of remediation is defined by
-          the \"order\" field of each \"escalatingRemediation\". \n Mutually exclusive
-          with RemediationTemplate"
+      - description: |-
+          EscalatingRemediations contain a list of ordered remediation templates with a timeout.
+          The remediation templates will be used one after another, until the unhealthy node
+          gets healthy within the timeout of the currently processed remediation. The order of
+          remediation is defined by the "order" field of each "escalatingRemediation".
+
+
+          Mutually exclusive with RemediationTemplate
         displayName: Escalating Remediations
         path: escalatingRemediations
-      - description: Order defines the order for this remediation. Remediations with
-          lower order will be used before remediations with higher order. Remediations
-          must not have the same order.
+      - description: |-
+          Order defines the order for this remediation.
+          Remediations with lower order will be used before remediations with higher order.
+          Remediations must not have the same order.
         displayName: Order
         path: escalatingRemediations[0].order
-      - description: "RemediationTemplate is a reference to a remediation template
-          provided by a remediation provider. \n If a node needs remediation the controller
-          will create an object from this template and then it should be picked up
-          by a remediation provider."
+      - description: |-
+          RemediationTemplate is a reference to a remediation template
+          provided by a remediation provider.
+
+
+          If a node needs remediation the controller will create an object from this template
+          and then it should be picked up by a remediation provider.
         displayName: Remediation Template
         path: escalatingRemediations[0].remediationTemplate
-      - description: "Timeout defines how long NHC will wait for the node getting
-          healthy before the next remediation (if any) will be used. When the last
-          remediation times out, the overall remediation is considered as failed.
-          As a safeguard for preventing parallel remediations, a minimum of 60s is
-          enforced. \n Expects a string of decimal numbers each with optional fraction
-          and a unit suffix, eg \"300ms\", \"1.5h\" or \"2h45m\". Valid time units
-          are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\"."
+      - description: |-
+          Timeout defines how long NHC will wait for the node getting healthy
+          before the next remediation (if any) will be used. When the last remediation times out,
+          the overall remediation is considered as failed.
+          As a safeguard for preventing parallel remediations, a minimum of 60s is enforced.
+
+
+          Expects a string of decimal numbers each with optional
+          fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
+          Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
         displayName: Timeout
         path: escalatingRemediations[0].timeout
-      - description: HealthyDelay is the time before NHC would allow a node to be
-          healthy again. A negative value means that NHC will never consider the node
-          healthy and a manual intervention is expected
+      - description: |-
+          HealthyDelay is the time before NHC would allow a node to be healthy again.
+          A negative value means that NHC will never consider the node healthy and a manual intervention is expected
         displayName: Healthy Delay
         path: healthyDelay
-      - description: Remediation is allowed if no more than "MaxUnhealthy" nodes selected
-          by "selector" are not healthy. Expects either a non-negative integer value
-          or a percentage value. Percentage values must be positive whole numbers
-          and are capped at 100%. 0% is valid and will block all remediation. MaxUnhealthy
-          should not be used with remediators that delete nodes (e.g. MachineDeletionRemediation),
-          as this breaks the logic for counting healthy and unhealthy nodes. MinHealthy
-          and MaxUnhealthy are configuring the same aspect, and they cannot be used
-          at the same time.
+      - description: |-
+          Remediation is allowed if no more than "MaxUnhealthy" nodes selected by "selector" are not healthy.
+          Expects either a non-negative integer value or a percentage value.
+          Percentage values must be positive whole numbers and are capped at 100%.
+          0% is valid and will block all remediation.
+          MaxUnhealthy should not be used with remediators that delete nodes (e.g. MachineDeletionRemediation),
+          as this breaks the logic for counting healthy and unhealthy nodes.
+          MinHealthy and MaxUnhealthy are configuring the same aspect,
+          and they cannot be used at the same time.
         displayName: Max Unhealthy
         path: maxUnhealthy
-      - description: Remediation is allowed if at least "MinHealthy" nodes selected
-          by "selector" are healthy. Expects either a non-negative integer value or
-          a percentage value. Percentage values must be positive whole numbers and
-          are capped at 100%. 100% is valid and will block all remediation. MinHealthy
-          and MaxUnhealthy are configuring the same aspect, and they cannot be used
-          at the same time.
+      - description: |-
+          Remediation is allowed if at least "MinHealthy" nodes selected by "selector" are healthy.
+          Expects either a non-negative integer value or a percentage value.
+          Percentage values must be positive whole numbers and are capped at 100%.
+          100% is valid and will block all remediation.
+          MinHealthy and MaxUnhealthy are configuring the same aspect,
+          and they cannot be used at the same time.
         displayName: Min Healthy
         path: minHealthy
-      - description: 'PauseRequests will prevent any new remediation to start, while
-          in-flight remediations keep running. Each entry is free form, and ideally
-          represents the requested party reason for this pausing - i.e: "imaginary-cluster-upgrade-manager-operator"'
+      - description: |-
+          PauseRequests will prevent any new remediation to start, while in-flight remediations
+          keep running. Each entry is free form, and ideally represents the requested party reason
+          for this pausing - i.e:
+              "imaginary-cluster-upgrade-manager-operator"
         displayName: Pause Requests
         path: pauseRequests
-      - description: "RemediationTemplate is a reference to a remediation template
-          provided by an infrastructure provider. \n If a node needs remediation the
-          controller will create an object from this template and then it should be
-          picked up by a remediation provider. \n Mutually exclusive with EscalatingRemediations"
+      - description: |-
+          RemediationTemplate is a reference to a remediation template
+          provided by an infrastructure provider.
+
+
+          If a node needs remediation the controller will create an object from this template
+          and then it should be picked up by a remediation provider.
+
+
+          Mutually exclusive with EscalatingRemediations
         displayName: Remediation Template
         path: remediationTemplate
-      - description: "Label selector to match nodes whose health will be exercised.
-          \n Selecting both control-plane and worker nodes in one NHC CR is highly
-          discouraged and can result in undesired behaviour. \n Note: mandatory now
-          for above reason, but for backwards compatibility existing CRs will continue
-          to work with an empty selector, which matches all nodes."
+      - description: |-
+          Label selector to match nodes whose health will be exercised.
+
+
+          Selecting both control-plane and worker nodes in one NHC CR is
+          highly discouraged and can result in undesired behaviour.
+
+
+          Note: mandatory now for above reason, but for backwards compatibility existing
+          CRs will continue to work with an empty selector, which matches all nodes.
         displayName: Selector
         path: selector
-      - description: "StormCooldownDuration defines the duration of an optional cooldown
-          phase after a storm. A \"storm\" happens when the number of (un)healthy
-          nodes exceeds the threshold defined by minHealthy or maxUnhealthy. Sometimes
-          this is triggered by a single root cause. When that cause is fixed, there
-          is a risk to remediate healthy nodes: the async nature of node status updates
-          would result in only some nodes being detected as healthy by NHC in a first
-          round of updates, which results in minHealthy or maxUnhealthy threshold
-          being fulfilled (the storm ends) and triggering unneeded new remediation.
-          The storm cooldown phase will prevent creation of new remediation for the
-          given duration by giving NHC some time to get the latest node statuses.
-          \n Expects a string of decimal numbers each with optional fraction and a
-          unit suffix, e.g. \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are
-          \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\"."
+      - description: |-
+          StormCooldownDuration defines the duration of an optional cooldown phase after a storm.
+          A "storm" happens when the number of (un)healthy nodes exceeds the threshold defined by minHealthy or maxUnhealthy.
+          Sometimes this is triggered by a single root cause.
+          When that cause is fixed, there is a risk to remediate healthy nodes:
+          the async nature of node status updates would result in only some nodes being detected as healthy by NHC in a first round of updates,
+          which results in minHealthy or maxUnhealthy threshold being fulfilled (the storm ends) and triggering unneeded new remediation.
+          The storm cooldown phase will prevent creation of new remediation for the given duration by giving NHC some time to get the latest node statuses.
+
+
+          Expects a string of decimal numbers each with optional fraction and a unit
+          suffix, e.g. "300ms", "1.5h" or "2h45m". Valid time units are "ns", "us"
+          (or "µs"), "ms", "s", "m", "h".
         displayName: Storm Cooldown Duration
         path: stormCooldownDuration
-      - description: UnhealthyConditions contains a list of the conditions that determine
-          whether a node is considered unhealthy.  The conditions are combined in
-          a logical OR, i.e. if any of the conditions is met, the node is unhealthy.
+      - description: |-
+          UnhealthyConditions contains a list of the conditions that determine
+          whether a node is considered unhealthy.  The conditions are combined in a
+          logical OR, i.e. if any of the conditions is met, the node is unhealthy.
         displayName: Unhealthy Conditions
         path: unhealthyConditions
-      - description: "Duration of the condition specified when a node is considered
-          unhealthy. \n Expects a string of decimal numbers each with optional fraction
-          and a unit suffix, eg \"300ms\", \"1.5h\" or \"2h45m\". Valid time units
-          are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\"."
+      - description: |-
+          Duration of the condition specified when a node is considered unhealthy.
+
+
+          Expects a string of decimal numbers each with optional
+          fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
+          Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
         displayName: Duration
         path: unhealthyConditions[0].duration
-      - description: The condition status in the node's status to watch for. Typically
-          False, True or Unknown.
+      - description: |-
+          The condition status in the node's status to watch for.
+          Typically False, True or Unknown.
         displayName: Status
         path: unhealthyConditions[0].status
       - description: The condition type in the node's status to watch for.
         displayName: Type
         path: unhealthyConditions[0].type
       statusDescriptors:
-      - description: 'Represents the observations of a NodeHealthCheck''s current
-          state. Known .status.conditions.type are: "Disabled"'
+      - description: |-
+          Represents the observations of a NodeHealthCheck's current state.
+          Known .status.conditions.type are: "Disabled"
         displayName: Conditions
         path: conditions
         x-descriptors:
@@ -140,8 +170,9 @@ spec:
       - description: HealthyNodes specified the number of healthy nodes observed
         displayName: Healthy Nodes
         path: healthyNodes
-      - description: InFlightRemediations records the timestamp when remediation triggered
-          per node. Deprecated in favour of UnhealthyNodes.
+      - description: |-
+          InFlightRemediations records the timestamp when remediation triggered per node.
+          Deprecated in favour of UnhealthyNodes.
         displayName: In Flight Remediations
         path: inFlightRemediations
       - description: LastUpdateTime is the last time the status was updated.
@@ -151,10 +182,12 @@ spec:
           the NHC spec.selector
         displayName: Observed Nodes
         path: observedNodes
-      - description: Phase represents the current phase of this Config. Known phases
-          are Disabled, Paused, Remediating and Enabled, based on:\n - the status
-          of the Disabled condition\n - the value of PauseRequests\n - the value of
-          InFlightRemediations
+      - description: |-
+          Phase represents the current phase of this Config.
+          Known phases are Disabled, Paused, Remediating and Enabled, based on:\n
+          - the status of the Disabled condition\n
+          - the value of PauseRequests\n
+          - the value of InFlightRemediations
         displayName: Phase
         path: phase
         x-descriptors:
@@ -167,11 +200,10 @@ spec:
       - description: UnhealthyNodes tracks currently unhealthy nodes and their remediations.
         displayName: Unhealthy Nodes
         path: unhealthyNodes
-      - description: ConditionsHealthyTimestamp is RFC 3339 date and time at which
-          the unhealthy conditions didn't match anymore. The remediation CR will be
-          deleted at that time, but the node will still be tracked as unhealthy until
-          all remediation CRs are actually deleted, when remediators finished cleanup
-          and removed their finalizers.
+      - description: |-
+          ConditionsHealthyTimestamp is RFC 3339 date and time at which the unhealthy conditions didn't match anymore.
+          The remediation CR will be deleted at that time, but the node will still be tracked as unhealthy until all
+          remediation CRs are actually deleted, when remediators finished cleanup and removed their finalizers.
         displayName: Conditions Healthy Timestamp
         path: unhealthyNodes[0].conditionsHealthyTimestamp
       - description: HealthyDelayed notes whether a node should be considered healthy,
@@ -194,8 +226,9 @@ spec:
           same kind
         displayName: Template Name
         path: unhealthyNodes[0].remediations[0].templateName
-      - description: TimedOut is the time when the remediation timed out. Applicable
-          for escalating remediations only.
+      - description: |-
+          TimedOut is the time when the remediation timed out.
+          Applicable for escalating remediations only.
         displayName: Timed Out
         path: unhealthyNodes[0].remediations[0].timedOut
       version: v1alpha1
