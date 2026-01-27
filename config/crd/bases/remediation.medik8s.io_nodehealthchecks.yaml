@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.3
+    controller-gen.kubebuilder.io/version: v0.20.0
   name: nodehealthchecks.remediation.medik8s.io
 spec:
   group: remediation.medik8s.io
@@ -271,6 +271,21 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              stormCooldownDuration:
+                description: |-
+                  StormCooldownDuration defines the duration of an optional cooldown phase after a storm.
+                  A "storm" happens when the number of (un)healthy nodes exceeds the threshold defined by minHealthy or maxUnhealthy.
+                  Sometimes this is triggered by a single root cause.
+                  When that cause is fixed, there is a risk to remediate healthy nodes:
+                  the async nature of node status updates would result in only some nodes being detected as healthy by NHC in a first round of updates,
+                  which results in minHealthy or maxUnhealthy threshold being fulfilled (the storm ends) and triggering unneeded new remediation.
+                  The storm cooldown phase will prevent creation of new remediation for the given duration by giving NHC some time to get the latest node statuses.
+
+                  Expects a string of decimal numbers each with optional fraction and a unit
+                  suffix, e.g. "300ms", "1.5h" or "2h45m". Valid time units are "ns", "us"
+                  (or "µs"), "ms", "s", "m", "h".
+                pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                type: string
               unhealthyConditions:
                 default:
                 - duration: 300s
