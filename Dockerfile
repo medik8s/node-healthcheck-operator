@@ -11,10 +11,10 @@ COPY go.sum go.sum
 
 RUN \
     # get Go version from mod file
-    export GO_VERSION=$(grep -oE "go [[:digit:]]\.[[:digit:]][[:digit:]]" go.mod | awk '{print $2}') && \
+    export GO_VERSION=$(grep -oE "toolchain go[[:digit:]]\.[[:digit:]]+\.[[:digit:]]" go.mod | awk '{print $2}') && \
     echo ${GO_VERSION} && \
     # find filename for latest z version from Go download page
-    export GO_FILENAME=$(curl -sL 'https://go.dev/dl/?mode=json&include=all' | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].files[] | select(.os == \"linux\" and .arch == \"amd64\") | .filename") && \
+    export GO_FILENAME=$(curl -sL 'https://go.dev/dl/?mode=json&include=all' | jq -r "[.[] | select(.version == \"${GO_VERSION}\")][0].files[] | select(.os == \"linux\" and .arch == \"amd64\") | .filename") && \
     echo ${GO_FILENAME} && \
     # download and unpack
     curl -sL -o go.tar.gz "https://golang.org/dl/${GO_FILENAME}" && \

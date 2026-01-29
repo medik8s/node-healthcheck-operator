@@ -41,7 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -174,15 +174,15 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}()
 
 	// set counters to zero for disabled NHC
-	nhc.Status.ObservedNodes = pointer.Int(0)
-	nhc.Status.HealthyNodes = pointer.Int(0)
+	nhc.Status.ObservedNodes = ptr.To(0)
+	nhc.Status.HealthyNodes = ptr.To(0)
 	//clear deprecated field before it's removed from the API
 	nhc.Status.InFlightRemediations = nil
 
 	// check if we need to disable NHC because of existing MHCs
 	if disable := r.MHCChecker.NeedDisableNHC(); disable {
 		// update status if needed
-		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledMHC) {
+		if !utils.IsConditionTrueWithReason(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, remediationv1alpha1.ConditionReasonDisabledMHC) {
 			log.Info("disabling NHC in order to avoid conflict with custom MHCs configured in the cluster")
 			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
 				Type:    remediationv1alpha1.ConditionTypeDisabled,
@@ -201,7 +201,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Error(err, "failed to validate template")
 		return result, err
 	} else if !valid {
-		if !utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, reason) {
+		if !utils.IsConditionTrueWithReason(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeDisabled, reason) {
 			log.Info("disabling NHC", "reason", reason, "message", message)
 			meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
 				Type:    remediationv1alpha1.ConditionTypeDisabled,
@@ -315,7 +315,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	nhc.Status.ObservedNodes = pointer.Int(len(selectedNodes))
+	nhc.Status.ObservedNodes = ptr.To(len(selectedNodes))
 	nhc.Status.HealthyNodes = &healthyCount
 
 	// log currently unhealthy nodes with only soon unhealthy conditions left
@@ -334,13 +334,26 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// check if we have enough healthy nodes
 	skipRemediation := false
-	if minHealthy, err := getMinHealthy(nhc, len(selectedNodes)); err != nil {
+	minHealthy, err := getMinHealthy(nhc, len(selectedNodes))
+	if err != nil {
 		log.Error(err, "failed to calculate min healthy allowed nodes",
 			"minHealthy", nhc.Spec.MinHealthy, "maxUnhealthy", nhc.Spec.MaxUnhealthy, "observedNodes", nhc.Status.ObservedNodes)
 		return result, err
 	} else if *nhc.Status.HealthyNodes < minHealthy {
 		msg := fmt.Sprintf("Skipped remediation because the number of healthy nodes selected by the selector is %d and should equal or exceed %d", *nhc.Status.HealthyNodes, minHealthy)
 		log.Info(msg)
+		commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
+		skipRemediation = true
+	}
+
+	// check if we have enough healthy nodes and manage storm recovery
+	stormRecoveryActive, requeueAfter := r.evaluateStormRecovery(nhc, skipRemediation)
+	updateRequeueAfter(&result, requeueAfter)
+
+	// skipping remediation due to active storm
+	if stormRecoveryActive && !skipRemediation {
+		msg := fmt.Sprint("Storm recovery active: skipping creation of new remediations")
+		r.Log.Info(msg)
 		commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
 		skipRemediation = true
 	}
@@ -443,7 +456,7 @@ func (r *NodeHealthCheckReconciler) matchesUnhealthyConditions(nhc *remediationv
 				// unhealthy condition duration not expired yet, node is healthy. Requeue when duration expires
 				thisExpiresAfter := n.LastTransitionTime.Add(c.Duration.Duration).Sub(now)
 				r.Log.Info("Node is going to match unhealthy condition", "node", node.GetName(), "condition type", c.Type, "condition status", c.Status, "duration left", thisExpiresAfter)
-				expiresAfter = utils.MinRequeueDuration(expiresAfter, pointer.Duration(thisExpiresAfter+1*time.Second))
+				expiresAfter = utils.MinRequeueDuration(expiresAfter, ptr.To(thisExpiresAfter+1*time.Second))
 			}
 		}
 	}
@@ -526,7 +539,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		} else if !isAllowed {
 			log.Info("skipping remediation for preventing control plane / etcd quorum loss, going to retry in a minute", "node", node.GetName())
 			commonevents.WarningEventf(r.Recorder, nhc, utils.EventReasonRemediationSkipped, "Skipping remediation of %s for preventing control plane / etcd quorum loss, going to retry in a minute", node.GetName())
-			return pointer.Duration(1 * time.Minute), nil
+			return ptr.To(1 * time.Minute), nil
 		}
 	}
 	// generate remediation CR
@@ -609,7 +622,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 		var requeueIn *time.Duration
 		if timeout != nil {
 			// come back when timeout expires
-			requeueIn = pointer.Duration(*timeout + 1*time.Second)
+			requeueIn = ptr.To(*timeout + 1*time.Second)
 		}
 		return utils.MinRequeueDuration(leaseRequeueIn, requeueIn), nil
 	}
@@ -643,7 +656,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 
 	if !timedOut && !failed {
 		// not timed out yet, come back when we do so
-		return utils.MinRequeueDuration(leaseRequeueIn, pointer.Duration(timeoutAt.Sub(now.Time))), nil
+		return utils.MinRequeueDuration(leaseRequeueIn, ptr.To(timeoutAt.Sub(now.Time))), nil
 	}
 
 	// handle timeout and failure
@@ -665,7 +678,7 @@ func (r *NodeHealthCheckReconciler) remediate(ctx context.Context, node *v1.Node
 	startedRemediation.TimedOut = &now
 
 	// try next remediation asap
-	return pointer.Duration(1 * time.Second), nil
+	return ptr.To(1 * time.Second), nil
 }
 
 func (r *NodeHealthCheckReconciler) addTimeOutAnnotation(rm resources.Manager, remediationCR *unstructured.Unstructured, now metav1.Time) error {
@@ -908,4 +921,130 @@ func getMinHealthy(nhc *remediationv1alpha1.NodeHealthCheck, total int) (int, er
 		return total - maxUnhealthy, err
 	}
 	return 0, fmt.Errorf("one of minHealthy and maxUnhealthy should be specified")
+}
+
+// evaluateStormRecovery updates the state of the storm recover (active or not) and returns it current state
+func (r *NodeHealthCheckReconciler) evaluateStormRecovery(nhc *remediationv1alpha1.NodeHealthCheck, isMinHealthyTriggered bool) (bool, *time.Duration) {
+	if nhc.Spec.StormCooldownDuration == nil {
+		return false, nil
+	}
+	isStormActive := utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeStormActive)
+
+	if !isMinHealthyTriggered && !isStormActive {
+		// no active storm or cooldown, nothing to do
+		return false, nil
+	}
+
+	// activate storm if needed
+	if activated := r.activateStorm(isMinHealthyTriggered, isStormActive, nhc); activated {
+		return true, nil
+	}
+
+	if isMinHealthyTriggered {
+		// ongoing storm, nothing to do
+		return true, nil
+	}
+
+	// storm ended, start cooldown if not done yet
+	if cooldownStarted, requeue := r.startCooldown(nhc); cooldownStarted {
+		return true, requeue
+	}
+
+	// stop cooldown when delay expired
+	cooldownStopped, requeue := r.stopCooldown(nhc)
+	return !cooldownStopped, requeue
+}
+
+func (r *NodeHealthCheckReconciler) activateStorm(isMinHealthyTriggered, isStormActive bool, nhc *remediationv1alpha1.NodeHealthCheck) bool {
+	if !isMinHealthyTriggered {
+		return false
+	}
+
+	// If storm threshold is triggered, clear any active cooldown
+	// This handles the case where a new storm interrupts an existing cooldown phase
+	meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+		Type:    remediationv1alpha1.ConditionTypeStormCooldownActive,
+		Status:  metav1.ConditionFalse,
+		Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
+		Message: "Cooldown cleared - storm threshold triggered",
+	})
+
+	if isStormActive {
+		return false
+	}
+
+	// start storm mode
+	meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+		Type:    remediationv1alpha1.ConditionTypeStormActive,
+		Status:  metav1.ConditionTrue,
+		Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
+		Message: "Storm mode is activated - preventing any new remediation until the storm is over and cooldown duration expired",
+	})
+	r.Log.Info("Storm recovery mode activated", "nhc", nhc.Name)
+	commonevents.WarningEvent(r.Recorder, nhc, "StormRecoveryStarted", "Storm recovery mode activated - delaying remediation until threshold is reached")
+	return true
+}
+
+func (r *NodeHealthCheckReconciler) startCooldown(nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration) {
+	// Check if cooldown already started (StormCooldownActive condition exists)
+	if utils.IsConditionTrue(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeStormCooldownActive) {
+		// Cooldown already started, calculate requeue time based on remaining delay
+		condition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeStormCooldownActive)
+		if condition != nil {
+			delay := nhc.Spec.StormCooldownDuration.Duration
+			elapsedTime := time.Since(condition.LastTransitionTime.Time)
+			if elapsedTime < delay {
+				// Delay hasn't expired yet, requeue when it will
+				return false, ptr.To(delay - elapsedTime + time.Second)
+			}
+		}
+		// Delay already expired, let stopCooldown handle it
+		return false, nil
+	}
+	// Set StormCooldownActive condition - LastTransitionTime will track when delay started
+	meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+		Type:    remediationv1alpha1.ConditionTypeStormCooldownActive,
+		Status:  metav1.ConditionTrue,
+		Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
+		Message: "Storm cooldown delay started - waiting before resuming normal remediation",
+	})
+	r.Log.Info("The cluster regained health after the storm, a cooldown period now begins as a safety measure before normal operations resume.", "nhc", nhc.Name)
+	commonevents.WarningEvent(r.Recorder, nhc, "StormRecoveryCooldownStarted", "Storm recovery mode will exit after cooldown delay")
+	// requeue when delay expired
+	return true, ptr.To(nhc.Spec.StormCooldownDuration.Duration + time.Second)
+}
+
+func (r *NodeHealthCheckReconciler) stopCooldown(nhc *remediationv1alpha1.NodeHealthCheck) (bool, *time.Duration) {
+	// Get StormCooldownActive condition to check delay expiration
+	condition := meta.FindStatusCondition(nhc.Status.Conditions, remediationv1alpha1.ConditionTypeStormCooldownActive)
+	if condition == nil {
+		// Not in cooldown phase, nothing to stop
+		return false, nil
+	}
+
+	// check for cooldown expiration using LastTransitionTime
+	delay := nhc.Spec.StormCooldownDuration.Duration
+	elapsedTime := time.Since(condition.LastTransitionTime.Time)
+	if elapsedTime < delay {
+		// cooldown did not expire yet, requeue when it did
+		return false, ptr.To(delay - elapsedTime + time.Second)
+	}
+
+	// delay expired, end cooldown
+	// Clear both StormActive and StormCooldownActive conditions
+	meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+		Type:    remediationv1alpha1.ConditionTypeStormActive,
+		Status:  metav1.ConditionFalse,
+		Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
+		Message: "Storm mode is deactivated, remediation can occur normally",
+	})
+	meta.SetStatusCondition(&nhc.Status.Conditions, metav1.Condition{
+		Type:    remediationv1alpha1.ConditionTypeStormCooldownActive,
+		Status:  metav1.ConditionFalse,
+		Reason:  remediationv1alpha1.ConditionReasonStormThresholdChange,
+		Message: "Storm cooldown completed",
+	})
+	r.Log.Info("Storm recovery mode deactivated", "nhc", nhc.Name)
+	commonevents.NormalEvent(r.Recorder, nhc, "StormRecoveryEnded", "Storm recovery mode deactivated - normal remediation resumed")
+	return true, nil
 }

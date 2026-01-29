@@ -1656,6 +1656,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: matchType
       type:
         scalar: string
+      default: ""
     - name: maxLength
       type:
         scalar: numeric
@@ -2025,6 +2026,15 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: com.github.openshift.api.operator.v1.HealthCheck
           elementRelationship: atomic
+- name: com.github.openshift.api.operator.v1.IrreconcilableValidationOverrides
+  map:
+    fields:
+    - name: storage
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
 - name: com.github.openshift.api.operator.v1.KubeAPIServer
   map:
     fields:
@@ -2502,6 +2512,10 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+    - name: irreconcilableValidationOverrides
+      type:
+        namedType: com.github.openshift.api.operator.v1.IrreconcilableValidationOverrides
+      default: {}
     - name: logLevel
       type:
         scalar: string
