@@ -3,6 +3,13 @@ kind: Kustomization
 
 resources:
 - ca-configmap.yaml
+- monitor.yaml
+- metrics-client-ca-configmap.yaml  # Placeholder for client CA (controller syncs actual CA at runtime)
+- kube-rbac-proxy-config-secret.yaml
+- prometheus-k8s-role.yaml
+- prometheus-k8s-rolebinding.yaml
+- configmap_role.yaml
+- configmap_role_binding.yaml
 
 components:
 - ../../patches/common

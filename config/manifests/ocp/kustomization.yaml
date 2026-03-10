@@ -5,6 +5,7 @@ resources:
 - ../base
 - ../../optional/console-plugin
 - ../../optional/prometheus-ocp
+- ../../optional/kube-system-rbac
 
 patches:
   - path: clusterserviceversion_patch.yaml
