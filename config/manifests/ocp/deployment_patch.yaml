@@ -16,11 +16,26 @@ spec:
           - "--v=0"
           - "--tls-cert-file=/etc/tls/private/tls.crt"
           - "--tls-private-key-file=/etc/tls/private/tls.key"
+          - "--client-ca-file=/etc/tls/client/client-ca-file"
+          - "--config-file=/etc/kube-rbac-proxy/config.yaml"
+          - "--allow-paths=/metrics"
         volumeMounts:
           - name: tls-config
             mountPath: /etc/tls/private
+            readOnly: true
+          - name: metrics-client-ca
+            mountPath: /etc/tls/client
+            readOnly: true
+          - name: kube-rbac-proxy-config
+            mountPath: /etc/kube-rbac-proxy
             readOnly: true
       volumes:
         - name: tls-config
           secret:
             secretName: node-healthcheck-tls
+        - name: metrics-client-ca
+          configMap:
+            name: metrics-client-ca
+        - name: kube-rbac-proxy-config
+          secret:
+            secretName: kube-rbac-proxy-config
