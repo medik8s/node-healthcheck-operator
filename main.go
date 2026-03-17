@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -29,8 +30,11 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apiserver/pkg/server/dynamiccertificates"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -41,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -64,6 +69,10 @@ const (
 	WebhookCertDir  = "/apiserver.local.config/certificates"
 	WebhookCertName = "apiserver.crt"
 	WebhookKeyName  = "apiserver.key"
+
+	metricsTLSCertDir  = "/etc/tls/private"
+	metricsTLSCertName = "tls.crt"
+	metricsTLSKeyName  = "tls.key"
 )
 
 var (
@@ -119,6 +128,60 @@ func main() {
 		setupLog.Info("HTTP/2 for metrics and webhook server enabled")
 	}
 
+	// Build metrics options, conditionally enabling mTLS when TLS cert files
+	// are present (OpenShift service-serving-cert-signer provides them)
+	metricsOpts := server.Options{
+		BindAddress: metricsAddr,
+		TLSOpts:     tlsOpts,
+	}
+
+	var clientCAController *dynamiccertificates.ConfigMapCAController
+
+	metricsTLSCertFile := filepath.Join(metricsTLSCertDir, metricsTLSCertName)
+	metricsTLSKeyFile := filepath.Join(metricsTLSCertDir, metricsTLSKeyName)
+	if _, certErr := os.Stat(metricsTLSCertFile); certErr == nil {
+		if _, keyErr := os.Stat(metricsTLSKeyFile); keyErr == nil {
+			setupLog.Info("Configuring secure metrics with mTLS")
+
+			kubeClient, err := kubernetes.NewForConfig(ctrl.GetConfigOrDie())
+			if err != nil {
+				setupLog.Error(err, "unable to create kubernetes clientset")
+				os.Exit(1)
+			}
+
+			clientCAController, err = dynamiccertificates.NewDynamicCAFromConfigMapController(
+				"metrics-client-ca", metav1.NamespaceSystem,
+				"extension-apiserver-authentication", "client-ca-file", kubeClient)
+			if err != nil {
+				setupLog.Error(err, "unable to create client CA controller")
+				os.Exit(1)
+			}
+
+			metricsOpts.SecureServing = true
+			metricsOpts.CertDir = metricsTLSCertDir
+			metricsOpts.CertName = metricsTLSCertName
+			metricsOpts.KeyName = metricsTLSKeyName
+			metricsOpts.TLSOpts = append(tlsOpts, func(c *tls.Config) {
+				c.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+					// Clone the base TLS config so each connection inherits
+					// the shared settings (e.g. NextProtos, serving cert) and
+					// gets the latest client CA roots without data races.
+					cfg := c.Clone()
+					cfg.ClientAuth = tls.RequireAndVerifyClientCert
+					// mitigate CVE-2025-68121
+					// https://groups.google.com/g/golang-dev/c/Dfm195RPzyA
+					cfg.SessionTicketsDisabled = true
+					opts, ok := clientCAController.VerifyOptions()
+					if !ok {
+						return nil, fmt.Errorf("client CA bundle not yet available")
+					}
+					cfg.ClientCAs = opts.Roots
+					return cfg, nil
+				}
+			})
+		}
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Client: client.Options{
@@ -126,10 +189,7 @@ func main() {
 				DisableFor: []client.Object{&corev1.Namespace{}},
 			},
 		},
-		Metrics: server.Options{
-			BindAddress: metricsAddr,
-			TLSOpts:     tlsOpts,
-		},
+		Metrics:                metricsOpts,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
@@ -230,12 +290,35 @@ func main() {
 	// Register the MHC specific metrics
 	metrics.InitializeNodeHealthCheckMetrics()
 
+	// Start dynamic certificate controllers for mTLS metrics (if configured)
+	if clientCAController != nil {
+		if err := mgr.Add(&nonLeaderRunnable{fn: func(ctx context.Context) error {
+			clientCAController.Run(ctx, 1)
+			return nil
+		}}); err != nil {
+			setupLog.Error(err, "failed to add client CA controller to the manager")
+			os.Exit(1)
+		}
+	}
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
 }
+
+// nonLeaderRunnable wraps a function so it runs on all replicas,
+// not only the leader. This is needed for components like the metrics
+// client-CA controller that must be available before leader election.
+type nonLeaderRunnable struct {
+	fn func(ctx context.Context) error
+}
+
+func (r *nonLeaderRunnable) Start(ctx context.Context) error { return r.fn(ctx) }
+func (r *nonLeaderRunnable) NeedLeaderElection() bool        { return false }
+
+var _ manager.LeaderElectionRunnable = &nonLeaderRunnable{}
 
 func getWebhookServer(tlsOpts []func(*tls.Config), log logr.Logger) webhook.Server {
 
