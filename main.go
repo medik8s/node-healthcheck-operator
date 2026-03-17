@@ -54,10 +54,8 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/featuregates"
 	"github.com/medik8s/node-healthcheck-operator/controllers/initializer"
-	"github.com/medik8s/node-healthcheck-operator/controllers/metricsclientca"
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
-	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
@@ -212,23 +210,6 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
-
-	// Set up the MetricsClientCA controller to sync the CA for Platform Prometheus mTLS
-	if caps.IsOnOpenshift {
-		operatorNamespace, err := utils.GetDeploymentNamespace()
-		if err != nil {
-			setupLog.Error(err, "unable to get operator namespace for MetricsClientCA controller")
-			os.Exit(1)
-		}
-		if err := (&metricsclientca.MetricsClientCAReconciler{
-			Client:            mgr.GetClient(),
-			Log:               ctrl.Log.WithName("controllers").WithName("MetricsClientCA"),
-			OperatorNamespace: operatorNamespace,
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "MetricsClientCA")
-			os.Exit(1)
-		}
-	}
 
 	// Do some initialization
 	initializer := initializer.New(mgr, caps, ctrl.Log.WithName("Initializer"))

@@ -8,34 +8,22 @@ spec:
     spec:
       containers:
       - name: kube-rbac-proxy
+        $patch: delete
+      - name: manager
         args:
-          - "--secure-listen-address=0.0.0.0:8443"
-          - "--http2-disable"
-          - "--upstream=http://127.0.0.1:8080/"
-          - "--logtostderr=true"
-          - "--v=0"
-          - "--tls-cert-file=/etc/tls/private/tls.crt"
-          - "--tls-private-key-file=/etc/tls/private/tls.key"
-          - "--client-ca-file=/etc/tls/client/client-ca-file"
-          - "--config-file=/etc/kube-rbac-proxy/config.yaml"
-          - "--allow-paths=/metrics"
+        - "--health-probe-bind-address=:8081"
+        - "--metrics-bind-address=0.0.0.0:8443"
+        - "--leader-elect"
+        - "--enable-http2=false"
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
         volumeMounts:
-          - name: tls-config
-            mountPath: /etc/tls/private
-            readOnly: true
-          - name: metrics-client-ca
-            mountPath: /etc/tls/client
-            readOnly: true
-          - name: kube-rbac-proxy-config
-            mountPath: /etc/kube-rbac-proxy
-            readOnly: true
-      volumes:
         - name: tls-config
-          secret:
-            secretName: node-healthcheck-tls
-        - name: metrics-client-ca
-          configMap:
-            name: metrics-client-ca
-        - name: kube-rbac-proxy-config
-          secret:
-            secretName: kube-rbac-proxy-config
+          mountPath: /etc/tls/private
+          readOnly: true
+      volumes:
+      - name: tls-config
+        secret:
+          secretName: node-healthcheck-tls
