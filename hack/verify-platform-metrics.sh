@@ -52,10 +52,10 @@ main() {
     # Run all checks
     check_namespace_label
     check_servicemonitor
-    check_secrets_and_configmaps
+    check_tls_secret
     check_rbac
     check_pods
-    check_kube_rbac_proxy_logs
+    check_manager_logs
     check_prometheus_target
     check_metrics_available
 
@@ -188,58 +188,8 @@ check_servicemonitor() {
     fi
 }
 
-check_secrets_and_configmaps() {
-    log_section "Checking Secrets and ConfigMaps"
-
-    # Check kube-rbac-proxy config secret
-    local rbac_secret="node-healthcheck-kube-rbac-proxy-config"
-    if resource_exists secret "$rbac_secret"; then
-        log_pass "Secret '$rbac_secret' exists"
-
-        # Verify it contains config.yaml
-        local config_data
-        config_data=$(oc get secret "$rbac_secret" -n "$NAMESPACE" -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "")
-        if [[ -n "$config_data" ]]; then
-            log_pass "Secret contains 'config.yaml' key"
-        else
-            log_fail "Secret missing 'config.yaml' key"
-        fi
-    else
-        log_fail "Secret '$rbac_secret' not found"
-    fi
-
-    # Check metrics-client-ca ConfigMap
-    local ca_cm="node-healthcheck-metrics-client-ca"
-    if resource_exists configmap "$ca_cm"; then
-        log_pass "ConfigMap '$ca_cm' exists"
-
-        # Check if CA is real (not placeholder)
-        local ca_data
-        ca_data=$(get_field configmap "$ca_cm" '{.data.client-ca-file}')
-
-        if echo "$ca_data" | grep -q "BEGIN CERTIFICATE"; then
-            log_pass "ConfigMap contains valid certificate data"
-
-            # Check if it's the real cluster CA by decoding and checking subject/issuer
-            local cert_subject
-            cert_subject=$(echo "$ca_data" | openssl x509 -noout -subject 2>/dev/null || echo "")
-
-            if echo "$cert_subject" | grep -qi "placeholder"; then
-                log_warn "ConfigMap contains placeholder certificate (controller may not have synced yet)"
-                log_info "  Subject: $cert_subject"
-            elif echo "$cert_subject" | grep -qi "openshift\|kube"; then
-                log_pass "Certificate is the real cluster CA (subject: $cert_subject)"
-            elif [[ -n "$cert_subject" ]]; then
-                log_warn "Certificate subject doesn't match expected pattern: $cert_subject"
-            else
-                log_warn "Could not decode certificate to verify (openssl may not be available)"
-            fi
-        else
-            log_fail "ConfigMap does not contain valid certificate data"
-        fi
-    else
-        log_fail "ConfigMap '$ca_cm' not found"
-    fi
+check_tls_secret() {
+    log_section "Checking TLS Configuration"
 
     # Check TLS secret (service-ca generated)
     local tls_secret="node-healthcheck-tls"
@@ -294,6 +244,17 @@ check_rbac() {
     else
         log_fail "RoleBinding '$role_name' not found"
     fi
+
+    # Check that the operator SA can read the client CA from kube-system.
+    # This permission may come from different sources depending on the deployment method:
+    # - OLM: CSV permissions are promoted to a ClusterRole by OLM
+    # - make deploy: explicit Role in kube-system (config/optional/kube-system-rbac/)
+    local sa="system:serviceaccount:${NAMESPACE}:node-healthcheck-controller-manager"
+    if oc auth can-i get configmaps/extension-apiserver-authentication -n kube-system --as="$sa" &>/dev/null; then
+        log_pass "Operator SA can read extension-apiserver-authentication in kube-system"
+    else
+        log_fail "Operator SA cannot read extension-apiserver-authentication in kube-system (needed for client CA)"
+    fi
 }
 
 check_pods() {
@@ -320,56 +281,67 @@ check_pods() {
         log_fail "Not all replicas ready: ${ready:-0}/${desired:-0}"
     fi
 
-    # Check for recent restarts on kube-rbac-proxy
-    local pods
-    pods=$(oc get pods -n "$NAMESPACE" -l app.kubernetes.io/name=node-healthcheck-operator -o name 2>/dev/null)
+    # Verify manager container has port 8443
+    local ports
+    ports=$(get_field deployment "$deployment" '{.spec.template.spec.containers[?(@.name=="manager")].ports[*].containerPort}')
+    if echo "$ports" | grep -q "8443"; then
+        log_pass "Manager container exposes port 8443"
+    else
+        log_fail "Manager container does not expose port 8443"
+    fi
 
-    for pod in $pods; do
-        local restarts
-        restarts=$(oc get "$pod" -n "$NAMESPACE" -o jsonpath='{.status.containerStatuses[?(@.name=="kube-rbac-proxy")].restartCount}' 2>/dev/null || echo "0")
+    # Verify manager container has TLS volume mount
+    local volume_mounts
+    volume_mounts=$(get_field deployment "$deployment" '{.spec.template.spec.containers[?(@.name=="manager")].volumeMounts[*].mountPath}')
+    if echo "$volume_mounts" | grep -q "/etc/tls/private"; then
+        log_pass "Manager container has TLS volume mount at /etc/tls/private"
+    else
+        log_fail "Manager container missing TLS volume mount at /etc/tls/private"
+    fi
 
-        if [[ "$restarts" -eq 0 ]]; then
-            log_pass "$pod: kube-rbac-proxy has 0 restarts"
-        elif [[ "$restarts" -eq 1 ]]; then
-            log_warn "$pod: kube-rbac-proxy has 1 restart (expected during initial sync)"
-        else
-            log_warn "$pod: kube-rbac-proxy has $restarts restarts (investigate if recent)"
-        fi
-    done
+    # Verify only one container (no kube-rbac-proxy sidecar)
+    local containers
+    containers=$(get_field deployment "$deployment" '{.spec.template.spec.containers[*].name}')
+    if echo "$containers" | grep -q "kube-rbac-proxy"; then
+        log_warn "kube-rbac-proxy sidecar still present (should have been removed)"
+    else
+        log_pass "No kube-rbac-proxy sidecar (manager serves mTLS directly)"
+    fi
 }
 
-check_kube_rbac_proxy_logs() {
-    log_section "Checking kube-rbac-proxy Logs"
+check_manager_logs() {
+    log_section "Checking Manager Logs"
 
-    # Get logs from kube-rbac-proxy container
+    # Get logs from manager container
     local logs
-    logs=$(oc logs -n "$NAMESPACE" deployment/node-healthcheck-controller-manager -c kube-rbac-proxy --tail=50 2>&1 || echo "ERROR_GETTING_LOGS")
+    logs=$(oc logs -n "$NAMESPACE" deployment/node-healthcheck-controller-manager -c manager --tail=50 2>&1 || echo "ERROR_GETTING_LOGS")
 
     if [[ "$logs" == "ERROR_GETTING_LOGS" ]]; then
-        log_fail "Could not retrieve kube-rbac-proxy logs"
+        log_fail "Could not retrieve manager logs"
         return 1
     fi
 
-    # Check for successful startup
-    if echo "$logs" | grep -q "Listening securely on"; then
-        log_pass "kube-rbac-proxy is listening securely"
+    # Check for mTLS setup message
+    if echo "$logs" | grep -q "Configuring secure metrics with mTLS"; then
+        log_pass "Manager configured secure metrics with mTLS"
     else
-        log_fail "kube-rbac-proxy may not be listening"
+        log_warn "mTLS configuration message not found in recent logs"
     fi
 
-    # Check for certificate errors (warning only - may be transient during startup)
-    if echo "$logs" | grep -qi "malformed certificate\|invalid certificate\|x509"; then
-        log_warn "Certificate errors detected in logs (may be transient during startup)"
+    # Check for certificate errors
+    if echo "$logs" | grep -qi "unable to create.*cert\|unable to initialize.*cert"; then
+        log_fail "Certificate setup errors detected in logs"
         log_info "  Recent error logs:"
-        echo "$logs" | grep -i "error\|x509" | tail -3 | sed 's/^/    /'
-        log_info "  If Prometheus target is UP, these errors can be ignored"
+        echo "$logs" | grep -i "unable to.*cert" | tail -3 | sed 's/^/    /'
     else
-        log_pass "No certificate errors in recent logs"
+        log_pass "No certificate setup errors in recent logs"
     fi
 
-    # Check for CA file loading
-    if echo "$logs" | grep -q "Starting controller.*client-ca"; then
-        log_pass "Client CA controller started successfully"
+    # Check for successful startup
+    if echo "$logs" | grep -q "starting manager"; then
+        log_pass "Manager started successfully"
+    else
+        log_warn "Manager startup message not found in recent logs"
     fi
 }
 
@@ -415,7 +387,7 @@ check_prometheus_target() {
     else
         log_fail "Prometheus target health: $health (job: $job_name)"
         local last_error
-        last_error=$(echo "$nhc_target" | jq -r '.lastError' 2>/dev/null || echo "")
+        last_error=$(echo "$nhc_targets" | jq -r '.[0].lastError' 2>/dev/null || echo "")
         [[ -n "$last_error" ]] && log_info "  Last error: $last_error"
     fi
 }
