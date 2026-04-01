@@ -1281,11 +1281,9 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(cr).To(BeNil())
 					}, time.Second*3, time.Millisecond*300).Should(Succeed())
 
-					// Get updated NHC
-					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-
 					// Check unhealthy was removed
 					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(BeZero())
 					}, time.Second*3, time.Millisecond*300).Should(Succeed())
 
@@ -1332,11 +1330,9 @@ var _ = Describe("Node Health Check CR", func() {
 						g.Expect(cr).To(BeNil())
 					}, time.Second*3, time.Millisecond*300).Should(Succeed())
 
-					// Get updated NHC
-					Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
-
 					// Check unhealthy was removed
 					Eventually(func(g Gomega) {
+						g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
 						g.Expect(len(underTest.Status.UnhealthyNodes)).To(BeZero())
 					}, time.Second*3, time.Millisecond*300).Should(Succeed())
 
