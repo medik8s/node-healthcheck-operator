@@ -1,10 +1,10 @@
 module github.com/medik8s/node-healthcheck-operator
 
 // min version, matches k8s 1.33.7
-go 1.24.11
+go 1.24.13
 
 // latest downstream version for security patches
-toolchain go1.25.3
+toolchain go1.25.7
 
 require (
 	github.com/go-logr/logr v1.4.3

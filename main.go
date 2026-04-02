@@ -168,9 +168,6 @@ func main() {
 					// gets the latest client CA roots without data races.
 					cfg := c.Clone()
 					cfg.ClientAuth = tls.RequireAndVerifyClientCert
-					// mitigate CVE-2025-68121
-					// https://groups.google.com/g/golang-dev/c/Dfm195RPzyA
-					cfg.SessionTicketsDisabled = true
 					opts, ok := clientCAController.VerifyOptions()
 					if !ok {
 						return nil, fmt.Errorf("client CA bundle not yet available")
