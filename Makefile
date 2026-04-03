@@ -157,7 +157,7 @@ test: test-no-verify ## Generate and format code, run tests, generate manifests 
 
 .PHONY: test-no-verify
 test-no-verify: vendor generate test-imports fmt vet envtest ## Generate and format code, and run tests
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... -coverprofile cover.out -v
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... ./metrics/... -coverprofile cover.out -v
 endif
 
 .PHONY: manager
@@ -196,7 +196,7 @@ manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
 
 .PHONY: fmt
 fmt: goimports ## Run go fmt against code (skip vendor)
-	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e
+	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e ./metrics
 
 .PHONY: vet
 vet: ## Run go vet against code

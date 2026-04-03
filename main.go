@@ -30,10 +30,8 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
@@ -62,6 +60,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
+	metricstls "github.com/medik8s/node-healthcheck-operator/metrics/tls"
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
 
@@ -135,48 +134,20 @@ func main() {
 		TLSOpts:     tlsOpts,
 	}
 
-	var clientCAController *dynamiccertificates.ConfigMapCAController
+	kubeClient, err := kubernetes.NewForConfig(ctrl.GetConfigOrDie())
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes clientset")
+		os.Exit(1)
+	}
 
-	metricsTLSCertFile := filepath.Join(metricsTLSCertDir, metricsTLSCertName)
-	metricsTLSKeyFile := filepath.Join(metricsTLSCertDir, metricsTLSKeyName)
-	if _, certErr := os.Stat(metricsTLSCertFile); certErr == nil {
-		if _, keyErr := os.Stat(metricsTLSKeyFile); keyErr == nil {
-			setupLog.Info("Configuring secure metrics with mTLS")
-
-			kubeClient, err := kubernetes.NewForConfig(ctrl.GetConfigOrDie())
-			if err != nil {
-				setupLog.Error(err, "unable to create kubernetes clientset")
-				os.Exit(1)
-			}
-
-			clientCAController, err = dynamiccertificates.NewDynamicCAFromConfigMapController(
-				"metrics-client-ca", metav1.NamespaceSystem,
-				"extension-apiserver-authentication", "client-ca-file", kubeClient)
-			if err != nil {
-				setupLog.Error(err, "unable to create client CA controller")
-				os.Exit(1)
-			}
-
-			metricsOpts.SecureServing = true
-			metricsOpts.CertDir = metricsTLSCertDir
-			metricsOpts.CertName = metricsTLSCertName
-			metricsOpts.KeyName = metricsTLSKeyName
-			metricsOpts.TLSOpts = append(tlsOpts, func(c *tls.Config) {
-				c.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
-					// Clone the base TLS config so each connection inherits
-					// the shared settings (e.g. NextProtos, serving cert) and
-					// gets the latest client CA roots without data races.
-					cfg := c.Clone()
-					cfg.ClientAuth = tls.RequireAndVerifyClientCert
-					opts, ok := clientCAController.VerifyOptions()
-					if !ok {
-						return nil, fmt.Errorf("client CA bundle not yet available")
-					}
-					cfg.ClientCAs = opts.Roots
-					return cfg, nil
-				}
-			})
-		}
+	clientCAController, err := metricstls.ConfigureMTLS(
+		&metricsOpts, kubeClient,
+		metricsTLSCertDir, metricsTLSCertName, metricsTLSKeyName,
+		setupLog,
+	)
+	if err != nil {
+		setupLog.Error(err, "unable to configure metrics mTLS")
+		os.Exit(1)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
