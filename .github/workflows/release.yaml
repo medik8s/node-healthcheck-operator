@@ -45,7 +45,7 @@ jobs:
           echo "Lower skip range bound: ${SKIP_RANGE_LOWER}."
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -55,7 +55,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Log in to Quay.io
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
@@ -64,37 +64,36 @@ jobs:
       - name: Build and push versioned CSV and images
         run: VERSION=$VERSION PREVIOUS_VERSION=$PREVIOUS_VERSION SKIP_RANGE_LOWER=$SKIP_RANGE_LOWER make container-build-k8s container-push
 
+      - name: Compress bundle manifests
+        run: tar czf bundle.tar.gz bundle/
+
       - name: Create release with manifests
-        # https://github.com/marketplace/actions/github-release-create-update-and-upload-assets
-        uses: meeDamian/github-release@2.0
+        uses: softprops/action-gh-release@v2
         with:
-          tag: v${{ env.VERSION }}
+          tag_name: v${{ env.VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true
           body: |
             # Node HealthCheck Operator v${{ env.VERSION }}
-            
+
             ## Notable Changes
-            
+
             * TODO
 
             ## Release Artifacts
-            
+
             ### Images
 
             * Operator: quay.io/medik8s/node-healthcheck-operator:v${{ env.VERSION }}
             * Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:v${{ env.VERSION }}
-            
+
             ### Source code and OLM manifests
 
             Please find the source code and the OLM manifests in the `Assets` section below.
-
-          gzip: folders
-          files: >
-            Manifests:bundle/
+          files: bundle.tar.gz
   create_k8s_release_pr:
     if: inputs.operation == 'create_k8s_release_pr'
-    uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
+    uses: medik8s/.github/.github/workflows/release_community_bundle.yaml@main
     secrets: inherit
     with:
       version: ${{ inputs.version }}
@@ -103,7 +102,7 @@ jobs:
       make_targets: "bundle-k8s bundle-update"
   create_okd_release_pr:
     if: inputs.operation == 'create_okd_release_pr'
-    uses: medik8s/.github/.github/workflows/release_community_bundle_parametric.yaml@main
+    uses: medik8s/.github/.github/workflows/release_community_bundle.yaml@main
     secrets: inherit
     with:
       version: ${{ inputs.version }}
