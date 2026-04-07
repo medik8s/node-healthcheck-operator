@@ -63,8 +63,8 @@ func UpdateStatusNodeHealthy(nodeName string, nhc *remediationv1alpha1.NodeHealt
 				remediation := remediation
 				remediationResource := remediation.Resource
 				duration := time.Now().Sub(remediation.Started.Time)
-				metrics.ObserveNodeHealthCheckRemediationDeleted(remediationResource.Name, remediationResource.Namespace, remediationResource.Kind)
-				metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(remediationResource.Name, remediationResource.Namespace, remediationResource.Kind, duration)
+				metrics.ObserveNodeHealthCheckRemediationDeleted(nodeName, remediationResource.Namespace, remediationResource.Kind)
+				metrics.ObserveNodeHealthCheckUnhealthyNodeDuration(nodeName, remediationResource.Namespace, remediationResource.Kind, duration)
 			}
 			nhc.Status.UnhealthyNodes = append(nhc.Status.UnhealthyNodes[:i], nhc.Status.UnhealthyNodes[i+1:]...)
 			break
