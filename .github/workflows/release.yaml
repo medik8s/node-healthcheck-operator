@@ -105,6 +105,7 @@ jobs:
       skip_range_lower: ${{ inputs.skip_range_lower }}
       community: 'K8S'
       make_targets: "bundle-k8s bundle-update"
+      checkout_ref: ${{ inputs.checkout_ref }}
   create_okd_release_pr:
     if: inputs.operation == 'create_okd_release_pr'
     uses: medik8s/.github/.github/workflows/release_community_bundle.yaml@main
@@ -116,3 +117,4 @@ jobs:
       ocp_version: ${{ inputs.ocp_version }}
       community: 'OKD'
       make_targets: "bundle-okd"
+      checkout_ref: ${{ inputs.checkout_ref }}
