@@ -2,6 +2,10 @@ name: Release
 on:
   workflow_dispatch:
    inputs:
+     checkout_ref:
+       description: 'Override the ref to checkout (defaults to the triggering ref)'
+       required: false
+       default: ''
      operation:
        description: "The operation to perform."
        required: true
@@ -47,6 +51,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.checkout_ref || github.ref }}
           fetch-depth: 0
 
       - name: Set up Go
