@@ -39,10 +39,30 @@ when debugging issues, since many steps can potentially fail. See also our
 
 ### Remediation providers responsibility
 
-It is up to the remediation provider to delete the remediation CR in case the
-node is deleted, and a new one (with a different name) is reprovisioned.
-In that specific scenario the NHC controller can not detect a successful node
-remediation and delete the remediation CR itself.
+NHC automatically detects when a node has been deleted and cleans up the
+corresponding remediation CR. The remediation provider **should not** delete
+the remediation CR itself.
+
+However, if the remediator's remediation strategy involves **permanent node
+deletion** (e.g. Machine Deletion Remediation), it must signal this to NHC by
+setting a condition on the remediation CR:
+
+- Set a condition of type `PermanentNodeDeletionExpected` with status `True`.
+
+When this condition is present, NHC will wait until the remediator also sets the
+`Succeeded` condition to `True` before deleting the orphaned remediation CR. For
+remediators that do **not** set `PermanentNodeDeletionExpected`, NHC deletes the
+CR immediately after the node disappears.
+
+These condition type constants are available in the
+[medik8s/common](https://github.com/medik8s/common/blob/main/pkg/conditions/conditions.go)
+library:
+
+| Condition Type                  | Purpose                                                              |
+|---------------------------------|----------------------------------------------------------------------|
+| `Processing`                    | Signal that remediation has started / is in progress / has finished  |
+| `Succeeded`                     | Signal whether the remediation was successful or not                 |
+| `PermanentNodeDeletionExpected` | Signal that the unhealthy node will be permanently deleted           |
 
 ### Special cases
 
