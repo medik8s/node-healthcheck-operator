@@ -54,8 +54,10 @@ When this condition is present, NHC will wait until the remediator also sets the
 remediators that do **not** set `PermanentNodeDeletionExpected`, NHC deletes the
 CR immediately after the node disappears.
 
-These condition type constants are available in the
-[medik8s/common](https://github.com/medik8s/common/blob/main/pkg/conditions/conditions.go)
+Remediators can set the following conditions on the remediation CR to
+communicate remediation progress to NHC. The condition type constants are
+available in
+the [medik8s/common](https://github.com/medik8s/common/blob/main/pkg/conditions/conditions.go)
 library:
 
 | Condition Type                  | Purpose                                                              |
