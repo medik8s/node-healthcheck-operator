@@ -44,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -97,7 +98,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var enableHTTP2 bool
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
@@ -148,6 +149,14 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to configure metrics mTLS")
 		os.Exit(1)
+	}
+
+	// On vanilla K8s (no mTLS certs), use bearer-token authn/authz via
+	// controller-runtime's built-in FilterProvider.
+	if clientCAController == nil {
+		setupLog.Info("Using bearer-token authn/authz via controller-runtime")
+		metricsOpts.SecureServing = true
+		metricsOpts.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{

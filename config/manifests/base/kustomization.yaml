@@ -11,6 +11,3 @@ images:
 - name: controller
   newName: quay.io/medik8s/node-healthcheck-operator
   newTag: latest
-- name: kube-rbac-proxy
-  newName: quay.io/brancz/kube-rbac-proxy
-  newTag: v0.15.0
