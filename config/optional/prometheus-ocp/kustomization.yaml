@@ -3,6 +3,9 @@ kind: Kustomization
 
 resources:
 - ca-configmap.yaml
+- monitor.yaml
+- prometheus-k8s-role.yaml
+- prometheus-k8s-rolebinding.yaml
 
 components:
 - ../../patches/common

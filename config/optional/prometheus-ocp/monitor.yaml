@@ -5,24 +5,21 @@ kind: ServiceMonitor
 metadata:
   labels:
     app.kubernetes.io/component: controller-manager
-  name: node-healthcheck-controller-manager-metrics-monitor
+  name: controller-manager-metrics-monitor
   namespace: system
 spec:
+  scrapeClass: tls-client-certificate-auth
   endpoints:
-  - interval: 5s
+  - interval: 15s
     port: https
     scheme: https
-    authorization:
-      type: Bearer
-      credentials:
-        name: prometheus-user-workload-token
-        key: token
     tlsConfig:
       ca:
         configMap:
           name: node-healthcheck-ca-bundle
           key: service-ca.crt
-      serverName: node-healthcheck-controller-manager-metrics-service.system.svc
+      # Namespace is hardcoded - update manually if namespace changes
+      serverName: node-healthcheck-controller-manager-metrics-service.openshift-workload-availability.svc
   selector:
     matchLabels:
       app.kubernetes.io/component: controller-manager

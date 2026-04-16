@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -41,6 +43,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -57,6 +61,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/controllers/resources"
 	"github.com/medik8s/node-healthcheck-operator/metrics"
+	metricstls "github.com/medik8s/node-healthcheck-operator/metrics/tls"
 	"github.com/medik8s/node-healthcheck-operator/version"
 )
 
@@ -64,6 +69,10 @@ const (
 	WebhookCertDir  = "/apiserver.local.config/certificates"
 	WebhookCertName = "apiserver.crt"
 	WebhookKeyName  = "apiserver.key"
+
+	metricsTLSCertDir  = "/etc/tls/private"
+	metricsTLSCertName = "tls.crt"
+	metricsTLSKeyName  = "tls.key"
 )
 
 var (
@@ -89,7 +98,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var enableHTTP2 bool
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
@@ -119,6 +128,37 @@ func main() {
 		setupLog.Info("HTTP/2 for metrics and webhook server enabled")
 	}
 
+	// Build metrics options, conditionally enabling mTLS when TLS cert files
+	// are present (OpenShift service-serving-cert-signer provides them)
+	metricsOpts := server.Options{
+		BindAddress: metricsAddr,
+		TLSOpts:     tlsOpts,
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(ctrl.GetConfigOrDie())
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes clientset")
+		os.Exit(1)
+	}
+
+	clientCAController, err := metricstls.ConfigureMTLS(
+		&metricsOpts, kubeClient,
+		metricsTLSCertDir, metricsTLSCertName, metricsTLSKeyName,
+		setupLog,
+	)
+	if err != nil {
+		setupLog.Error(err, "unable to configure metrics mTLS")
+		os.Exit(1)
+	}
+
+	// On vanilla K8s (no mTLS certs), use bearer-token authn/authz via
+	// controller-runtime's built-in FilterProvider.
+	if clientCAController == nil {
+		setupLog.Info("Using bearer-token authn/authz via controller-runtime")
+		metricsOpts.SecureServing = true
+		metricsOpts.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Client: client.Options{
@@ -126,10 +166,7 @@ func main() {
 				DisableFor: []client.Object{&corev1.Namespace{}},
 			},
 		},
-		Metrics: server.Options{
-			BindAddress: metricsAddr,
-			TLSOpts:     tlsOpts,
-		},
+		Metrics:                metricsOpts,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "e1f13584.medik8s.io",
@@ -230,12 +267,35 @@ func main() {
 	// Register the MHC specific metrics
 	metrics.InitializeNodeHealthCheckMetrics()
 
+	// Start dynamic certificate controllers for mTLS metrics (if configured)
+	if clientCAController != nil {
+		if err := mgr.Add(&nonLeaderRunnable{fn: func(ctx context.Context) error {
+			clientCAController.Run(ctx, 1)
+			return nil
+		}}); err != nil {
+			setupLog.Error(err, "failed to add client CA controller to the manager")
+			os.Exit(1)
+		}
+	}
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
 }
+
+// nonLeaderRunnable wraps a function so it runs on all replicas,
+// not only the leader. This is needed for components like the metrics
+// client-CA controller that must be available before leader election.
+type nonLeaderRunnable struct {
+	fn func(ctx context.Context) error
+}
+
+func (r *nonLeaderRunnable) Start(ctx context.Context) error { return r.fn(ctx) }
+func (r *nonLeaderRunnable) NeedLeaderElection() bool        { return false }
+
+var _ manager.LeaderElectionRunnable = &nonLeaderRunnable{}
 
 func getWebhookServer(tlsOpts []func(*tls.Config), log logr.Logger) webhook.Server {
 

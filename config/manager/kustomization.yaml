@@ -9,8 +9,3 @@ components:
 
 generatorOptions:
   disableNameSuffixHash: true
-
-#configMapGenerator:
-#- files:
-#  - controller_manager_config.yaml
-#  name: manager-config

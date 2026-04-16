@@ -84,9 +84,6 @@ export IMAGE_TAG
 # Image URL of the console plugin
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
 
-# Image URL of the kube-rbac-proxy
-RBAC_PROXY_IMAGE ?= quay.io/brancz/kube-rbac-proxy:v0.15.0
-
 # Image URL of the must-gather image, used as related image in the downstream CSV
 MUST_GATHER_IMAGE ?= quay.io/medik8s/must-gather:latest
 
@@ -157,7 +154,7 @@ test: test-no-verify ## Generate and format code, run tests, generate manifests 
 
 .PHONY: test-no-verify
 test-no-verify: vendor generate test-imports fmt vet envtest ## Generate and format code, and run tests
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... -coverprofile cover.out -v
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... ./metrics/... -coverprofile cover.out -v
 endif
 
 .PHONY: manager
@@ -196,7 +193,7 @@ manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
 
 .PHONY: fmt
 fmt: goimports ## Run go fmt against code (skip vendor)
-	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e
+	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e ./metrics
 
 .PHONY: vet
 vet: ## Run go vet against code
@@ -311,7 +308,7 @@ endef
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests
 	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
-	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMAGE)
+	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
