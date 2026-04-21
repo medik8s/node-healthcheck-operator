@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,7 +11,9 @@ import (
 	commonannotations "github.com/medik8s/common/pkg/annotations"
 	"github.com/pkg/errors"
 
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +45,67 @@ func GetDeploymentNamespace() (string, error) {
 		return "", fmt.Errorf("%s must be set", deployNamespaceEnvVar)
 	}
 	return ns, nil
+}
+
+// GetPodName returns the name of the pod this operator is running in.
+func GetPodName() (string, error) {
+	var podNameEnvVar = "POD_NAME"
+
+	podName, found := os.LookupEnv(podNameEnvVar)
+	if !found {
+		return "", fmt.Errorf("%s must be set", podNameEnvVar)
+	}
+	if podName == "" {
+		return "", fmt.Errorf("%s is empty", podNameEnvVar)
+	}
+	return podName, nil
+}
+
+// GetOwningDeployment walks the ownership chain from the current pod to find its
+// controlling Deployment. It follows the chain: Pod → ReplicaSet → Deployment.
+// Returns a specific error for the step in the ownership chain that cannot be resolved.
+func GetOwningDeployment(ctx context.Context, cl client.Client, namespace, podName string) (*appsv1.Deployment, error) {
+	// Fetch the pod
+	pod := &v1.Pod{}
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: podName}, pod); err != nil {
+		return nil, fmt.Errorf("failed to get pod %s/%s: %w", namespace, podName, err)
+	}
+
+	// Get the pod's controller (should be a ReplicaSet)
+	podController := metav1.GetControllerOf(pod)
+	if podController == nil {
+		return nil, fmt.Errorf("pod %s/%s has no controller owner reference", namespace, podName)
+	}
+
+	// Verify it's a ReplicaSet
+	if podController.Kind != "ReplicaSet" {
+		return nil, fmt.Errorf("pod %s/%s is owned by %s (expected ReplicaSet)", namespace, podName, podController.Kind)
+	}
+
+	// Fetch the ReplicaSet
+	replicaSet := &appsv1.ReplicaSet{}
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: podController.Name}, replicaSet); err != nil {
+		return nil, fmt.Errorf("failed to get replicaset %s/%s: %w", namespace, podController.Name, err)
+	}
+
+	// Get the ReplicaSet's controller (should be a Deployment)
+	rsController := metav1.GetControllerOf(replicaSet)
+	if rsController == nil {
+		return nil, fmt.Errorf("replicaset %s/%s has no controller owner reference", namespace, podController.Name)
+	}
+
+	// Verify it's a Deployment
+	if rsController.Kind != "Deployment" {
+		return nil, fmt.Errorf("replicaset %s/%s is owned by %s (expected Deployment)", namespace, podController.Name, rsController.Kind)
+	}
+
+	// Fetch the Deployment
+	deployment := &appsv1.Deployment{}
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: rsController.Name}, deployment); err != nil {
+		return nil, fmt.Errorf("failed to get deployment %s/%s: %w", namespace, rsController.Name, err)
+	}
+
+	return deployment, nil
 }
 
 // GetLogWithNHC return a logger with NHC namespace and name

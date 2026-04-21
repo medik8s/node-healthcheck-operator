@@ -19,11 +19,14 @@ There is no kube-rbac-proxy sidecar — the manager handles TLS and client certi
 
 ## Components
 
-### ServiceMonitor (`monitor.yaml`)
+### ServiceMonitor (Created Programmatically)
 
-Configures Platform Prometheus to scrape metrics from the operator:
+The ServiceMonitor is created automatically at operator startup by the initializer (`controllers/servicemonitor/monitor.go`):
+- Dynamically constructs the `serverName` based on the actual deployment namespace (e.g., `node-healthcheck-controller-manager-metrics-service.openshift-workload-availability.svc`)
 - Uses `scrapeClass: tls-client-certificate-auth` for client certificate authentication
 - No bearer token required (unlike User Workload Prometheus)
+- Set as owner of the Deployment for automatic cleanup when the operator is uninstalled
+- Gracefully handles missing ServiceMonitor CRD (no-op on vanilla K8s clusters)
 
 ### CA Bundle ConfigMap (`ca-configmap.yaml`)
 
@@ -39,9 +42,12 @@ Role and RoleBinding in the `kube-system` namespace that allow the operator to r
 
 ## Automatic Setup
 
-When installing the operator via OLM, the namespace will be created with the `openshift.io/cluster-monitoring: "true"` label, which allows Platform Prometheus to discover ServiceMonitors in this namespace.
-
-All required resources (ConfigMaps, RBAC) are automatically created as part of the bundle.
+When installing the operator via OLM:
+1. The operator starts in the deployed namespace (suggested: `openshift-workload-availability`)
+2. At startup, the initializer automatically:
+   - Adds the `openshift.io/cluster-monitoring: "true"` label to the namespace (required for Prometheus discovery)
+   - Creates the ServiceMonitor resource with proper TLS configuration
+3. All required resources (ConfigMaps, RBAC) are automatically created as part of the bundle
 
 ## Manual Setup (Development)
 

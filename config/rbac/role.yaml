@@ -11,6 +11,7 @@ rules:
   verbs:
   - create
   - get
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -24,6 +25,7 @@ rules:
   - apps
   resources:
   - deployments
+  - replicasets
   verbs:
   - get
   - list
@@ -88,6 +90,15 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - get
+  - list
+  - update
 - apiGroups:
   - policy
   resources:
