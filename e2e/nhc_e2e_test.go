@@ -322,11 +322,13 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "deletion should be prevented")
 
 					By("ensuring minHealthy update succeeds when removing maxUnhealthy")
-					nhc = getNodeHealthCheck()
-					newValue := intstr.FromString("10%")
-					nhc.Spec.MinHealthy = &newValue
-					nhc.Spec.MaxUnhealthy = nil
-					Expect(k8sClient.Update(context.Background(), nhc)).To(Succeed(), "minHealthy update should be allowed")
+					Eventually(func(g Gomega) error {
+						nhc = getNodeHealthCheck()
+						newValue := intstr.FromString("10%")
+						nhc.Spec.MinHealthy = &newValue
+						nhc.Spec.MaxUnhealthy = nil
+						return k8sClient.Update(context.Background(), nhc)
+					}, "5s", "500ms").Should(Succeed(), "minHealthy update should be allowed")
 
 					By("waiting for healthy node condition")
 					utils.WaitForNodeHealthyCondition(k8sClient, nodeUnderTest, v1.ConditionTrue)
