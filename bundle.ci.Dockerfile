@@ -15,11 +15,10 @@ COPY config/ config/
 COPY bundle/ bundle/
 COPY hack/ hack/
 
-COPY main.go main.go
+COPY cmd/ cmd/
 COPY version/ version/
 COPY api/ api/
-COPY controllers/ controllers/
-COPY metrics/ metrics/
+COPY internal/ internal/
 COPY vendor/ vendor/
 
 # Generate OCP bundle without overriding the pullspec set by the CI
@@ -35,9 +34,9 @@ LABEL operators.operatorframework.io.bundle.metadata.v1=metadata/
 LABEL operators.operatorframework.io.bundle.package.v1=node-healthcheck-operator
 LABEL operators.operatorframework.io.bundle.channels.v1=stable
 LABEL operators.operatorframework.io.bundle.channel.default.v1=stable
-LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v1.33.0
+LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v1.42.2
 LABEL operators.operatorframework.io.metrics.mediatype.v1=metrics+v1
-LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
+LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v4
 
 # Labels for testing.
 LABEL operators.operatorframework.io.test.mediatype.v1=scorecard+v1

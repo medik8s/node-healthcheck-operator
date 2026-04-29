@@ -1,0 +1,226 @@
+package utils
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/go-logr/logr"
+	commonannotations "github.com/medik8s/common/pkg/annotations"
+	"github.com/pkg/errors"
+
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/tools/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/openshift/api/machine/v1beta1"
+
+	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils/annotations"
+)
+
+const (
+	machineAnnotation = "machine.openshift.io/machine"
+)
+
+var (
+	// DefaultRemediationDuration is used for node lease calculations for remediations without configured timeout
+	DefaultRemediationDuration = 10 * time.Minute
+)
+
+// GetDeploymentNamespace returns the Namespace this operator is deployed on.
+func GetDeploymentNamespace() (string, error) {
+	// deployNamespaceEnvVar is the constant for env variable DEPLOYMENT_NAMESPACE
+	// which specifies the Namespace to watch.
+	// An empty value means the operator is running with cluster scope.
+	var deployNamespaceEnvVar = "DEPLOYMENT_NAMESPACE"
+
+	ns, found := os.LookupEnv(deployNamespaceEnvVar)
+	if !found {
+		return "", fmt.Errorf("%s must be set", deployNamespaceEnvVar)
+	}
+	return ns, nil
+}
+
+// GetPodName returns the name of the pod this operator is running in.
+func GetPodName() (string, error) {
+	var podNameEnvVar = "POD_NAME"
+
+	podName, found := os.LookupEnv(podNameEnvVar)
+	if !found {
+		return "", fmt.Errorf("%s must be set", podNameEnvVar)
+	}
+	if podName == "" {
+		return "", fmt.Errorf("%s is empty", podNameEnvVar)
+	}
+	return podName, nil
+}
+
+// GetOwningDeployment walks the ownership chain from the current pod to find its
+// controlling Deployment. It follows the chain: Pod → ReplicaSet → Deployment.
+// Returns a specific error for the step in the ownership chain that cannot be resolved.
+func GetOwningDeployment(ctx context.Context, cl client.Client, namespace, podName string) (*appsv1.Deployment, error) {
+	// Fetch the pod
+	pod := &v1.Pod{}
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: podName}, pod); err != nil {
+		return nil, fmt.Errorf("failed to get pod %s/%s: %w", namespace, podName, err)
+	}
+
+	// Get the pod's controller (should be a ReplicaSet)
+	podController := metav1.GetControllerOf(pod)
+	if podController == nil {
+		return nil, fmt.Errorf("pod %s/%s has no controller owner reference", namespace, podName)
+	}
+
+	// Verify it's a ReplicaSet
+	if podController.Kind != "ReplicaSet" {
+		return nil, fmt.Errorf("pod %s/%s is owned by %s (expected ReplicaSet)", namespace, podName, podController.Kind)
+	}
+
+	// Fetch the ReplicaSet
+	replicaSet := &appsv1.ReplicaSet{}
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: podController.Name}, replicaSet); err != nil {
+		return nil, fmt.Errorf("failed to get replicaset %s/%s: %w", namespace, podController.Name, err)
+	}
+
+	// Get the ReplicaSet's controller (should be a Deployment)
+	rsController := metav1.GetControllerOf(replicaSet)
+	if rsController == nil {
+		return nil, fmt.Errorf("replicaset %s/%s has no controller owner reference", namespace, podController.Name)
+	}
+
+	// Verify it's a Deployment
+	if rsController.Kind != "Deployment" {
+		return nil, fmt.Errorf("replicaset %s/%s is owned by %s (expected Deployment)", namespace, podController.Name, rsController.Kind)
+	}
+
+	// Fetch the Deployment
+	deployment := &appsv1.Deployment{}
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: rsController.Name}, deployment); err != nil {
+		return nil, fmt.Errorf("failed to get deployment %s/%s: %w", namespace, rsController.Name, err)
+	}
+
+	return deployment, nil
+}
+
+// GetLogWithNHC return a logger with NHC namespace and name
+func GetLogWithNHC(log logr.Logger, nhc *v1alpha1.NodeHealthCheck) logr.Logger {
+	return log.WithValues("NodeHealthCheck name", nhc.Name)
+}
+
+// MinRequeueDuration returns the minimal valid requeue duration
+func MinRequeueDuration(old, new *time.Duration) *time.Duration {
+	if new == nil || *new == 0 {
+		return old
+	}
+	if old == nil || *old == 0 || *new < *old {
+		return new
+	}
+	return old
+}
+
+// GetAllRemediationTemplates returns a slice of all ObjectReferences used as RemedediationTemplate in the
+// given NodeHealthCheck
+func GetAllRemediationTemplates(healthCheck client.Object) []*v1.ObjectReference {
+	switch healthCheck.(type) {
+	case *v1alpha1.NodeHealthCheck:
+		nhc := healthCheck.(*v1alpha1.NodeHealthCheck)
+		if nhc.Spec.RemediationTemplate != nil {
+			return []*v1.ObjectReference{nhc.Spec.RemediationTemplate}
+		}
+		refs := make([]*v1.ObjectReference, len(nhc.Spec.EscalatingRemediations))
+		for i, rem := range nhc.Spec.EscalatingRemediations {
+			rem := rem
+			refs[i] = &rem.RemediationTemplate
+		}
+		return refs
+	case *v1beta1.MachineHealthCheck:
+		mhc := healthCheck.(*v1beta1.MachineHealthCheck)
+		return []*v1.ObjectReference{mhc.Spec.RemediationTemplate}
+	default:
+		return nil
+	}
+}
+
+// GetRemediationDuration returns the expected remediation duration for the given CR, and all previous used templates
+func GetRemediationDuration(nhc *v1alpha1.NodeHealthCheck, remediationCR *unstructured.Unstructured) (currentRemediationDuration, previousRemediationsDuration time.Duration) {
+
+	if len(nhc.Spec.EscalatingRemediations) == 0 {
+		return DefaultRemediationDuration, 0
+	}
+
+	// find current remediation
+	var currentRemediation *v1alpha1.EscalatingRemediation
+	for _, remediation := range nhc.Spec.EscalatingRemediations {
+		if strings.TrimSuffix(remediation.RemediationTemplate.Kind, "Template") == remediationCR.GetKind() {
+			currentRemediation = &remediation
+			break
+		}
+	}
+
+	if currentRemediation == nil {
+		// should not happen...
+		return DefaultRemediationDuration, 0
+	}
+
+	// get the timeout of the current escalating remediation for currentRemediationDuration
+	currentRemediationDuration = currentRemediation.Timeout.Duration
+
+	// get the sum of timeouts of all previous escalating remediations for previousRemediationsDuration
+	for _, remediation := range nhc.Spec.EscalatingRemediations {
+		if currentRemediation.Order > remediation.Order {
+			previousRemediationsDuration += remediation.Timeout.Duration
+		}
+	}
+
+	return
+}
+
+// MachineAnnotationNotFoundError indicates that in GetMachineNsName the machine annotation wasn't found on the given node
+var MachineAnnotationNotFoundError = errors.New("machine annotation not found")
+
+// GetMachineNamespaceName returns machine namespace and name of the given Node. Returns MachineAnnotationNotFoundError
+// in case the needed annotation doesn't exist on the given node
+func GetMachineNamespaceName(node *v1.Node) (namespace, name string, err error) {
+	// TODO this is Openshift / MachineAPI specific
+	// TODO add support for upstream CAPI machines
+	namespacedMachine, exists := node.GetAnnotations()[machineAnnotation]
+	if !exists {
+		return "", "", MachineAnnotationNotFoundError
+	}
+	namespace, name, err = cache.SplitMetaNamespaceKey(namespacedMachine)
+	if err != nil {
+		return "", "", errors.Wrapf(err, "failed to split machine annotation value into namespace + name: %v", namespacedMachine)
+	}
+	return
+}
+
+// GetNodeNameFromCR returns the node name from the given CR. If the CR has a nodeName annotation, it will return its
+// value, otherwise it will return the CR name.
+func GetNodeNameFromCR(cr unstructured.Unstructured) string {
+	ann := cr.GetAnnotations()
+	if ann == nil {
+		return cr.GetName()
+	}
+	if _, exists := ann[commonannotations.NodeNameAnnotation]; exists {
+		return ann[commonannotations.NodeNameAnnotation]
+	}
+	return cr.GetName()
+}
+
+// GetTemplateNameFromCR returns the template name from the given CR, if set.
+func GetTemplateNameFromCR(cr unstructured.Unstructured) string {
+	ann := cr.GetAnnotations()
+	if ann == nil {
+		return ""
+	}
+	if _, exists := ann[annotations.TemplateNameAnnotation]; exists {
+		return ann[annotations.TemplateNameAnnotation]
+	}
+	return ""
+}

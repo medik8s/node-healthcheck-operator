@@ -2,7 +2,6 @@
 SHELL := /bin/bash
 
 # https://pkg.go.dev/github.com/operator-framework/operator-sdk?tab=versions
-# heads up: 1.37 is the last version which supports go/v3!
 OPERATOR_SDK_VERSION = v1.37.0
 # https://pkg.go.dev/github.com/operator-framework/operator-registry?tab=versions
 OPM_VERSION = v1.61.0
@@ -154,7 +153,7 @@ test: test-no-verify ## Generate and format code, run tests, generate manifests 
 
 .PHONY: test-no-verify
 test-no-verify: vendor generate test-imports fmt vet envtest ## Generate and format code, and run tests
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... ./metrics/... -coverprofile cover.out -v
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./internal/controller/... ./api/... ./internal/metrics/... -coverprofile cover.out -v
 endif
 
 .PHONY: manager
@@ -163,7 +162,7 @@ manager: generate fmt vet ## Build manager binary
 
 .PHONY: run
 run: generate fmt vet manifests ## Run against the configured Kubernetes cluster in ~/.kube/config
-	go run ./main.go -leader-elect=false
+	go run ./cmd/main.go -leader-elect=false
 
 .PHONY: debug
 debug: manager
@@ -193,7 +192,7 @@ manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
 
 .PHONY: fmt
 fmt: goimports ## Run go fmt against code (skip vendor)
-	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e ./metrics
+	$(GOIMPORTS) -w ./cmd/main.go ./api ./internal ./e2e
 
 .PHONY: vet
 vet: ## Run go vet against code

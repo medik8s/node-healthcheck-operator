@@ -12,8 +12,8 @@ import (
 
 	consolev1 "github.com/openshift/api/console/v1"
 
-	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
+	"github.com/medik8s/node-healthcheck-operator/internal/controller/console"
 )
 
 var _ = Describe("e2e - console", Label("NHC"), func() {
