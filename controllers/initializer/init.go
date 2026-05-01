@@ -12,6 +12,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/controllers/cluster"
 	"github.com/medik8s/node-healthcheck-operator/controllers/console"
 	"github.com/medik8s/node-healthcheck-operator/controllers/rbac"
+	"github.com/medik8s/node-healthcheck-operator/controllers/servicemonitor"
 	"github.com/medik8s/node-healthcheck-operator/controllers/utils"
 )
 
@@ -19,6 +20,7 @@ import (
 // - setup role aggregation
 // - create default NHC
 // - create console plugin
+// - create ServiceMonitor for metrics scraping (OCP only)
 type initializer struct {
 	cl           client.Client
 	capabilities cluster.Capabilities
@@ -48,6 +50,10 @@ func (i *initializer) Start(ctx context.Context) error {
 
 	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.capabilities, ns, ctrl.Log.WithName("console-plugin")); err != nil {
 		return errors.Wrap(err, "failed to create or update the console plugin")
+	}
+
+	if err = servicemonitor.CreateOrUpdate(ctx, i.cl, i.capabilities, ns, ctrl.Log.WithName("servicemonitor")); err != nil {
+		return errors.Wrap(err, "failed to create or update service monitor")
 	}
 
 	return nil

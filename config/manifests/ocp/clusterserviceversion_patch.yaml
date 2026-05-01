@@ -5,8 +5,6 @@ metadata:
   name: dummy
   annotations:
     support: Red Hat
-    # Add cluster-monitoring label to namespace for Platform Prometheus discovery
-    operatorframework.io/suggested-namespace-template: '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"openshift-workload-availability","labels":{"openshift.io/cluster-monitoring":"true"},"annotations":{"openshift.io/node-selector":""}}}'
 spec:
   maintainers:
   - email: team-dragonfly@redhat.com
