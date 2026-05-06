@@ -890,7 +890,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 			machines: []*machinev1.Machine{
 				machine1,
 				{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "noMatch",
@@ -911,10 +910,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 						},
 						Labels: map[string]string{},
 					},
-					TypeMeta: metav1.TypeMeta{
-						Kind:       "Node",
-						APIVersion: "v1",
-					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{},
 					},
@@ -927,9 +922,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 							machineAnnotationKey: fmt.Sprintf("%s/%s", MachineNamespace, "match2"),
 						},
 						Labels: map[string]string{},
-					},
-					TypeMeta: metav1.TypeMeta{
-						Kind: "Node",
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{},
@@ -950,10 +942,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 							Labels: map[string]string{},
 							// the following line is to account for a change in the fake client, see https://github.com/kubernetes-sigs/controller-runtime/pull/1306
 							ResourceVersion: "999",
-						},
-						TypeMeta: metav1.TypeMeta{
-							Kind:       "Node",
-							APIVersion: "v1",
 						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{},
@@ -979,10 +967,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 						},
 						Labels: map[string]string{},
 					},
-					TypeMeta: metav1.TypeMeta{
-						Kind:       "Node",
-						APIVersion: "v1",
-					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{},
 					},
@@ -1020,10 +1004,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 							// the following line is to account for a change in the fake client, see https://github.com/kubernetes-sigs/controller-runtime/pull/1306
 							ResourceVersion: "999",
 						},
-						TypeMeta: metav1.TypeMeta{
-							Kind:       "Node",
-							APIVersion: "v1",
-						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{},
 						},
@@ -1043,10 +1023,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 							// the following line is to account for a change in the fake client, see https://github.com/kubernetes-sigs/controller-runtime/pull/1306
 							ResourceVersion: "999",
 						},
-						TypeMeta: metav1.TypeMeta{
-							Kind:       "Node",
-							APIVersion: "v1",
-						},
 						Status: corev1.NodeStatus{
 							Conditions: []corev1.NodeCondition{},
 						},
@@ -1059,7 +1035,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 			mhc:      mhc,
 			machines: []*machinev1.Machine{
 				{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "noNodeRef",
@@ -1076,7 +1051,6 @@ func TestGetTargetsFromMHC(t *testing.T) {
 				{
 					MHC: mhc,
 					Machine: &machinev1.Machine{
-						TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations:     make(map[string]string),
 							Name:            "noNodeRef",
@@ -1258,7 +1232,6 @@ func TestNeedsRemediation(t *testing.T) {
 			testCase: "unhealthy: nodeRef nil longer than timeout",
 			target: &resources.Target{
 				Machine: &machinev1.Machine{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "machine",
@@ -1311,7 +1284,6 @@ func TestNeedsRemediation(t *testing.T) {
 			testCase: "unhealthy: nodeRef nil, timeout disabled",
 			target: &resources.Target{
 				Machine: &machinev1.Machine{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "machine",
@@ -1364,7 +1336,6 @@ func TestNeedsRemediation(t *testing.T) {
 			testCase: "unhealthy: meet conditions criteria",
 			target: &resources.Target{
 				Machine: &machinev1.Machine{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "machine",
@@ -1440,7 +1411,6 @@ func TestNeedsRemediation(t *testing.T) {
 			testCase: "unhealthy: machine phase failed",
 			target: &resources.Target{
 				Machine: &machinev1.Machine{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "machine",
@@ -1493,7 +1463,6 @@ func TestNeedsRemediation(t *testing.T) {
 			testCase: "healthy: meet conditions criteria but timeout",
 			target: &resources.Target{
 				Machine: &machinev1.Machine{
-					TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations:     make(map[string]string),
 						Name:            "machine",
@@ -1695,7 +1664,6 @@ func TestHealthCheckTargets(t *testing.T) {
 			targets: []resources.Target{
 				{
 					Machine: &machinev1.Machine{
-						TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations:     make(map[string]string),
 							Name:            "machine",
@@ -1763,7 +1731,6 @@ func TestHealthCheckTargets(t *testing.T) {
 				},
 				{
 					Machine: &machinev1.Machine{
-						TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations:     make(map[string]string),
 							Name:            "machine",
@@ -1835,7 +1802,6 @@ func TestHealthCheckTargets(t *testing.T) {
 			needRemediationTargets: []resources.Target{
 				{
 					Machine: &machinev1.Machine{
-						TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations:     make(map[string]string),
 							Name:            "machine",
@@ -1910,7 +1876,6 @@ func TestHealthCheckTargets(t *testing.T) {
 			targets: []resources.Target{
 				{
 					Machine: &machinev1.Machine{
-						TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations:     make(map[string]string),
 							Name:            "machine",
@@ -1957,7 +1922,6 @@ func TestHealthCheckTargets(t *testing.T) {
 				},
 				{
 					Machine: &machinev1.Machine{
-						TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations:     make(map[string]string),
 							Name:            "machine",
@@ -2593,7 +2557,6 @@ func newNodeForMHC(name string, ready bool) *corev1.Node {
 // newMachine returns new machine object that can be used for testing
 func newMachine(name string, nodeName string) *machinev1.Machine {
 	m := &machinev1.Machine{
-		TypeMeta: metav1.TypeMeta{Kind: "Machine"},
 		ObjectMeta: metav1.ObjectMeta{
 			Annotations: make(map[string]string),
 			Name:        name,
@@ -2631,10 +2594,6 @@ func newMachineHealthCheck(name string, remediationTemplate *corev1.ObjectRefere
 			// the following line is to account for a change in the fake client, see https://github.com/kubernetes-sigs/controller-runtime/pull/1306
 			ResourceVersion: "999",
 			UID:             "1234",
-		},
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "machine.openshift.io/v1beta1",
-			Kind:       "MachineHealthCheck",
 		},
 		Spec: machinev1.MachineHealthCheckSpec{
 			Selector: *newSelectorFooBar(),
