@@ -22,8 +22,8 @@ import (
 	"github.com/openshift/api/machine/v1beta1"
 
 	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/controllers/mhc"
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
+	"github.com/medik8s/node-healthcheck-operator/internal/controller/mhc"
 )
 
 const (
@@ -315,11 +315,11 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 							"foo": "bar",
 						},
 					}
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "selector update should be prevented")
+					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("prohibited due to running remediation")), "selector update should be prevented")
 
 					By("ensuring config deletion fails")
 					nhc = getNodeHealthCheck()
-					Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring(v1alpha1.OngoingRemediationError)), "deletion should be prevented")
+					Expect(k8sClient.Delete(context.Background(), nhc)).To(MatchError(ContainSubstring("prohibited due to running remediation")), "deletion should be prevented")
 
 					By("ensuring minHealthy update succeeds when removing maxUnhealthy")
 					Eventually(func(g Gomega) error {

@@ -16,10 +16,15 @@ resources:
 components:
 - ../patches/common
 
-patchesStrategicMerge:
+patches:
 # Configure the manager to serve metrics with authn/z on port 8443.
-- manager_metrics_patch.yaml
-- manager_role_patch.yaml
+- path: manager_metrics_patch.yaml
+  target:
+    kind: Deployment
+- path: manager_role_patch.yaml
+  target:
+    kind: ClusterRole
+    name: manager-role
 
 # Mount the controller config file for loading manager configurations
 # through a ComponentConfig type

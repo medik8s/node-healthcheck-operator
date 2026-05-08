@@ -34,7 +34,6 @@ spec:
           gets healthy within the timeout of the currently processed remediation. The order of
           remediation is defined by the "order" field of each "escalatingRemediation".
 
-
           Mutually exclusive with RemediationTemplate
         displayName: Escalating Remediations
         path: escalatingRemediations
@@ -48,7 +47,6 @@ spec:
           RemediationTemplate is a reference to a remediation template
           provided by a remediation provider.
 
-
           If a node needs remediation the controller will create an object from this template
           and then it should be picked up by a remediation provider.
         displayName: Remediation Template
@@ -58,7 +56,6 @@ spec:
           before the next remediation (if any) will be used. When the last remediation times out,
           the overall remediation is considered as failed.
           As a safeguard for preventing parallel remediations, a minimum of 60s is enforced.
-
 
           Expects a string of decimal numbers each with optional
           fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
@@ -101,10 +98,8 @@ spec:
           RemediationTemplate is a reference to a remediation template
           provided by an infrastructure provider.
 
-
           If a node needs remediation the controller will create an object from this template
           and then it should be picked up by a remediation provider.
-
 
           Mutually exclusive with EscalatingRemediations
         displayName: Remediation Template
@@ -112,10 +107,8 @@ spec:
       - description: |-
           Label selector to match nodes whose health will be exercised.
 
-
           Selecting both control-plane and worker nodes in one NHC CR is
           highly discouraged and can result in undesired behaviour.
-
 
           Note: mandatory now for above reason, but for backwards compatibility existing
           CRs will continue to work with an empty selector, which matches all nodes.
@@ -130,7 +123,6 @@ spec:
           which results in minHealthy or maxUnhealthy threshold being fulfilled (the storm ends) and triggering unneeded new remediation.
           The storm cooldown phase will prevent creation of new remediation for the given duration by giving NHC some time to get the latest node statuses.
 
-
           Expects a string of decimal numbers each with optional fraction and a unit
           suffix, e.g. "300ms", "1.5h" or "2h45m". Valid time units are "ns", "us"
           (or "µs"), "ms", "s", "m", "h".
@@ -144,7 +136,6 @@ spec:
         path: unhealthyConditions
       - description: |-
           Duration of the condition specified when a node is considered unhealthy.
-
 
           Expects a string of decimal numbers each with optional
           fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".

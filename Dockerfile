@@ -28,11 +28,10 @@ RUN go version
 # Copy the go source
 COPY vendor/ vendor/
 COPY version/ version/
-COPY main.go main.go
+COPY cmd/ cmd/
 COPY hack/ hack/
 COPY api/ api/
-COPY metrics/ metrics/
-COPY controllers/ controllers/
+COPY internal/ internal/
 
 # for getting version info
 COPY .git/ .git/

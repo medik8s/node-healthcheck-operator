@@ -2,29 +2,28 @@
 SHELL := /bin/bash
 
 # https://pkg.go.dev/github.com/operator-framework/operator-sdk?tab=versions
-# heads up: 1.37 is the last version which supports go/v3!
-OPERATOR_SDK_VERSION = v1.37.0
+OPERATOR_SDK_VERSION = v1.42.2
 # https://pkg.go.dev/github.com/operator-framework/operator-registry?tab=versions
-OPM_VERSION = v1.61.0
+OPM_VERSION = v1.66.0
 # https://pkg.go.dev/sigs.k8s.io/controller-tools?tab=versions
-CONTROLLER_GEN_VERSION = v0.20.0
+CONTROLLER_GEN_VERSION = v0.20.1
 # update for major version updates to KUSTOMIZE_VERSION!
 KUSTOMIZE_API_VERSION = v5
 # https://pkg.go.dev/sigs.k8s.io/kustomize/kustomize/v5?tab=versions
-KUSTOMIZE_VERSION = v5.8.0
+KUSTOMIZE_VERSION = v5.8.1
 # https://pkg.go.dev/sigs.k8s.io/controller-runtime/tools/setup-envtest/env?tab=versions
 ENVTEST_VERSION = v0.0.0-20260120065648-aebc15d7c689
 # https://pkg.go.dev/golang.org/x/tools/cmd/goimports?tab=versions
-GOIMPORTS_VERSION = v0.41.0
+GOIMPORTS_VERSION = v0.44.0
 # https://pkg.go.dev/github.com/slintes/sort-imports?tab=versions
 SORT_IMPORTS_VERSION = v0.3.0
 # update for major version updates to YQ_VERSION!
 YQ_API_VERSION = v4
 # https://github.com/mikefarah/yq/releases
-YQ_VERSION = v4.50.1
+YQ_VERSION = v4.53.2
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.33
+ENVTEST_K8S_VERSION = 1.34
 
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
@@ -154,7 +153,7 @@ test: test-no-verify ## Generate and format code, run tests, generate manifests 
 
 .PHONY: test-no-verify
 test-no-verify: vendor generate test-imports fmt vet envtest ## Generate and format code, and run tests
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./controllers/... ./api/... ./metrics/... -coverprofile cover.out -v
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin)" go test ./internal/controller/... ./api/... ./internal/metrics/... -coverprofile cover.out -v
 endif
 
 .PHONY: manager
@@ -163,7 +162,7 @@ manager: generate fmt vet ## Build manager binary
 
 .PHONY: run
 run: generate fmt vet manifests ## Run against the configured Kubernetes cluster in ~/.kube/config
-	go run ./main.go -leader-elect=false
+	go run ./cmd/main.go -leader-elect=false
 
 .PHONY: debug
 debug: manager
@@ -193,7 +192,7 @@ manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
 
 .PHONY: fmt
 fmt: goimports ## Run go fmt against code (skip vendor)
-	$(GOIMPORTS) -w ./main.go ./api ./controllers ./e2e ./metrics
+	$(GOIMPORTS) -w ./cmd/main.go ./api ./internal ./e2e
 
 .PHONY: vet
 vet: ## Run go vet against code
