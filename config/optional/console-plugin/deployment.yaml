@@ -31,12 +31,36 @@ spec:
           capabilities:
             drop:
             - ALL
+        livenessProbe:
+          tcpSocket:
+            port: 9443
+          periodSeconds: 10
+          timeoutSeconds: 3
+        readinessProbe:
+          tcpSocket:
+            port: 9443
+          periodSeconds: 5
+          timeoutSeconds: 3
+        startupProbe:
+          tcpSocket:
+            port: 9443
+          failureThreshold: 12
+          periodSeconds: 5
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/true"]
+          preStop:
+            exec:
+              command: ["sleep", "5"]
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/serving-cert
           name: nrc-plugin-cert
           readOnly: true
       securityContext:
         runAsNonRoot: true
+      serviceAccountName: console-plugin
       volumes:
       - name: nrc-plugin-cert
         secret:
