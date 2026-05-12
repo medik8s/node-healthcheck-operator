@@ -524,11 +524,20 @@ spec:
                     fieldRef:
                       fieldPath: metadata.name
                 image: quay.io/medik8s/node-healthcheck-operator:latest
+                lifecycle:
+                  postStart:
+                    exec:
+                      command:
+                      - /bin/true
+                  preStop:
+                    exec:
+                      command:
+                      - sleep
+                      - "5"
                 livenessProbe:
                   httpGet:
                     path: /healthz
                     port: 8081
-                  initialDelaySeconds: 15
                   periodSeconds: 20
                 name: manager
                 ports:
@@ -551,13 +560,20 @@ spec:
                     drop:
                     - ALL
                   readOnlyRootFilesystem: true
+                startupProbe:
+                  failureThreshold: 12
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  periodSeconds: 5
+                terminationMessagePolicy: FallbackToLogsOnError
               priorityClassName: system-cluster-critical
               securityContext:
                 runAsNonRoot: true
                 seccompProfile:
                   type: RuntimeDefault
               serviceAccountName: node-healthcheck-controller-manager
-              terminationGracePeriodSeconds: 10
+              terminationGracePeriodSeconds: 15
               tolerations:
               - effect: NoSchedule
                 key: node-role.kubernetes.io/master

@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: console-plugin-role
+# OLM only creates ServiceAccounts listed in CSV permissions/clusterPermissions.
+# This no-op rule exists solely to generate a permissions entry for the console-plugin SA.
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - no-op-placeholder
+    verbs:
+      - get

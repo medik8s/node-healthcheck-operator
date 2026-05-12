@@ -3,7 +3,10 @@ kind: Kustomization
 
 resources:
 - service.yaml
+- service_account.yaml
 - deployment.yaml
+- role.yaml
+- role_binding.yaml
 # not supported by OLM :/ Created in code for now
 #- consoleplugin.yaml
 

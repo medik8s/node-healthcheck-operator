@@ -57,7 +57,6 @@ spec:
           httpGet:
             path: /healthz
             port: 8081
-          initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
           httpGet:
@@ -65,6 +64,20 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          failureThreshold: 12
+          periodSeconds: 5
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/true"]
+          preStop:
+            exec:
+              command: ["sleep", "5"]
+        terminationMessagePolicy: FallbackToLogsOnError
         resources:
           requests:
             cpu: 100m
@@ -72,4 +85,4 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: controller-manager
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: 15
