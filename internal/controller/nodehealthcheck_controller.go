@@ -837,7 +837,7 @@ func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node, nhc
 	}
 	if val == "" {
 		msg := fmt.Sprintf("Node %s has exclude-from-remediation label with empty value, label will be ignored. Set value to 'true' to exclude node from remediation", node.GetName())
-		commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
+		commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonInvalidNodeLabel, msg)
 	}
 	return false
 }

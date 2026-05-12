@@ -1259,7 +1259,7 @@ var _ = Describe("Node Health Check CR", func() {
 				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
 				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
 				// Verify warning event was emitted
-				verifyEvent(v1.EventTypeWarning, utils.EventReasonRemediationSkipped, fmt.Sprintf("Node %s has exclude-from-remediation label with empty value, label will be ignored. Set value to 'true' to exclude node from remediation", unhealthyNodeName))
+				verifyEvent(v1.EventTypeWarning, utils.EventReasonInvalidNodeLabel, fmt.Sprintf("Node %s has exclude-from-remediation label with empty value, label will be ignored. Set value to 'true' to exclude node from remediation", unhealthyNodeName))
 			})
 		})
 
