@@ -367,7 +367,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			continue
 		}
 
-		if r.isNodeRemediationExcluded(&node) {
+		if r.isNodeRemediationExcluded(&node, nhc) {
 			msg := fmt.Sprintf("Remediation skipped on node %s: node has Exclude from Remediation label", node.GetName())
 			log.Info(msg)
 			commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonRemediationSkipped, msg)
@@ -823,13 +823,23 @@ func (r *NodeHealthCheckReconciler) alertOldRemediationCR(remediationCR *unstruc
 
 }
 
-func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node) bool {
-	if nodeLabels := node.GetLabels(); nodeLabels == nil {
+func (r *NodeHealthCheckReconciler) isNodeRemediationExcluded(node *v1.Node, nhc *remediationv1alpha1.NodeHealthCheck) bool {
+	nodeLabels := node.GetLabels()
+	if nodeLabels == nil {
 		return false
-	} else {
-		_, isNodeExcluded := nodeLabels[commonlabels.ExcludeFromRemediation]
-		return isNodeExcluded
 	}
+	val, exists := nodeLabels[commonlabels.ExcludeFromRemediation]
+	if !exists {
+		return false
+	}
+	if val == "true" {
+		return true
+	}
+	if val == "" {
+		msg := fmt.Sprintf("Node %s has exclude-from-remediation label with empty value, label will be ignored. Set value to 'true' to exclude node from remediation", node.GetName())
+		commonevents.WarningEvent(r.Recorder, nhc, utils.EventReasonInvalidNodeLabel, msg)
+	}
+	return false
 }
 
 func (r *NodeHealthCheckReconciler) isRemediating(unhealthyNodes []*remediationv1alpha1.UnhealthyNode) bool {

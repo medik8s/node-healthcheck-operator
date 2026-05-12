@@ -5,6 +5,7 @@ const (
 	EventReasonRemediationCreated = "RemediationCreated"
 	EventReasonRemediationSkipped = "RemediationSkipped"
 	EventReasonRemediationRemoved = "RemediationRemoved"
+	EventReasonInvalidNodeLabel   = "InvalidNodeLabel"
 	EventReasonDisabled           = "Disabled"
 	EventReasonEnabled            = "Enabled"
 )

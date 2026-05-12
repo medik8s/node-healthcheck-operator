@@ -34,11 +34,11 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent, c client.Client, logger logr
 }
 
 func labelsNeedReconcile(c client.Client, oldLabels, newLabels map[string]string, logger logr.Logger) bool {
-	// Check if the ExcludeFromRemediation label was added or removed
-	_, existsInOldLabels := oldLabels[commonLabels.ExcludeFromRemediation]
-	_, existsInNewLabels := newLabels[commonLabels.ExcludeFromRemediation]
+	// Check if the ExcludeFromRemediation label was added, removed, or its value changed
+	oldVal, existsInOldLabels := oldLabels[commonLabels.ExcludeFromRemediation]
+	newVal, existsInNewLabels := newLabels[commonLabels.ExcludeFromRemediation]
 
-	if existsInOldLabels != existsInNewLabels {
+	if existsInOldLabels != existsInNewLabels || oldVal != newVal {
 		return true
 	}
 
