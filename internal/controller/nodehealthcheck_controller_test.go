@@ -1235,6 +1235,34 @@ var _ = Describe("Node Health Check CR", func() {
 			})
 		})
 
+		Context("with Node having exclude-from-remediation label set to false", func() {
+			BeforeEach(func() {
+				setupObjects(1, 2, true)
+				node := objects[0].(*v1.Node)
+				node.GetLabels()[commonLabels.ExcludeFromRemediation] = "false"
+
+			})
+			It("remediation should be created", func() {
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+			})
+		})
+
+		Context("with Node having exclude-from-remediation label with empty value", func() {
+			BeforeEach(func() {
+				setupObjects(1, 2, true)
+				node := objects[0].(*v1.Node)
+				node.GetLabels()[commonLabels.ExcludeFromRemediation] = ""
+
+			})
+			It("remediation should be created and warning event emitted", func() {
+				Expect(underTest.Status.UnhealthyNodes).To(HaveLen(1))
+				Expect(underTest.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+				// Verify warning event was emitted
+				verifyEvent(v1.EventTypeWarning, utils.EventReasonRemediationSkipped, fmt.Sprintf("Node %s has exclude-from-remediation label with empty value, label will be ignored. Set value to 'true' to exclude node from remediation", unhealthyNodeName))
+			})
+		})
+
 		Context("with Node setup to delay healthy", func() {
 			BeforeEach(func() {
 				setupObjects(1, 2, false)
@@ -2378,6 +2406,52 @@ var _ = Describe("Node Health Check CR", func() {
 				})
 				It("should request reconcile", func() {
 					Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+				})
+			})
+
+			When("label ExcludeFromRemediation value changes from true to false", func() {
+				BeforeEach(func() {
+					oldLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "true",
+					}
+					newLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "false",
+					}
+				})
+				It("should request reconcile", func() {
+					Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+				})
+			})
+
+			When("label ExcludeFromRemediation value changes from false to true", func() {
+				BeforeEach(func() {
+					oldLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "false",
+					}
+					newLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "true",
+					}
+				})
+				It("should request reconcile", func() {
+					Expect(labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)).To(BeTrue())
+				})
+			})
+
+			When("label ExcludeFromRemediation present in both with same value", func() {
+				BeforeEach(func() {
+					oldLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "true",
+					}
+					newLabels = map[string]string{
+						commonLabels.ExcludeFromRemediation: "true",
+					}
+				})
+				It("should not request reconcile for this label alone", func() {
+					// This will be false only if no NHC exists with selectors matching other labels
+					// For this specific test, we're verifying the ExcludeFromRemediation logic doesn't trigger
+					result := labelsNeedReconcile(k8sClient, oldLabels, newLabels, logger)
+					// Since only ExcludeFromRemediation is present and unchanged, should be false
+					Expect(result).To(BeFalse())
 				})
 			})
 
