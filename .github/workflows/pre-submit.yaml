@@ -71,7 +71,7 @@ jobs:
         }
         EOF"
 
-        #sudo cat /etc/docker/daemon.json
+        sudo cat /etc/docker/daemon.json
         sudo systemctl restart docker
 
         # same for podman
@@ -80,7 +80,7 @@ jobs:
         location=\"${IMAGE_REGISTRY}\"
         insecure=true
         EOF"
-        #sudo cat /etc/containers/registries.conf
+        sudo cat /etc/containers/registries.conf
 
     - name: Start kind cluster
       uses: helm/kind-action@v1
