@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-and-unit-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
@@ -36,7 +36,7 @@ jobs:
       run: make container-build-ocp
 
   e2e-k8s:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       IMAGE_REGISTRY: kind-registry:5000
