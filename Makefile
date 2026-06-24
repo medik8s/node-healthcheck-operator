@@ -352,7 +352,7 @@ bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and me
 	$(MAKE) add-replaces-field
 	$(MAKE) add-community-edition-to-display-name
 	echo -e "\n  # Annotations for OCP\n  com.redhat.openshift.versions: \"v${OCP_VERSION}\"" >> bundle/metadata/annotations.yaml
-	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_blue.png)" \
+	ICON_BASE64="$(shell base64 --wrap=0 ${BLUE_ICON_PATH})" \
 		$(MAKE) bundle-update
 
 .PHONY: bundle-ocp
@@ -396,7 +396,7 @@ bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metri
 	$(MAKE) bundle-validate
 
 # Apply version or build date related changes in the bundle
-DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
+DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ${BLUE_ICON_PATH})
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-update
 bundle-update: ## update container image in the metadata
