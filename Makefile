@@ -274,6 +274,8 @@ endif
 
 .PHONY: opm
 OPM = ./bin/opm
+# configurable OPM_RENDER_FLAGS here so local/insecure registries (e.g. e2e-k8s job) can be handled without hardcoding the transport choice
+OPM_RENDER_FLAGS ?=
 opm: ## Download opm locally if necessary.
 ifeq (,$(wildcard $(OPM)))
 	@{ \
@@ -477,7 +479,7 @@ catalog-build: opm ## Build a file-based catalog image.
 		--icon=${BLUE_ICON_PATH} \
 		--output yaml \
 		> ${CATALOG_INDEX}
-	$(OPM) render ${BUNDLE_IMG} --output yaml >> ${CATALOG_INDEX}
+	$(OPM) render ${OPM_RENDER_FLAGS} ${BUNDLE_IMG} --output yaml >> ${CATALOG_INDEX}
 	$(MAKE) add_channel_entry_for_the_bundle
 	$(OPM) validate ${CATALOG_DIR}
 	podman build . -f ${CATALOG_DOCKERFILE} -t ${CATALOG_IMG}
