@@ -474,7 +474,7 @@ catalog-build: opm ## Build a file-based catalog image.
 	@mkdir -p ${CATALOG_DIR}
 	$(OPM) generate dockerfile ${CATALOG_DIR}
 	$(OPM) init ${OPERATOR_NAME} \
-		--default-channel=${CHANNELS} \
+		--default-channel=${DEFAULT_CHANNEL} \
 		--description=./README.md \
 		--icon=${BLUE_ICON_PATH} \
 		--output yaml \
