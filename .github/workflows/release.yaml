@@ -35,7 +35,7 @@ jobs:
   push_to_registry:
     if: ${{ inputs.operation == 'build_and_push_images' }}
     name: Build and push images to quay.io/medik8s
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       VERSION: ${{ inputs.version }}
       PREVIOUS_VERSION: ${{ inputs.previous_version }}
