@@ -25,6 +25,8 @@ YQ_VERSION = v4.53.2
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.34
 
+BLUE_ICON_PATH = "./config/assets/nhc_blue.png"
+
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
@@ -93,9 +95,8 @@ OPERATOR_NAMESPACE ?= openshift-workload-availability
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-bundle:$(IMAGE_TAG)
 
-# INDEX_IMG defines the image:tag used for the index.
-# You can use it as an arg. (E.g make bundle-build INDEX_IMG=<some-registry>/<project-name-index>:<tag>)
-INDEX_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-index:$(IMAGE_TAG)
+# The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
+CATALOG_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-catalog:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME):$(IMAGE_TAG)
@@ -273,6 +274,8 @@ endif
 
 .PHONY: opm
 OPM = ./bin/opm
+# configurable OPM_RENDER_FLAGS here so local/insecure registries (e.g. e2e-k8s job) can be handled without hardcoding the transport choice
+OPM_RENDER_FLAGS ?=
 opm: ## Download opm locally if necessary.
 ifeq (,$(wildcard $(OPM)))
 	@{ \
@@ -349,7 +352,7 @@ bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and me
 	$(MAKE) add-replaces-field
 	$(MAKE) add-community-edition-to-display-name
 	echo -e "\n  # Annotations for OCP\n  com.redhat.openshift.versions: \"v${OCP_VERSION}\"" >> bundle/metadata/annotations.yaml
-	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_blue.png)" \
+	ICON_BASE64="$(shell base64 --wrap=0 ${BLUE_ICON_PATH})" \
 		$(MAKE) bundle-update
 
 .PHONY: bundle-ocp
@@ -393,7 +396,7 @@ bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metri
 	$(MAKE) bundle-validate
 
 # Apply version or build date related changes in the bundle
-DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ./config/assets/nhc_blue.png)
+DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ${BLUE_ICON_PATH})
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-update
 bundle-update: ## update container image in the metadata
@@ -448,17 +451,55 @@ bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
 create-ns: ## Create namespace
 	$(KUBECTL) get ns $(OPERATOR_NAMESPACE) 2>&1> /dev/null || $(KUBECTL) create ns $(OPERATOR_NAMESPACE)
 
-# Build a index image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
-# This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
-# https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
-.PHONY: index-build
-index-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool podman --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
+# Build a file-based catalog image
+# https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-managing-custom-catalogs-fb
+# NOTE: CATALOG_DIR and CATALOG_DOCKERFILE items won't be deleted in case of recipe's failure
+CATALOG_DIR := catalog
+CATALOG_DOCKERFILE := ${CATALOG_DIR}.Dockerfile
+CATALOG_INDEX := $(CATALOG_DIR)/index.yaml
+
+# Add olm.channel entries for each channel in CHANNELS.
+# For development version (0.0.1), omit replaces and skipRange to avoid OLM catalog validation errors.
+.PHONY: add_channel_entry_for_the_bundle
+add_channel_entry_for_the_bundle:
+	@for channel in $(shell echo ${CHANNELS} | tr ',' ' '); do \
+		echo "---" >> ${CATALOG_INDEX}; \
+		echo "schema: olm.channel" >> ${CATALOG_INDEX}; \
+		echo "package: ${OPERATOR_NAME}" >> ${CATALOG_INDEX}; \
+		echo "name: $$channel" >> ${CATALOG_INDEX}; \
+		echo "entries:" >> ${CATALOG_INDEX}; \
+		echo "  - name: ${OPERATOR_NAME}.v${VERSION}" >> ${CATALOG_INDEX}; \
+		if [ -n "${PREVIOUS_VERSION}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ]; then \
+			echo "    replaces: ${OPERATOR_NAME}.v${PREVIOUS_VERSION}" >> ${CATALOG_INDEX}; \
+		fi; \
+		if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ]; then \
+			echo "    skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'" >> ${CATALOG_INDEX}; \
+		fi; \
+	done
+
+.PHONY: catalog-build
+catalog-build: opm ## Build a file-based catalog image.
+	# Remove the catalog directory and Dockerfile
+	-rm -r ${CATALOG_DIR} ${CATALOG_DOCKERFILE}
+	@mkdir -p ${CATALOG_DIR}
+	$(OPM) generate dockerfile ${CATALOG_DIR}
+	$(OPM) init ${OPERATOR_NAME} \
+		--default-channel=${DEFAULT_CHANNEL} \
+		--description=./README.md \
+		--icon=${BLUE_ICON_PATH} \
+		--output yaml \
+		> ${CATALOG_INDEX}
+	$(OPM) render ${OPM_RENDER_FLAGS} ${BUNDLE_IMG} --output yaml >> ${CATALOG_INDEX}
+	$(MAKE) add_channel_entry_for_the_bundle
+	$(OPM) validate ${CATALOG_DIR}
+	podman build . -f ${CATALOG_DOCKERFILE} -t ${CATALOG_IMG}
+	# Clean up the catalog directory and Dockerfile
+	rm -r ${CATALOG_DIR} ${CATALOG_DOCKERFILE}
 
 # Push the catalog image.
-.PHONY: index-push
-index-push: ## Push a catalog image.
-	podman push $(INDEX_IMG)
+.PHONY: catalog-push
+catalog-push: ## Push a catalog image.
+	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
 .PHONY: test-e2e
 test-e2e: ## Run end to end tests
@@ -491,7 +532,7 @@ container-build-metrics: ## Build containers for K8s with metric related configu
 
 .PHONY: container-push
 container-push:  ## Push containers (NOTE: catalog can't be build before bundle was pushed)
-	make docker-push bundle-push index-build index-push
+	make docker-push bundle-push catalog-build catalog-push
 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run

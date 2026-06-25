@@ -40,6 +40,7 @@ jobs:
     timeout-minutes: 30
     env:
       IMAGE_REGISTRY: kind-registry:5000
+      OPM_RENDER_FLAGS: --skip-tls-verify
       DEPLOY_NAMESPACE: k8s-test
       # see https://github.com/kubernetes-sigs/kind/tags
 #      KIND_VERSION: v0.31.0
