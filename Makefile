@@ -443,6 +443,10 @@ bundle-push: ## Push the bundle image
 bundle-run: operator-sdk create-ns ## Run bundle image
 	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) run bundle $(BUNDLE_IMG)
 
+.PHONY: bundle-run-update
+bundle-run-update: operator-sdk ## Upgrade bundle image
+	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) run bundle-upgrade $(BUNDLE_IMG)
+
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
 	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(OPERATOR_NAME) --delete-all
