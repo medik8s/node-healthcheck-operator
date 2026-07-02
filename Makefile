@@ -540,3 +540,18 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run
+
+# Shared dev environment
+# Uses a local sibling checkout if available (e.g. ../tools),
+# otherwise shallow-clones the tools repo into .tools/ on first use.
+TOOLS_DIR ?= $(shell cd .. && pwd)/tools
+DEV_MK := $(TOOLS_DIR)/dev/dev.mk
+ifeq ($(wildcard $(DEV_MK)),)
+  TOOLS_DIR := $(shell pwd)/.tools
+  DEV_MK := $(TOOLS_DIR)/dev/dev.mk
+  ifeq ($(wildcard $(DEV_MK)),)
+    $(info Downloading medik8s/tools into .tools/...)
+    $(shell git clone --depth 1 https://github.com/medik8s/tools.git $(TOOLS_DIR) >/dev/null 2>&1)
+  endif
+endif
+-include $(DEV_MK)
