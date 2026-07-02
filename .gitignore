@@ -28,3 +28,4 @@ testdata/.remediators/
 
 catalog/
 catalog.Dockerfile
+.tools/
