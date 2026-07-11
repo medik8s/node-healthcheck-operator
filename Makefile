@@ -34,16 +34,28 @@ BLUE_ICON_PATH = "./config/assets/nhc_blue.png"
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 DEFAULT_VERSION := 0.0.1
 # Let CI set VERSION based on git tags. But heads up, VERSION should not have the 'v' prefix!
-export VERSION ?= $(DEFAULT_VERSION)
+VERSION ?= $(DEFAULT_VERSION)
+export VERSION
 # For the replaces field in the CSV, mandatory to be set for versioned builds! Should also not have the 'v' prefix.
-export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
+PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
 # Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
-export SKIP_RANGE_LOWER ?= "0.1.0"
+SKIP_RANGE_LOWER ?=
 
 CHANNELS ?= stable
 export CHANNELS
-DEFAULT_CHANNEL = stable
+DEFAULT_CHANNEL ?= stable
 export DEFAULT_CHANNEL
+
+# Validate DEFAULT_CHANNEL is in CHANNELS
+# When CHANNELS contains comma-separated values (e.g., "stable,beta"), we need to convert
+# commas to spaces for filter to match. We use a variable for the comma because Make treats
+# commas as function argument delimiters, causing $(subst ,, ,$(CHANNELS)) to misparse.
+comma := ,
+ifneq (,$(DEFAULT_CHANNEL))
+  ifeq (,$(filter $(DEFAULT_CHANNEL),$(subst $(comma), ,$(CHANNELS))))
+    $(error DEFAULT_CHANNEL "$(DEFAULT_CHANNEL)" must be present in CHANNELS "$(CHANNELS)")
+  endif
+endif
 
 # CHANNELS define the bundle channels used in the bundle. 
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "preview,fast,stable")
@@ -66,6 +78,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
 # Override this when building images for dev only!
 IMAGE_REGISTRY ?= quay.io/medik8s
+export IMAGE_REGISTRY
 
 # Image base URL of the console plugin
 CONSOLE_PLUGIN_IMAGE_BASE ?= quay.io/medik8s/node-remediation-console
@@ -401,8 +414,16 @@ export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-update
 bundle-update: ## update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
-	# set skipRange
-	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'|;" ${CSV}
+	# set skipRange conditionally to avoid malformed values in dev builds
+	@if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${VERSION}" != "${SKIP_RANGE_LOWER}" ]; then \
+		if ! printf '%s\n' "${SKIP_RANGE_LOWER}" "${VERSION}" | sort -V -C 2>/dev/null; then \
+			echo "Error: VERSION (${VERSION}) must be greater than SKIP_RANGE_LOWER (${SKIP_RANGE_LOWER})"; \
+			exit 1; \
+		fi; \
+		$(YQ) -i '.metadata.annotations."olm.skipRange" = ">=$(SKIP_RANGE_LOWER) <$(VERSION)"' ${CSV}; \
+	else \
+		$(YQ) -i '.metadata.annotations."olm.skipRange" = "<$(VERSION)"' ${CSV}; \
+	fi
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
 	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
 	$(MAKE) bundle-validate
@@ -473,10 +494,14 @@ add_channel_entry_for_the_bundle:
 		echo "name: $$channel" >> ${CATALOG_INDEX}; \
 		echo "entries:" >> ${CATALOG_INDEX}; \
 		echo "  - name: ${OPERATOR_NAME}.v${VERSION}" >> ${CATALOG_INDEX}; \
-		if [ -n "${PREVIOUS_VERSION}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ]; then \
+		if [ -n "${PREVIOUS_VERSION}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${PREVIOUS_VERSION}" != "${DEFAULT_VERSION}" ]; then \
 			echo "    replaces: ${OPERATOR_NAME}.v${PREVIOUS_VERSION}" >> ${CATALOG_INDEX}; \
 		fi; \
-		if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ]; then \
+		if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${VERSION}" != "${SKIP_RANGE_LOWER}" ]; then \
+			if ! printf '%s\n' "${SKIP_RANGE_LOWER}" "${VERSION}" | sort -V -C 2>/dev/null; then \
+				echo "Error: VERSION (${VERSION}) must be greater than SKIP_RANGE_LOWER (${SKIP_RANGE_LOWER})"; \
+				exit 1; \
+			fi; \
 			echo "    skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'" >> ${CATALOG_INDEX}; \
 		fi; \
 	done
