@@ -28,6 +28,7 @@ spec:
             memory: 50Mi
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
             - ALL
@@ -58,6 +59,15 @@ spec:
         - mountPath: /var/serving-cert
           name: nrc-plugin-cert
           readOnly: true
+        - mountPath: /opt/app-root/etc/passwd
+          name: nrc-nss-passwd
+          subPath: passwd
+        - mountPath: /var/log/nginx
+          name: nrc-nginx-log
+        - mountPath: /var/lib/nginx/tmp
+          name: nrc-nginx-tmp
+        - mountPath: /run
+          name: nrc-nginx-run
       securityContext:
         runAsNonRoot: true
       serviceAccountName: console-plugin
@@ -66,3 +76,11 @@ spec:
         secret:
           defaultMode: 420
           secretName: nrc-plugin-cert
+      - name: nrc-nss-passwd
+        emptyDir: {}
+      - name: nrc-nginx-log
+        emptyDir: {}
+      - name: nrc-nginx-tmp
+        emptyDir: {}
+      - name: nrc-nginx-run
+        emptyDir: {}
