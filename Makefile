@@ -412,7 +412,7 @@ bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metri
 DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ${BLUE_ICON_PATH})
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-update
-bundle-update: ## update container image in the metadata
+bundle-update: yq ## update container image in the metadata
 	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 	# set skipRange conditionally to avoid malformed values in dev builds
 	@if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${VERSION}" != "${SKIP_RANGE_LOWER}" ]; then \
