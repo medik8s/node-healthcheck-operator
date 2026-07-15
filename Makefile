@@ -217,7 +217,7 @@ vendor: tidy ## Run go mod vendor
 	go mod vendor
 
 .PHONY: verify
-verify: bundle-reset ## verify there are no un-committed changes
+verify: bundle-reset bundle-okd-reset bundle-ocp-reset ## verify there are no un-committed changes
 	./hack/verify-diff.sh
 
 .PHONY: generate
@@ -355,11 +355,64 @@ bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and me
 	ICON_BASE64="$(shell base64 --wrap=0 ${BLUE_ICON_PATH})" \
 		$(MAKE) bundle-update
 
+.PHONY: bundle-okd-reset
+bundle-okd-reset: manifests kustomize operator-sdk yq ## Generate OKD bundle into bundle-okd/ directory.
+	@# Save the k8s bundle and bundle.Dockerfile, generate OKD bundle, then restore
+	rm -rf bundle-k8s-tmp bundle-okd
+	cp -r bundle bundle-k8s-tmp
+	cp bundle.Dockerfile bundle.Dockerfile.tmp
+	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
+	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(MAKE) add-console-plugin-annotation
+	$(MAKE) add-community-edition-to-display-name
+	@# Strip version-specific data so bundle-okd/ is committable
+	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
+	sed -r -i "/replaces:.*/d" ${CSV}
+	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.0.1'|;" ${CSV}
+	@# Move to bundle-okd/ and restore k8s bundle
+	mv bundle bundle-okd
+	mv bundle-k8s-tmp bundle
+	mv bundle.Dockerfile.tmp bundle.Dockerfile
+	@echo "bundle-okd/ generated and ready for committing"
+
+.PHONY: bundle-ocp-reset
+bundle-ocp-reset: manifests kustomize operator-sdk yq ## Generate OCP bundle into bundle-ocp/ directory.
+	@# Save the k8s bundle and bundle.Dockerfile, generate OCP bundle, then restore
+	rm -rf bundle-k8s-tmp bundle-ocp
+	cp -r bundle bundle-k8s-tmp
+	cp bundle.Dockerfile bundle.Dockerfile.tmp
+	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
+	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(MAKE) add-console-plugin-annotation
+	@# Add RELATED_IMAGE_MUST_GATHER env var for disconnected installs
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "$(MUST_GATHER_IMAGE)"}]' ${CSV}
+	@# Add OCP-specific annotations
+	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "true"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/cnf" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/cni" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/csi" = "false"' ${CSV}
+	@# Strip version-specific data so bundle-ocp/ is committable
+	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
+	sed -r -i "/replaces:.*/d" ${CSV}
+	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=0.0.1'|;" ${CSV}
+	@# Move to bundle-ocp/ and restore k8s bundle
+	mv bundle bundle-ocp
+	mv bundle-k8s-tmp bundle
+	mv bundle.Dockerfile.tmp bundle.Dockerfile
+	@echo "bundle-ocp/ generated and ready for committing"
+
 .PHONY: bundle-ocp
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(shell rm -r bundle) # OCP bundle should be created from scratch
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
+	sed -r -i "s|https://www.medik8s.io/remediation/node-healthcheck-operator/node-healthcheck-operator/|https://access.redhat.com/documentation/en-us/workload_availability_for_red_hat_openshift/${DOCS_RHWA_VERSION}/html/remediation_fencing_and_maintenance/node-health-check-operator|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
 	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
