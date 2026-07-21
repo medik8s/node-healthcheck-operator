@@ -7,6 +7,11 @@ aliases:
       - beekhof
       - razo7
       - clobrano
+      - weshayutin
+      - mpryc
+      - jmontleon
+      - abrugaro
+      - eemcmullan
 
   code-reviewers:
       - slintes
@@ -14,6 +19,11 @@ aliases:
       - beekhof
       - razo7
       - clobrano
+      - weshayutin
+      - mpryc
+      - jmontleon
+      - abrugaro
+      - eemcmullan
 
   emeritus_approvers:
       - n1r1
