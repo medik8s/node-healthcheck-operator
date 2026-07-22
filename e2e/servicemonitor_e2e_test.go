@@ -11,6 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/medik8s/node-healthcheck-operator/internal/controller/servicemonitor"
 )
 
 var serviceMonitorGVR = schema.GroupVersionResource{
@@ -21,11 +23,6 @@ var serviceMonitorGVR = schema.GroupVersionResource{
 
 var _ = Describe("ServiceMonitor", Ordered, labelOcpOnly, func() {
 
-	const (
-		serviceMonitorName = "node-healthcheck-controller-manager-metrics-monitor"
-		serviceName        = "node-healthcheck-controller-manager-metrics-service"
-	)
-
 	var sm *unstructured.Unstructured
 
 	BeforeAll(func() {
@@ -34,7 +31,7 @@ var _ = Describe("ServiceMonitor", Ordered, labelOcpOnly, func() {
 			var err error
 			sm, err = dynamicClient.Resource(serviceMonitorGVR).Namespace(operatorNsName).Get(
 				context.Background(),
-				serviceMonitorName,
+				servicemonitor.ServiceMonitorName,
 				metav1.GetOptions{},
 			)
 			g.Expect(err).ToNot(HaveOccurred(), "ServiceMonitor should exist in operator namespace")
@@ -55,15 +52,35 @@ var _ = Describe("ServiceMonitor", Ordered, labelOcpOnly, func() {
 		tlsConfig, ok := endpoint["tlsConfig"].(map[string]interface{})
 		Expect(ok).To(BeTrue(), "endpoint should have tlsConfig")
 
-		expectedServerName := fmt.Sprintf("%s.%s.svc", serviceName, operatorNsName)
+		expectedServerName := fmt.Sprintf("%s.%s.svc", servicemonitor.ServiceName, operatorNsName)
 		Expect(tlsConfig["serverName"]).To(Equal(expectedServerName),
 			"serverName must be dynamically constructed from the operator namespace, not hardcoded")
+	})
+
+	It("should have selector matchLabels matching the metrics Service", func() {
+		spec, ok := sm.Object["spec"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+
+		selector, ok := spec["selector"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "spec should have selector")
+
+		matchLabels, ok := selector["matchLabels"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "selector should have matchLabels")
+
+		svc, err := clientSet.CoreV1().Services(operatorNsName).Get(
+			context.Background(), servicemonitor.ServiceName, metav1.GetOptions{})
+		Expect(err).ToNot(HaveOccurred(), "metrics Service should exist")
+
+		for key, val := range matchLabels {
+			Expect(svc.Labels).To(HaveKeyWithValue(key, val),
+				"Service label %s should match ServiceMonitor selector", key)
+		}
 	})
 
 	It("should have cluster-monitoring label on operator namespace", func() {
 		ns, err := clientSet.CoreV1().Namespaces().Get(context.Background(), operatorNsName, metav1.GetOptions{})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(ns.Labels).To(HaveKeyWithValue("openshift.io/cluster-monitoring", "true"),
+		Expect(ns.Labels).To(HaveKeyWithValue(servicemonitor.ClusterMonitoringLabel, servicemonitor.ClusterMonitoringValue),
 			"operator namespace must be labeled for Prometheus discovery")
 	})
 
@@ -86,16 +103,16 @@ var _ = Describe("ServiceMonitor", Ordered, labelOcpOnly, func() {
 		configMap, ok := ca["configMap"].(map[string]interface{})
 		Expect(ok).To(BeTrue(), "ca should have configMap")
 
-		Expect(configMap["name"]).To(Equal("node-healthcheck-ca-bundle"),
+		Expect(configMap["name"]).To(Equal(servicemonitor.CAConfigMapName),
 			"CA ConfigMap name should reference the service-ca injected bundle")
-		Expect(configMap["key"]).To(Equal("service-ca.crt"))
+		Expect(configMap["key"]).To(Equal(servicemonitor.CAConfigMapKey))
 	})
 
 	It("should use the tls-client-certificate-auth scrape class", func() {
 		spec, ok := sm.Object["spec"].(map[string]interface{})
 		Expect(ok).To(BeTrue())
 
-		Expect(spec["scrapeClass"]).To(Equal("tls-client-certificate-auth"),
+		Expect(spec["scrapeClass"]).To(Equal(servicemonitor.ScrapeClass),
 			"scrapeClass must be set for Platform Prometheus mTLS")
 	})
 })
