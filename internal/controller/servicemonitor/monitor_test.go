@@ -68,7 +68,7 @@ func createTestNamespace(name string) {
 	ExpectWithOffset(1, k8sClient.Create(ctx, ns)).To(Succeed())
 }
 
-func uniqueNamespace(prefix string) string {
+func createUniqueNamespace(prefix string) string {
 	namespaceCounter++
 	name := fmt.Sprintf("%s-%d", prefix, namespaceCounter)
 	createTestNamespace(name)
@@ -219,7 +219,7 @@ var _ = Describe("getServiceMonitor", func() {
 
 var _ = Describe("createOrUpdateServiceMonitor", func() {
 	It("should create ServiceMonitor when it does not exist", func() {
-		namespace := uniqueNamespace("sm-create")
+		namespace := createUniqueNamespace("sm-create")
 		Expect(createOrUpdateServiceMonitor(ctx, namespace, k8sClient, nil)).To(Succeed())
 
 		sm := getServiceMonitorFromCluster(namespace)
@@ -228,7 +228,7 @@ var _ = Describe("createOrUpdateServiceMonitor", func() {
 	})
 
 	It("should update existing ServiceMonitor when called again", func() {
-		namespace := uniqueNamespace("sm-create")
+		namespace := createUniqueNamespace("sm-create")
 		Expect(createOrUpdateServiceMonitor(ctx, namespace, k8sClient, nil)).To(Succeed())
 
 		// Verify no owner reference initially
@@ -254,7 +254,7 @@ var _ = Describe("createOrUpdateServiceMonitor", func() {
 	})
 
 	It("should be idempotent when called multiple times", func() {
-		namespace := uniqueNamespace("sm-create")
+		namespace := createUniqueNamespace("sm-create")
 		Expect(createOrUpdateServiceMonitor(ctx, namespace, k8sClient, nil)).To(Succeed())
 		Expect(createOrUpdateServiceMonitor(ctx, namespace, k8sClient, nil)).To(Succeed())
 		Expect(createOrUpdateServiceMonitor(ctx, namespace, k8sClient, nil)).To(Succeed())
@@ -266,9 +266,9 @@ var _ = Describe("createOrUpdateServiceMonitor", func() {
 
 	It("should produce different serverNames for different namespaces", func() {
 		// Core regression test: each namespace must get its own serverName, not a hardcoded one
-		ns1 := uniqueNamespace("ns-custom-a")
-		ns2 := uniqueNamespace("ns-custom-b")
-		ns3 := uniqueNamespace("ns-owa")
+		ns1 := createUniqueNamespace("ns-custom-a")
+		ns2 := createUniqueNamespace("ns-custom-b")
+		ns3 := createUniqueNamespace("ns-owa")
 		for _, ns := range []string{ns1, ns2, ns3} {
 			Expect(createOrUpdateServiceMonitor(ctx, ns, k8sClient, nil)).To(Succeed())
 		}
@@ -284,7 +284,7 @@ var _ = Describe("createOrUpdateServiceMonitor", func() {
 
 var _ = Describe("labelNamespace", func() {
 	It("should add cluster-monitoring label to namespace", func() {
-		namespace := uniqueNamespace("sm-label")
+		namespace := createUniqueNamespace("sm-label")
 		Expect(labelNamespace(ctx, namespace, k8sClient)).To(Succeed())
 
 		ns := &corev1.Namespace{}
@@ -293,7 +293,7 @@ var _ = Describe("labelNamespace", func() {
 	})
 
 	It("should be idempotent when label already exists", func() {
-		namespace := uniqueNamespace("sm-label")
+		namespace := createUniqueNamespace("sm-label")
 		Expect(labelNamespace(ctx, namespace, k8sClient)).To(Succeed())
 		Expect(labelNamespace(ctx, namespace, k8sClient)).To(Succeed())
 
@@ -303,7 +303,7 @@ var _ = Describe("labelNamespace", func() {
 	})
 
 	It("should not overwrite existing namespace labels", func() {
-		namespace := uniqueNamespace("sm-label")
+		namespace := createUniqueNamespace("sm-label")
 		// Pre-label the namespace with a custom label
 		ns := &corev1.Namespace{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)).To(Succeed())
@@ -348,7 +348,7 @@ var _ = Describe("CreateOrUpdate integration", func() {
 	})
 
 	It("should skip ServiceMonitor creation on non-OpenShift clusters", func() {
-		namespace := uniqueNamespace("sm-integration")
+		namespace := createUniqueNamespace("sm-integration")
 		caps := cluster.Capabilities{IsOnOpenshift: false}
 		Expect(CreateOrUpdate(ctx, k8sClient, caps, namespace, log)).To(Succeed())
 
@@ -371,7 +371,7 @@ var _ = Describe("CreateOrUpdate integration", func() {
 	})
 
 	It("should create ServiceMonitor and label namespace on OpenShift", func() {
-		namespace := uniqueNamespace("sm-integration")
+		namespace := createUniqueNamespace("sm-integration")
 		caps := cluster.Capabilities{IsOnOpenshift: true}
 		// POD_NAME not set — owner reference will be skipped gracefully
 		Expect(CreateOrUpdate(ctx, k8sClient, caps, namespace, log)).To(Succeed())
@@ -388,7 +388,7 @@ var _ = Describe("CreateOrUpdate integration", func() {
 	})
 
 	It("should create ServiceMonitor with correct serverName in custom namespace", func() {
-		customNs := uniqueNamespace("my-custom-operator-ns")
+		customNs := createUniqueNamespace("my-custom-operator-ns")
 
 		caps := cluster.Capabilities{IsOnOpenshift: true}
 		Expect(CreateOrUpdate(ctx, k8sClient, caps, customNs, log)).To(Succeed())
@@ -401,8 +401,8 @@ var _ = Describe("CreateOrUpdate integration", func() {
 
 	When("called for both default and custom namespaces", func() {
 		It("should produce distinct serverNames per namespace", func() {
-			defaultNs := uniqueNamespace("openshift-wa")
-			customNs := uniqueNamespace("customer-ns")
+			defaultNs := createUniqueNamespace("openshift-wa")
+			customNs := createUniqueNamespace("customer-ns")
 
 			caps := cluster.Capabilities{IsOnOpenshift: true}
 			Expect(CreateOrUpdate(ctx, k8sClient, caps, defaultNs, log)).To(Succeed())
