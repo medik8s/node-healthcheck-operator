@@ -290,32 +290,41 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					}, "10s", "500ms").Should(Succeed())
 
 					// let's do some NHC validation tests here
+					// wrap updates in Eventually to retry on conflict errors from concurrent reconciler updates
 					By("ensuring negative maxUnhealthy update fails")
-					nhc = getNodeHealthCheck()
-					negValue := intstr.FromInt(-1)
-					nhc.Spec.MaxUnhealthy = &negValue
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("maxUnhealthy must not be negative")), "negative maxUnhealthy update should be prevented")
+					Eventually(func(g Gomega) {
+						nhc = getNodeHealthCheck()
+						negValue := intstr.FromInt(-1)
+						nhc.Spec.MaxUnhealthy = &negValue
+						g.Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("maxUnhealthy must not be negative")))
+					}, "10s", "500ms").Should(Succeed(), "negative maxUnhealthy update should be prevented")
 
 					By("ensuring setting both maxUnhealthy update fails")
-					nhc = getNodeHealthCheck()
-					minValue := intstr.FromInt(10)
-					nhc.Spec.MinHealthy = &minValue
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("minHealthy and maxUnhealthy cannot be specified at the same time")), "minHealthy and maxUnhealthy cannot be specified at the same time")
+					Eventually(func(g Gomega) {
+						nhc = getNodeHealthCheck()
+						minValue := intstr.FromInt(10)
+						nhc.Spec.MinHealthy = &minValue
+						g.Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("minHealthy and maxUnhealthy cannot be specified at the same time")))
+					}, "10s", "500ms").Should(Succeed(), "minHealthy and maxUnhealthy cannot be specified at the same time")
 
 					By("ensuring removing both minHealthy and maxUnhealthy update fails")
-					nhc = getNodeHealthCheck()
-					nhc.Spec.MinHealthy = nil
-					nhc.Spec.MaxUnhealthy = nil
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("one of minHealthy and maxUnhealthy should be specified")), "one of minHealthy and maxUnhealthy should be specified")
+					Eventually(func(g Gomega) {
+						nhc = getNodeHealthCheck()
+						nhc.Spec.MinHealthy = nil
+						nhc.Spec.MaxUnhealthy = nil
+						g.Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("one of minHealthy and maxUnhealthy should be specified")))
+					}, "10s", "500ms").Should(Succeed(), "one of minHealthy and maxUnhealthy should be specified")
 
 					By("ensuring selector update fails")
-					nhc = getNodeHealthCheck()
-					nhc.Spec.Selector = metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"foo": "bar",
-						},
-					}
-					Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("prohibited due to running remediation")), "selector update should be prevented")
+					Eventually(func(g Gomega) {
+						nhc = getNodeHealthCheck()
+						nhc.Spec.Selector = metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"foo": "bar",
+							},
+						}
+						g.Expect(k8sClient.Update(context.Background(), nhc)).To(MatchError(ContainSubstring("prohibited due to running remediation")))
+					}, "10s", "500ms").Should(Succeed(), "selector update should be prevented")
 
 					By("ensuring config deletion fails")
 					nhc = getNodeHealthCheck()

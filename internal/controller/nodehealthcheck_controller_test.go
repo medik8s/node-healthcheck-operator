@@ -290,7 +290,10 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 
 					It("should set corresponding condition", func() {
-						expectTemplateNotFound(Default, underTest, "failed to get")
+						Eventually(func(g Gomega) {
+							g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+							expectTemplateNotFound(g, underTest, "failed to get")
+						}, "5s", "200ms").Should(Succeed())
 					})
 				})
 
@@ -304,7 +307,10 @@ var _ = Describe("Node Health Check CR", func() {
 					})
 
 					It("should set corresponding condition", func() {
-						expectTemplateNotFound(Default, underTest, "no namespace is provided")
+						Eventually(func(g Gomega) {
+							g.Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(underTest), underTest)).To(Succeed())
+							expectTemplateNotFound(g, underTest, "no namespace is provided")
+						}, "5s", "200ms").Should(Succeed())
 					})
 				})
 
