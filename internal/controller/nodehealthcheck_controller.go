@@ -133,6 +133,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // for the etcd check of github.com/medik8s/common/pkg/etcd
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;update
 
 // Events for cluster-scoped resources like NHC are always created in the "default" namespace, so we need cluster scoped permissions.
 // The leader election permissions cover the operator namespace only. That isn't an issue with OLM and AllNamespaces mode, because all
