@@ -39,7 +39,7 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	_ "github.com/openshift/api/console/v1/zz_generated.crd-manifests"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to

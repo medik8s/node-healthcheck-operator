@@ -8,9 +8,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
-	"github.com/medik8s/node-healthcheck-operator/internal/metrics"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/metrics"
 )
 
 func UpdateStatusRemediationStarted(node *corev1.Node, nhc *remediationv1alpha1.NodeHealthCheck, remediationCR *unstructured.Unstructured) {

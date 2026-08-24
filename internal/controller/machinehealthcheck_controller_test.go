@@ -34,12 +34,12 @@ import (
 
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/featuregates"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/mhc"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/resources"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils/annotations"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/featuregates"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/mhc"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/resources"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils/annotations"
 )
 
 const (

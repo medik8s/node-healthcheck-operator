@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/servicemonitor"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/servicemonitor"
 )
 
 var serviceMonitorGVR = schema.GroupVersionResource{

@@ -39,8 +39,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to

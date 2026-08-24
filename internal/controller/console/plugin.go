@@ -28,7 +28,7 @@ import (
 
 	consolev1 "github.com/openshift/api/console/v1"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
 )
 
 const (

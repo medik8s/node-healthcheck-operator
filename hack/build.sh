@@ -9,9 +9,9 @@ BUILD_DATE=$(date --utc -Iseconds)
 
 mkdir -p bin
 
-LDFLAGS_VALUE="-X github.com/medik8s/node-healthcheck-operator/version.Version=${VERSION} "
-LDFLAGS_VALUE+="-X github.com/medik8s/node-healthcheck-operator/version.GitCommit=${COMMIT} "
-LDFLAGS_VALUE+="-X github.com/medik8s/node-healthcheck-operator/version.BuildDate=${BUILD_DATE} "
+LDFLAGS_VALUE="-X github.com/medik8s/node-healthcheck-operator/v5/version.Version=${VERSION} "
+LDFLAGS_VALUE+="-X github.com/medik8s/node-healthcheck-operator/v5/version.GitCommit=${COMMIT} "
+LDFLAGS_VALUE+="-X github.com/medik8s/node-healthcheck-operator/v5/version.BuildDate=${BUILD_DATE} "
 # allow override for debugging flags
 LDFLAGS_DEBUG="${LDFLAGS_DEBUG:-" -s -w"}"
 LDFLAGS_VALUE+="${LDFLAGS_DEBUG}"
