@@ -31,10 +31,10 @@ import (
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
-	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/resources"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils/annotations"
+	"github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/resources"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils/annotations"
 )
 
 const (
@@ -1430,7 +1430,7 @@ var _ = Describe("Node Health Check CR", func() {
 		Context("with expected permanent node deletion", func() {
 
 			BeforeEach(func() {
-				// TODO will work with classic remediation as well when https://github.com/medik8s/node-healthcheck-operator/pull/230 is merged
+				// TODO will work with classic remediation as well when https://github.com/medik8s/node-healthcheck-operator/v5/pull/230 is merged
 				templateRef1 := underTest.Spec.RemediationTemplate
 				underTest.Spec.RemediationTemplate = nil
 				underTest.Spec.EscalatingRemediations = []v1alpha1.EscalatingRemediation{
