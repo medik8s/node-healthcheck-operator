@@ -32,7 +32,7 @@ BLUE_ICON_PATH = "./config/assets/nhc_blue.png"
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-DEFAULT_VERSION := 0.0.1
+DEFAULT_VERSION := 5.8.0
 # Let CI set VERSION based on git tags. But heads up, VERSION should not have the 'v' prefix!
 VERSION ?= $(DEFAULT_VERSION)
 export VERSION
