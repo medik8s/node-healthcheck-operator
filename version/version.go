@@ -2,7 +2,7 @@ package version
 
 var (
 	// Version is the operator version
-	Version = "5.0.0"
+	Version = "5.8.0"
 	// GitCommit is the current git commit hash
 	GitCommit = "n/a"
 	// BuildDate is the build date
