@@ -12,6 +12,8 @@ The NHC operator uses non-default tolerations for master, control-plane, and inf
 
 Without these tolerations, control-plane and infrastructure nodes would lack health monitoring. In failure scenarios where all worker nodes are unhealthy, the operator must run on control-plane or infra nodes to perform its core function.
 
+The `NoExecute` toleration for infrastructure nodes prevents pod eviction during node pressure events, ensuring continuous monitoring even when the node is under resource constraints.
+
 The operator uses `priorityClassName: system-cluster-critical`, confirming its infrastructure-level role. All Medik8s node-monitoring operators (Node Maintenance Operator, Self Node Remediation) use identical tolerations.
 
 **Required tolerations:**
@@ -26,27 +28,34 @@ tolerations:
   - key: "node-role.kubernetes.io/infra"
     operator: "Exists"
     effect: "NoSchedule"
+  - key: "node-role.kubernetes.io/infra"
+    operator: "Exists"
+    effect: "NoExecute"
 ```
 
 ---
 
 ## 2. [`access-control-pod-role-bindings`](https://github.com/redhat-best-practices-for-k8s/certsuite/blob/main/CATALOG.md#access-control-pod-role-bindings)
 
-The RoleBinding `service-auth-reader` in the `kube-system` namespace is automatically created by [Operator Lifecycle Manager (OLM)](https://olm.operatorframework.io/) when the operator deploys admission webhooks. This binding is not defined in the operator's codebase and cannot be prevented.
+The RoleBinding `manager-rolebinding` in the `kube-system` namespace grants the operator read access to the `extension-apiserver-authentication` ConfigMap for metrics mTLS authentication.
 
 ### Justification
 
-The NHC operator uses admission webhooks for `NodeHealthCheck` validation and defaulting. These webhooks require reading the `extension-apiserver-authentication` ConfigMap in `kube-system` for TLS authentication. This is the standard OLM pattern for all webhook-based operators ([Kubernetes documentation](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#authenticate-apiservers)).
+The NHC operator serves metrics to Platform Prometheus via mTLS. The metrics server reads the cluster's client CA bundle from the `extension-apiserver-authentication` ConfigMap to verify Prometheus client certificates.
+
+This RoleBinding is defined in `config/optional/kube-system-rbac/` and follows the standard pattern for OpenShift operators serving authenticated metrics endpoints.
 
 **RoleBinding details:**
-- **Name:** `node-healthcheck-controller-manager-service-auth-reader`
+- **Name:** `manager-rolebinding`
 - **Namespace:** `kube-system`
-- **Created by:** OLM (not the operator)
+- **Role:** `manager-role` (grants get/list/watch on `extension-apiserver-authentication` ConfigMap)
+- **Purpose:** Read client CA bundle for metrics mTLS authentication
+- **Code reference:** `internal/metrics/tls/configure.go` (ConfigureMTLS function)
 
 ---
 
 ## Summary
 
 Both configurations are architectural requirements:
-- **Toleration-bypass:** Enables monitoring of all cluster nodes (control-plane, infra, worker)
-- **Pod-role-bindings:** Required by OLM for webhook TLS authentication; not under operator control
+- **Toleration-bypass:** Enables monitoring of all cluster nodes (control-plane, infra, worker). Includes `NoExecute` toleration for infra nodes to prevent eviction during node pressure.
+- **Pod-role-bindings:** Required for metrics mTLS authentication with Platform Prometheus
