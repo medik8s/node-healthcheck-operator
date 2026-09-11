@@ -38,7 +38,7 @@ your cluster. The easiest way to do this is:
 
 ```shell
 export IMAGE_REGISTRY="<registry>/<username>" # e.g. "quay.io/my-username"
-export VERSION=0.1.0                          # optional, defaults to NHC version 0.0.1 being pushed with `latest` image tag
+export VERSION=5.8.0                          # optional, defaults to the current NHC version
 make container-build container-push
 ```
 
