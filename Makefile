@@ -569,3 +569,7 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run
+
+# Source-to-OLM deployment is kept in a separate makefile so the existing
+# development and release targets above retain their current behavior.
+-include Makefile.olm
