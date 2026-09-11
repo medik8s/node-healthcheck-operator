@@ -8,7 +8,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
 )
 
 var _ = Describe("Init", func() {

@@ -23,7 +23,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/metrics"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/metrics"
 )
 
 const (

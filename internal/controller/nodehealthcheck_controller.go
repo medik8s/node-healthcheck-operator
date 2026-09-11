@@ -51,12 +51,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/mhc"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/resources"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
-	"github.com/medik8s/node-healthcheck-operator/internal/metrics"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/mhc"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/resources"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/metrics"
 )
 
 const (

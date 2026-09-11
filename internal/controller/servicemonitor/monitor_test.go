@@ -32,7 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
 )
 
 // getServiceMonitorFromCluster fetches the ServiceMonitor from the cluster and returns its spec fields

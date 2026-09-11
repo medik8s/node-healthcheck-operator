@@ -41,7 +41,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	metricstls "github.com/medik8s/node-healthcheck-operator/internal/metrics/tls"
+	metricstls "github.com/medik8s/node-healthcheck-operator/v5/internal/metrics/tls"
 )
 
 // --- test helpers ---

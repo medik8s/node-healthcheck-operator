@@ -21,9 +21,9 @@ import (
 
 	"github.com/openshift/api/machine/v1beta1"
 
-	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/mhc"
+	"github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/e2e/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/mhc"
 )
 
 const (
