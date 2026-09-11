@@ -37,7 +37,7 @@ DEFAULT_VERSION := 5.8.0
 VERSION ?= $(DEFAULT_VERSION)
 export VERSION
 # For the replaces field in the CSV, mandatory to be set for versioned builds! Should also not have the 'v' prefix.
-PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
+export PREVIOUS_VERSION ?= 0.12.1
 # Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
 SKIP_RANGE_LOWER ?=
 
@@ -83,16 +83,11 @@ export IMAGE_REGISTRY
 # Image base URL of the console plugin
 CONSOLE_PLUGIN_IMAGE_BASE ?= quay.io/medik8s/node-remediation-console
 
-# For the default version, use 'latest' image tags.
-# Otherwise version prefixed with 'v'
-ifeq ($(VERSION), $(DEFAULT_VERSION))
-IMAGE_TAG = latest
-CONSOLE_PLUGIN_TAG ?= latest
-else
+# Use the selected operator version for image tags. Development builds can
+# still override IMAGE_TAG and CONSOLE_PLUGIN_TAG explicitly.
 IMAGE_TAG = v$(VERSION)
 # always release the console with the same tag as NHC and the other way around!
 CONSOLE_PLUGIN_TAG ?= v$(VERSION)
-endif
 export IMAGE_TAG
 
 # Image URL of the console plugin
@@ -326,6 +321,7 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 	$(MAKE) bundle-validate
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
@@ -343,16 +339,17 @@ add-console-plugin-annotation: ## Add console-plugin annotation to the CSV
 
 .PHONY: add-replaces-field
 add-replaces-field: ## Add replaces field to the CSV
-	# add replaces field when building versioned bundle
-	@if [ $(VERSION) != $(DEFAULT_VERSION) ]; then \
-		if [ $(PREVIOUS_VERSION) == $(DEFAULT_VERSION) ]; then \
-			echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
-			exit 1; \
-		else \
-		  	# preferring sed here, in order to have "replaces" near "version" \
-			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
-		fi \
+	@if [ -z "$(PREVIOUS_VERSION)" ]; then \
+		echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
+		exit 1; \
 	fi
+	@if [ "$(PREVIOUS_VERSION)" = "$(VERSION)" ]; then \
+		echo "Error: PREVIOUS_VERSION must differ from VERSION"; \
+		exit 1; \
+	fi
+	# Prefer sed here in order to keep "replaces" near "version".
+	sed -r -i "/  replaces:.*/d" ${CSV}
+	sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}
 
 .PHONY: add-community-edition-to-display-name
 add-community-edition-to-display-name: ## Add the "Community Edition" suffix to the display name
@@ -399,6 +396,7 @@ bundle-ocp-ci: yq ## Generate OCP bundle for CI, without overriding the image pu
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 
 	$(MAKE) add-community-edition-to-display-name
 	$(MAKE) bundle-validate
@@ -406,6 +404,7 @@ bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s commun
 .PHONY: bundle-metrics
 bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metric relates manifests, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/metrics | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
 	$(MAKE) bundle-validate
 
 # Apply version or build date related changes in the bundle
@@ -438,11 +437,12 @@ bundle-scorecard: operator-sdk ## Run scorecard tests
 
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
-	VERSION=0.0.1 $(MAKE) manifests bundle-k8s
+	$(MAKE) manifests bundle-k8s
+	$(MAKE) add-replaces-field
+	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'|;" ${CSV}
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
-	# delete replaces field
-	sed -r -i "/replaces:.*/d" ${CSV}
+	$(MAKE) bundle-validate
 
 .PHONY: bundle-build-ocp
 bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
@@ -484,7 +484,6 @@ CATALOG_DOCKERFILE := ${CATALOG_DIR}.Dockerfile
 CATALOG_INDEX := $(CATALOG_DIR)/index.yaml
 
 # Add olm.channel entries for each channel in CHANNELS.
-# For development version (0.0.1), omit replaces and skipRange to avoid OLM catalog validation errors.
 .PHONY: add_channel_entry_for_the_bundle
 add_channel_entry_for_the_bundle:
 	@for channel in $(shell echo ${CHANNELS} | tr ',' ' '); do \
@@ -494,18 +493,14 @@ add_channel_entry_for_the_bundle:
 		echo "name: $$channel" >> ${CATALOG_INDEX}; \
 		echo "entries:" >> ${CATALOG_INDEX}; \
 		echo "  - name: ${OPERATOR_NAME}.v${VERSION}" >> ${CATALOG_INDEX}; \
-		if [ -n "${PREVIOUS_VERSION}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${PREVIOUS_VERSION}" != "${DEFAULT_VERSION}" ]; then \
-			if ! printf '%s\n' "${PREVIOUS_VERSION}" "${VERSION}" | sort -V -C 2>/dev/null; then \
-				echo "Error: VERSION (${VERSION}) must be greater than PREVIOUS_VERSION (${PREVIOUS_VERSION})"; \
+		if [ -n "${PREVIOUS_VERSION}" ]; then \
+			if [ "${PREVIOUS_VERSION}" = "${VERSION}" ]; then \
+				echo "Error: PREVIOUS_VERSION must differ from VERSION"; \
 				exit 1; \
 			fi; \
 			echo "    replaces: ${OPERATOR_NAME}.v${PREVIOUS_VERSION}" >> ${CATALOG_INDEX}; \
 		fi; \
-		if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${VERSION}" != "${SKIP_RANGE_LOWER}" ]; then \
-			if ! printf '%s\n' "${SKIP_RANGE_LOWER}" "${VERSION}" | sort -V -C 2>/dev/null; then \
-				echo "Error: VERSION (${VERSION}) must be greater than SKIP_RANGE_LOWER (${SKIP_RANGE_LOWER})"; \
-				exit 1; \
-			fi; \
+		if [ -n "${SKIP_RANGE_LOWER}" ]; then \
 			echo "    skipRange: '>=${SKIP_RANGE_LOWER} <${VERSION}'" >> ${CATALOG_INDEX}; \
 		fi; \
 	done

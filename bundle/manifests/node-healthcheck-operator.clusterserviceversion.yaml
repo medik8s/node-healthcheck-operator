@@ -43,17 +43,17 @@ metadata:
       ]
     capabilities: Basic Install
     categories: OpenShift Optional
-    containerImage: quay.io/medik8s/node-healthcheck-operator:v0.0.1
+    containerImage: quay.io/medik8s/node-healthcheck-operator:v5.8.0
     createdAt: ""
     description: Detect failed Nodes and trigger remediation with a remediation operator.
-    olm.skipRange: '>=0.0.1'
+    olm.skipRange: '>=0.1.0 <5.8.0'
     operatorframework.io/suggested-namespace: openshift-workload-availability
     operatorframework.io/suggested-namespace-template: '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"openshift-workload-availability","annotations":{"openshift.io/node-selector":""}}}'
     operators.operatorframework.io/builder: operator-sdk-v1.42.2
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/medik8s/node-healthcheck-operator
     support: Medik8s
-  name: node-healthcheck-operator.v0.0.1
+  name: node-healthcheck-operator.v5.8.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -531,7 +531,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.name
-                image: quay.io/medik8s/node-healthcheck-operator:latest
+                image: quay.io/medik8s/node-healthcheck-operator:v5.8.0
                 lifecycle:
                   postStart:
                     exec:
@@ -668,7 +668,8 @@ spec:
   provider:
     name: Medik8s
     url: https://github.com/medik8s
-  version: 0.0.1
+  version: 5.8.0
+  replaces: node-healthcheck-operator.v0.12.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
