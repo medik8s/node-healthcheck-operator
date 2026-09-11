@@ -13,7 +13,7 @@ metadata:
     operatorframework.io/suggested-namespace-template: '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"openshift-workload-availability","annotations":{"openshift.io/node-selector":""}}}'
     repository: https://github.com/medik8s/node-healthcheck-operator
     support: Medik8s
-  name: node-healthcheck-operator.v0.0.0
+  name: medik8s-node-healthcheck-operator.v0.0.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}

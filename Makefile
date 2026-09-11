@@ -104,6 +104,9 @@ MUST_GATHER_IMAGE ?= quay.io/medik8s/must-gather:latest
 OPERATOR_NAME = node-healthcheck-operator
 OPERATOR_NAMESPACE ?= openshift-workload-availability
 
+# PACKAGE_NAME is the OLM package name
+PACKAGE_NAME ?= medik8s-$(OPERATOR_NAME)
+
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(OPERATOR_NAME)-bundle:$(IMAGE_TAG)
@@ -322,13 +325,13 @@ endef
 .PHONY: bundle-base
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests
-	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
+	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base --package $(PACKAGE_NAME)
 	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
-	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) --package $(PACKAGE_NAME) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
-export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
+export CSV="./bundle/manifests/$(PACKAGE_NAME).clusterserviceversion.yaml"
 
 .PHONY: ocp-version-check
 ocp-version-check: ## Check if OCP_VERSION is set
@@ -350,7 +353,7 @@ add-replaces-field: ## Add replaces field to the CSV
 			exit 1; \
 		else \
 		  	# preferring sed here, in order to have "replaces" near "version" \
-			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(OPERATOR_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
+			sed -r -i "/  version: $(VERSION)/ a\  replaces: $(PACKAGE_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
 		fi \
 	fi
 
@@ -360,7 +363,7 @@ add-community-edition-to-display-name: ## Add the "Community Edition" suffix to 
 
 .PHONY: bundle-okd
 bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
-	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests/okd | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) --package $(PACKAGE_NAME) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) add-console-plugin-annotation
 	$(MAKE) add-replaces-field
 	$(MAKE) add-community-edition-to-display-name
@@ -371,7 +374,7 @@ bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and me
 .PHONY: bundle-ocp
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(shell rm -r bundle) # OCP bundle should be created from scratch
-	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) --package $(PACKAGE_NAME) $(BUNDLE_METADATA_OPTS)
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
@@ -398,14 +401,14 @@ bundle-ocp-ci: yq ## Generate OCP bundle for CI, without overriding the image pu
 
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
-	$(KUSTOMIZE) build config/manifests/k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests/k8s | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) --package $(PACKAGE_NAME) $(BUNDLE_METADATA_OPTS)
 
 	$(MAKE) add-community-edition-to-display-name
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-metrics
 bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metric relates manifests, then validate generated files.
-	$(KUSTOMIZE) build config/manifests/metrics | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests/metrics | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) --package $(PACKAGE_NAME) $(BUNDLE_METADATA_OPTS)
 	$(MAKE) bundle-validate
 
 # Apply version or build date related changes in the bundle
@@ -470,7 +473,7 @@ bundle-run-update: operator-sdk ## Upgrade bundle image
 
 .PHONY: bundle-cleanup
 bundle-cleanup: operator-sdk ## Remove bundle installed via bundle-run
-	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(OPERATOR_NAME) --delete-all
+	$(OPERATOR_SDK) -n $(OPERATOR_NAMESPACE) cleanup $(PACKAGE_NAME) --delete-all
 
 .PHONY: create-ns
 create-ns: ## Create namespace
@@ -490,16 +493,16 @@ add_channel_entry_for_the_bundle:
 	@for channel in $(shell echo ${CHANNELS} | tr ',' ' '); do \
 		echo "---" >> ${CATALOG_INDEX}; \
 		echo "schema: olm.channel" >> ${CATALOG_INDEX}; \
-		echo "package: ${OPERATOR_NAME}" >> ${CATALOG_INDEX}; \
+		echo "package: ${PACKAGE_NAME}" >> ${CATALOG_INDEX}; \
 		echo "name: $$channel" >> ${CATALOG_INDEX}; \
 		echo "entries:" >> ${CATALOG_INDEX}; \
-		echo "  - name: ${OPERATOR_NAME}.v${VERSION}" >> ${CATALOG_INDEX}; \
+		echo "  - name: ${PACKAGE_NAME}.v${VERSION}" >> ${CATALOG_INDEX}; \
 		if [ -n "${PREVIOUS_VERSION}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${PREVIOUS_VERSION}" != "${DEFAULT_VERSION}" ]; then \
 			if ! printf '%s\n' "${PREVIOUS_VERSION}" "${VERSION}" | sort -V -C 2>/dev/null; then \
 				echo "Error: VERSION (${VERSION}) must be greater than PREVIOUS_VERSION (${PREVIOUS_VERSION})"; \
 				exit 1; \
 			fi; \
-			echo "    replaces: ${OPERATOR_NAME}.v${PREVIOUS_VERSION}" >> ${CATALOG_INDEX}; \
+			echo "    replaces: ${PACKAGE_NAME}.v${PREVIOUS_VERSION}" >> ${CATALOG_INDEX}; \
 		fi; \
 		if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${VERSION}" != "${SKIP_RANGE_LOWER}" ]; then \
 			if ! printf '%s\n' "${SKIP_RANGE_LOWER}" "${VERSION}" | sort -V -C 2>/dev/null; then \
@@ -516,7 +519,7 @@ catalog-build: opm ## Build a file-based catalog image.
 	-rm -r ${CATALOG_DIR} ${CATALOG_DOCKERFILE}
 	@mkdir -p ${CATALOG_DIR}
 	$(OPM) generate dockerfile ${CATALOG_DIR}
-	$(OPM) init ${OPERATOR_NAME} \
+	$(OPM) init ${PACKAGE_NAME} \
 		--default-channel=${DEFAULT_CHANNEL} \
 		--description=./README.md \
 		--icon=${BLUE_ICON_PATH} \
