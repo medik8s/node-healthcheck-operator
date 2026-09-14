@@ -314,6 +314,10 @@ rm -rf $$TMP_DIR ;\
 }
 endef
 
+.PHONY: print-image-tag
+print-image-tag: ## Print the current bundle image tag (used by CI to know what was just built)
+	@echo $(IMAGE_TAG)
+
 .PHONY: bundle-base
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests

@@ -120,8 +120,9 @@ jobs:
         # See https://github.com/slintes/self-node-remediation/commit/a8aa0f73a240509cbd446fae048b15ed11a20eea
         operator-sdk run bundle -n ${DEPLOY_NAMESPACE} quay.io/slintes/self-node-remediation-operator-bundle:v0.1.0-start-kubelet
         
-        # deploy NHC
-        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
+        # deploy NHC (use the same tag the "Build NHC" step just built/pushed)
+        IMAGE_TAG=$(make print-image-tag)
+        operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${IMAGE_TAG}
         
         # wait a bit for OLM creating CSV etc
         sleep 1m
