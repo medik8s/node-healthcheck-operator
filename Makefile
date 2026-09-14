@@ -583,8 +583,16 @@ endif
 ifeq ($(wildcard $(DEV_MK)),)
 dev-%:
 	@echo "Downloading medik8s/tools into $(TOOLS_DIR)..."
-	@if [ -d $(TOOLS_DIR) ]; then echo "  Removing stale $(TOOLS_DIR)..."; rm -rf $(TOOLS_DIR); fi
+	@if [ -d $(TOOLS_DIR) ]; then \
+		if [ -f $(TOOLS_DIR)/.managed-by-makefile ]; then \
+			echo "  Removing stale $(TOOLS_DIR)..."; rm -rf $(TOOLS_DIR); \
+		else \
+			echo "Error: $(TOOLS_DIR) exists but was not created by this Makefile (missing .managed-by-makefile sentinel)."; \
+			echo "       Remove it manually or set TOOLS_DIR to a valid medik8s/tools checkout."; exit 1; \
+		fi; \
+	fi
 	@git clone --depth 1 https://github.com/medik8s/tools.git $(TOOLS_DIR)
+	@touch $(TOOLS_DIR)/.managed-by-makefile
 	@test -f $(DEV_MK) || { echo "Error: $(DEV_MK) not found after clone."; exit 1; }
 	@$(MAKE) $@
 endif
