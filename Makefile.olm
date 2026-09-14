@@ -37,9 +37,6 @@ OLM_OPERATOR_NAME ?= node-healthcheck-operator
 OLM_PACKAGE_NAME ?= $(OLM_OPERATOR_NAME)
 OLM_OPERATOR_NAMESPACE ?= openshift-workload-availability
 OLM_CHANNEL ?= stable
-OLM_VERSION ?= 0.0.1
-OLM_DEFAULT_VERSION_DISPLAY := $(if $(DEFAULT_VERSION),$(DEFAULT_VERSION),$(OLM_VERSION))
-OLM_PROJECT_VERSION_DISPLAY := $(if $(VERSION),$(VERSION),$(OLM_VERSION))
 OLM_GO_TOOLCHAIN_VERSION := $(shell awk '$$1 == "toolchain" {print $$2}' go.mod 2>/dev/null)
 OLM_CATALOG_SOURCE_NAME ?= $(OLM_PACKAGE_NAME)-catalog
 OLM_CATALOG_SOURCE_NAMESPACE ?= $(OLM_OPERATOR_NAMESPACE)
@@ -95,14 +92,13 @@ check-go: ## Check if go binary is available in PATH.
 versions: check-go olm-tools ## Display source-deployment tool and project versions.
 	@printf '\033[36m%-30s\033[0m %s\n' 'GO_VERSION' "$$(go version | awk '{print $$3}')"
 	@printf '\n\033[1m%-30s %-20s %s\033[0m\n' 'Tool and Project Versions:' 'Value' 'Used by Targets'
-	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'DEFAULT_VERSION' '$(OLM_DEFAULT_VERSION_DISPLAY)' 'bundle'
-	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'VERSION' '$(OLM_PROJECT_VERSION_DISPLAY)' 'bundle, deploy-olm'
+	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'DEFAULT_VERSION' '$(DEFAULT_VERSION)' 'bundle'
+	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'VERSION' '$(VERSION)' 'bundle, deploy-olm'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'OPERATOR_SDK_VERSION' '$(OLM_OPERATOR_SDK_VERSION)' 'operator-sdk, bundle'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'ENVTEST_K8S_VERSION' 'not used' 'not used by source deployment'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'GOLANGCI_LINT_VERSION' 'not used' 'not used by source deployment'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'KUSTOMIZE_VERSION' '$(OLM_KUSTOMIZE_VERSION)' 'kustomize, bundle'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'CONTROLLER_TOOLS_VERSION' '$(OLM_CONTROLLER_GEN_VERSION)' 'controller-gen, bundle'
-	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'OLM_VERSION' '$(OLM_VERSION)' 'bundle, deploy-olm'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'OLM_CHANNEL' '$(OLM_CHANNEL)' 'bundle, deploy-olm'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'GO_TOOLCHAIN_VERSION' '$(OLM_GO_TOOLCHAIN_VERSION)' '(informational only)'
 	$(call OLM_CHECK_TOOL_VERSION,Operator-SDK,$(OLM_OPERATOR_SDK),$(OLM_OPERATOR_SDK) version 2>/dev/null | awk -F'"' '/operator-sdk version/ {print $$2}',$(OLM_OPERATOR_SDK_VERSION),OPERATOR_SDK_LOCAL)
@@ -163,7 +159,7 @@ olm-build-push: olm-tools ## Build and push source and OLM bundle images to ttl.
 	$(OLM_OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
 	cd config/manifests/base && $(OLM_KUSTOMIZE) edit set image controller=$(OLM_OPERATOR_IMAGE)
 	$(OLM_KUSTOMIZE) build config/manifests/base | $(OLM_OPERATOR_SDK) generate bundle -q --manifests --metadata --overwrite \
-		--version $(OLM_VERSION) --channels=$(OLM_CHANNEL) --default-channel=$(OLM_CHANNEL)
+		--version $(VERSION) --channels=$(OLM_CHANNEL) --default-channel=$(OLM_CHANNEL)
 	@csv=""; \
 	for candidate in bundle/manifests/*.clusterserviceversion.yaml; do \
 		[ -f "$$candidate" ] && { csv="$$candidate"; break; }; \
@@ -203,7 +199,7 @@ deploy-olm: versions ## Display versions, then build source, push temporary imag
 		OLM_PACKAGE_NAME='$(OLM_PACKAGE_NAME)' \
 		OLM_OPERATOR_NAMESPACE='$(OLM_OPERATOR_NAMESPACE)' \
 		OLM_CHANNEL='$(OLM_CHANNEL)' \
-		OLM_VERSION='$(OLM_VERSION)' \
+		VERSION='$(VERSION)' \
 		OLM_INSTALL_MODE='$(OLM_INSTALL_MODE)' \
 		OLM_SECURITY_CONTEXT_CONFIG='$(OLM_SECURITY_CONTEXT_CONFIG)' \
 		OLM_TTL_DURATION='$(OLM_TTL_DURATION)' \
@@ -268,4 +264,3 @@ olm-help: ## Display source-to-OLM deployment variables.
 		"OLM_OPERATOR_IMAGE=$(OLM_OPERATOR_IMAGE)" \
 		"OLM_BUNDLE_IMAGE=$(OLM_BUNDLE_IMAGE)" \
 		"OLM_TTL_DURATION=$(OLM_TTL_DURATION)"
-
