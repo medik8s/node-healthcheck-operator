@@ -4,8 +4,11 @@
 # variables and helper targets prefixed with OLM_ so the existing development
 # targets remain unchanged.
 
-SHELL := /usr/bin/env bash
-.SHELLFLAGS := -euo pipefail -c
+OLM_TARGETS := check-go versions olm-controller-gen olm-operator-sdk \
+	       olm-kustomize olm-tools olm-build-push deploy-olm undeploy-olm olm-help
+
+$(OLM_TARGETS): SHELL := /usr/bin/env bash
+$(OLM_TARGETS): .SHELLFLAGS := -euo pipefail -c
 
 # Public tool-version knobs, matching the names used by the main Makefile.
 # When this file is included, the main Makefile's file-local defaults remain
