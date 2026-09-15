@@ -104,13 +104,29 @@ bundle with operator-sdk:
 make deploy-olm
 ```
 
-The temporary images expire after one hour by default. Override the duration
-and deployment namespace when needed, for example:
+For temporary PR or branch testing, use `ttl.sh`:
 
 ```bash
-TTL_DURATION=4h OLM_OPERATOR_NAMESPACE=openshift-workload-availability make deploy-olm
+OLM_IMAGE_PREFIX=ttl.sh/my-nhc-test TTL_DURATION_OR_TAG=4h make deploy-olm
 make undeploy-olm
 ```
+
+The images expire after the duration in `TTL_DURATION_OR_TAG` (one hour by default).
+To use `quay.io`, log in first and provide a repository where you have push
+access:
+
+```bash
+podman login quay.io
+OLM_IMAGE_PREFIX=quay.io/myuser/node-healthcheck-operator \
+  TTL_DURATION_OR_TAG=pr-123 make deploy-olm
+```
+
+`OLM_IMAGE_PREFIX` controls the source image name. The bundle image is derived
+by appending `-bundle`. With registries other than `ttl.sh`,
+`TTL_DURATION_OR_TAG` is used as the image tag and does not provide automatic
+expiration. For completely
+independent image names, override `OLM_OPERATOR_IMAGE` and
+`OLM_BUNDLE_IMAGE` directly.
 
 ## Help
 

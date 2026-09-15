@@ -12,7 +12,7 @@
 #   - OPERATOR_NAME flows through unchanged — single source of truth
 #   - No version defaults — fail if versions aren't set
 
-OLM_TARGETS := olm-check-go olm-versions olm-controller-gen olm-operator-sdk \
+OLM_TARGETS := olm-check-go versions olm-controller-gen olm-operator-sdk \
 	       olm-kustomize olm-tools olm-build-push deploy-olm undeploy-olm olm-help
 
 $(OLM_TARGETS): SHELL := /usr/bin/env bash
@@ -51,11 +51,13 @@ OLM_CATALOG_SOURCE_NAMESPACE ?= $(OPERATOR_NAMESPACE)
 OLM_OPERATOR_GROUP_NAME ?= operator-sdk-og
 
 # Ephemeral image registry (ttl.sh)
-TTL_DURATION ?= 1h
+# On ttl.sh this controls image expiry; other registries use it as the tag.
+# TTL_DURATION remains accepted as a backwards-compatible alias.
+TTL_DURATION_OR_TAG ?= $(or $(TTL_DURATION),1h)
 OLM_RUN_ID := $(or $(OLM_RUN_ID),$(shell head -c 32 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 8))
 OLM_IMAGE_PREFIX := $(or $(OLM_IMAGE_PREFIX),ttl.sh/$(OPERATOR_NAME)-$(OLM_RUN_ID))
-OLM_OPERATOR_IMAGE ?= $(OLM_IMAGE_PREFIX):$(TTL_DURATION)
-OLM_BUNDLE_IMAGE ?= $(OLM_IMAGE_PREFIX)-bundle:$(TTL_DURATION)
+OLM_OPERATOR_IMAGE ?= $(OLM_IMAGE_PREFIX):$(TTL_DURATION_OR_TAG)
+OLM_BUNDLE_IMAGE ?= $(OLM_IMAGE_PREFIX)-bundle:$(TTL_DURATION_OR_TAG)
 
 # Platform and tools
 OLM_PLATFORM ?= linux/amd64
@@ -99,8 +101,8 @@ olm-check-go: ## Check if go binary is available in PATH.
 	fi
 	@printf '\033[32m✓ Go binary found in PATH\033[0m\n'
 
-.PHONY: olm-versions
-olm-versions: olm-check-go olm-tools ## Display source-deployment tool and project versions.
+.PHONY: versions
+versions: olm-check-go olm-tools ## Display source-deployment tool and project versions.
 	@printf '\033[36m%-30s\033[0m %s\n' 'GO_VERSION' "$$(go version | awk '{print $$3}')"
 	@printf '\n\033[1m%-30s %-20s %s\033[0m\n' 'Tool and Project Versions:' 'Value' 'Used by Targets'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'DEFAULT_VERSION' '$(DEFAULT_VERSION)' 'bundle'
@@ -119,7 +121,7 @@ olm-controller-gen:
 	@if [ ! -x "$(OLM_CONTROLLER_GEN)" ]; then \
 		command -v go >/dev/null 2>&1 || { echo "go is required to download controller-gen" >&2; exit 1; }; \
 		mkdir -p "$(dir $(OLM_CONTROLLER_GEN))"; \
-		tmp_dir="$$(mktemp -d)"; \
+		tmp_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/nhc-olm-tools.XXXXXX")"; \
 		trap 'rm -rf "$$tmp_dir"' EXIT; \
 		cd "$$tmp_dir"; \
 		go mod init olm-tools >/dev/null; \
@@ -138,13 +140,14 @@ olm-operator-sdk:
 		chmod +x "$(OLM_OPERATOR_SDK).tmp"; \
 		mv "$(OLM_OPERATOR_SDK).tmp" "$(OLM_OPERATOR_SDK)"; \
 	fi
+	@printf '%s\n' "$(abspath $(OLM_OPERATOR_SDK))"
 
 .PHONY: olm-kustomize
 olm-kustomize:
 	@if [ ! -x "$(OLM_KUSTOMIZE)" ]; then \
 		command -v go >/dev/null 2>&1 || { echo "go is required to download kustomize" >&2; exit 1; }; \
 		mkdir -p "$(dir $(OLM_KUSTOMIZE))"; \
-		tmp_dir="$$(mktemp -d)"; \
+		tmp_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/nhc-olm-tools.XXXXXX")"; \
 		trap 'rm -rf "$$tmp_dir"' EXIT; \
 		cd "$$tmp_dir"; \
 		go mod init olm-tools >/dev/null; \
@@ -153,6 +156,7 @@ olm-kustomize:
 			mv "$(abspath $(dir $(OLM_KUSTOMIZE)))/kustomize" "$(abspath $(OLM_KUSTOMIZE))"; \
 		fi; \
 	fi
+	@printf '%s\n' "$(abspath $(OLM_KUSTOMIZE))"
 
 .PHONY: olm-tools
 olm-tools: olm-controller-gen olm-operator-sdk olm-kustomize ## Download pinned source-deployment tools into bin/olm.
@@ -184,7 +188,10 @@ olm-build-push: olm-tools ## Build and push source and OLM bundle images to ttl.
 	$(OLM_CONTAINER_TOOL) push $(OLM_BUNDLE_IMAGE)
 
 .PHONY: deploy-olm
-deploy-olm: olm-versions ## Build source, push to ttl.sh, and install the operator via OLM.
+# olm-build-push rewrites generated manifests, so deploy-olm always runs it
+# in a temporary copy. This protects the tracked CSV and base kustomization
+# from deploy-time image substitution.
+deploy-olm: versions ## Build source, push to ttl.sh, and install the operator via OLM.
 	@set -euo pipefail; \
 	command -v "$(OLM_OC)" >/dev/null 2>&1 || { echo "OpenShift/Kubernetes CLI '$(OLM_OC)' is required" >&2; exit 1; }; \
 	if ! identity="$$($(OLM_AUTH_CHECK) 2>&1)"; then \
@@ -192,7 +199,30 @@ deploy-olm: olm-versions ## Build source, push to ttl.sh, and install the operat
 		echo "$$identity" >&2; \
 		exit 1; \
 	fi; \
-	$(MAKE) olm-build-push; \
+        # temp dir required to not directly update csv and kustomize files
+	work_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/nhc-olm-deploy.XXXXXX")"; \
+	cleanup_work_dir() { chmod -R 777 "$$work_dir" 2>/dev/null || true; rm -rf "$$work_dir"; }; \
+	trap cleanup_work_dir EXIT; \
+	cp -r . "$$work_dir/source"; \
+	chmod -R 777 "$$work_dir/source"; \
+	rm -rf "$$work_dir/source/bin"; \
+	cd "$$work_dir/source"; \
+	$(MAKE) olm-build-push \
+		OLM_RUN_ID='$(OLM_RUN_ID)' \
+		OLM_IMAGE_PREFIX='$(OLM_IMAGE_PREFIX)' \
+		OLM_OPERATOR_IMAGE='$(OLM_OPERATOR_IMAGE)' \
+		OLM_BUNDLE_IMAGE='$(OLM_BUNDLE_IMAGE)' \
+		OPERATOR_NAMESPACE='$(OPERATOR_NAMESPACE)' \
+		OLM_PACKAGE_NAME='$(OLM_PACKAGE_NAME)' \
+		OLM_CHANNEL='$(OLM_CHANNEL)' \
+		VERSION='$(VERSION)' \
+		OLM_PLATFORM='$(OLM_PLATFORM)' \
+		OLM_CONTAINER_TOOL='$(OLM_CONTAINER_TOOL)' \
+		OLM_LOCALBIN='$(OLM_LOCALBIN)' \
+		OLM_CONTROLLER_GEN='$(OLM_CONTROLLER_GEN)' \
+		OLM_OPERATOR_SDK='$(OLM_OPERATOR_SDK)' \
+		OLM_KUSTOMIZE='$(OLM_KUSTOMIZE)'; \
+	cd - >/dev/null; \
 	"$(OLM_OC)" get namespace "$(OPERATOR_NAMESPACE)" >/dev/null 2>&1 || \
 		"$(OLM_OC)" create namespace "$(OPERATOR_NAMESPACE)"; \
 	"$(OLM_OPERATOR_SDK)" -n "$(OPERATOR_NAMESPACE)" cleanup "$(OLM_PACKAGE_NAME)" >/dev/null 2>&1 || true; \
@@ -245,4 +275,4 @@ olm-help: ## Display source-to-OLM deployment variables.
 		"OLM_OPERATOR_GROUP_NAME=$(OLM_OPERATOR_GROUP_NAME)" \
 		"OLM_OPERATOR_IMAGE=$(OLM_OPERATOR_IMAGE)" \
 		"OLM_BUNDLE_IMAGE=$(OLM_BUNDLE_IMAGE)" \
-		"TTL_DURATION=$(TTL_DURATION)"
+		"TTL_DURATION_OR_TAG=$(TTL_DURATION_OR_TAG)"
