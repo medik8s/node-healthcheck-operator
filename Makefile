@@ -570,6 +570,14 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run
 
-# Source-to-OLM deployment is kept in a separate makefile so the existing
-# development and release targets above retain their current behavior.
--include Makefile.olm
+# Source-to-OLM deployment
+# Uses medik8s/tools dev/olm.mk if available (via TOOLS_DIR), otherwise falls
+# back to the local Makefile.olm. This mirrors the dev.mk include pattern from
+# PR #410 and prepares for migration to medik8s/tools.
+OLM_OPERATOR_NAME ?= $(OPERATOR_NAME)
+TOOLS_DIR ?= $(shell cd .. && pwd)/tools
+OLM_MK := $(TOOLS_DIR)/dev/olm.mk
+ifeq ($(wildcard $(OLM_MK)),)
+  OLM_MK := Makefile.olm
+endif
+-include $(OLM_MK)
