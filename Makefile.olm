@@ -1,10 +1,16 @@
 # Source-to-OLM deployment targets.
 #
 # This file is operator-agnostic and can be copied as-is across repos (or
-# shared via medik8s/tools). All operator-specific values are inherited from
-# the including Makefile which must set:
+# shared via medik8s/tools as dev/olm.mk). All operator-specific values are
+# inherited from the including Makefile which must set:
 #   OPERATOR_NAME, OPERATOR_SDK_VERSION, CONTROLLER_GEN_VERSION, KUSTOMIZE_VERSION
-# before the include. See the bottom of the main Makefile for the include snippet.
+# before the include.
+#
+# Design principles (from the medik8s Makefile redesign proposal):
+#   - No OLM_ prefix on variables that duplicate the main Makefile
+#   - Reuse main Makefile tool binaries when available (LOCALBIN/bin/)
+#   - OPERATOR_NAME flows through unchanged — single source of truth
+#   - No version defaults — fail if versions aren't set
 
 OLM_TARGETS := olm-check-go olm-versions olm-controller-gen olm-operator-sdk \
 	       olm-kustomize olm-tools olm-build-push deploy-olm undeploy-olm olm-help
@@ -12,31 +18,46 @@ OLM_TARGETS := olm-check-go olm-versions olm-controller-gen olm-operator-sdk \
 $(OLM_TARGETS): SHELL := /usr/bin/env bash
 $(OLM_TARGETS): .SHELLFLAGS := -euo pipefail -c
 
-# All versions inherited from the including Makefile — no defaults here.
-OLM_CONTROLLER_GEN_VERSION ?= $(CONTROLLER_GEN_VERSION)
-OLM_OPERATOR_SDK_VERSION ?= $(OPERATOR_SDK_VERSION)
-OLM_KUSTOMIZE_VERSION ?= $(patsubst v5@v%,v%,$(KUSTOMIZE_VERSION))
+# --- Required variables (must be set by the including Makefile) ---
 
-ifndef OLM_OPERATOR_NAME
-  $(error OLM_OPERATOR_NAME must be set before including Makefile.olm)
+ifndef OPERATOR_NAME
+  $(error OPERATOR_NAME must be set before including Makefile.olm)
 endif
-OLM_PACKAGE_NAME ?= $(OLM_OPERATOR_NAME)
-OLM_OPERATOR_NAMESPACE ?= openshift-workload-availability
+
+ifndef OPERATOR_SDK_VERSION
+  $(error OPERATOR_SDK_VERSION must be set before including Makefile.olm)
+endif
+
+ifndef CONTROLLER_GEN_VERSION
+  $(error CONTROLLER_GEN_VERSION must be set before including Makefile.olm)
+endif
+
+ifndef KUSTOMIZE_VERSION
+  $(error KUSTOMIZE_VERSION must be set before including Makefile.olm)
+endif
+
+# --- Derived / overridable variables ---
+
+# Strip the kustomize major-version module suffix (v5@v5.8.1 -> v5.8.1)
+OLM_KUSTOMIZE_VERSION := $(patsubst v5@v%,v%,$(KUSTOMIZE_VERSION))
+
+OPERATOR_NAMESPACE ?= openshift-workload-availability
 OLM_CHANNEL ?= stable
-OLM_GO_TOOLCHAIN_VERSION := $(shell awk '$$1 == "toolchain" {print $$2}' go.mod 2>/dev/null)
-OLM_CATALOG_SOURCE_NAME ?= $(OLM_PACKAGE_NAME)-catalog
-OLM_CATALOG_SOURCE_NAMESPACE ?= $(OLM_OPERATOR_NAMESPACE)
-OLM_OPERATOR_GROUP_NAME ?= operator-sdk-og
+OLM_PACKAGE_NAME ?= $(OPERATOR_NAME)
 OLM_INSTALL_MODE ?= AllNamespaces
 OLM_SECURITY_CONTEXT_CONFIG ?= restricted
+OLM_CATALOG_SOURCE_NAME ?= $(OLM_PACKAGE_NAME)-catalog
+OLM_CATALOG_SOURCE_NAMESPACE ?= $(OPERATOR_NAMESPACE)
+OLM_OPERATOR_GROUP_NAME ?= operator-sdk-og
 
+# Ephemeral image registry (ttl.sh)
 TTL_DURATION ?= 1h
-OLM_TTL_DURATION ?= $(TTL_DURATION)
 OLM_RUN_ID := $(or $(OLM_RUN_ID),$(shell head -c 32 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 8))
-OLM_IMAGE_PREFIX := $(or $(OLM_IMAGE_PREFIX),ttl.sh/$(OLM_OPERATOR_NAME)-$(OLM_RUN_ID))
-OLM_OPERATOR_IMAGE ?= $(OLM_IMAGE_PREFIX):$(OLM_TTL_DURATION)
-OLM_BUNDLE_IMAGE ?= $(OLM_IMAGE_PREFIX)-bundle:$(OLM_TTL_DURATION)
+OLM_IMAGE_PREFIX := $(or $(OLM_IMAGE_PREFIX),ttl.sh/$(OPERATOR_NAME)-$(OLM_RUN_ID))
+OLM_OPERATOR_IMAGE ?= $(OLM_IMAGE_PREFIX):$(TTL_DURATION)
+OLM_BUNDLE_IMAGE ?= $(OLM_IMAGE_PREFIX)-bundle:$(TTL_DURATION)
 
+# Platform and tools
 OLM_PLATFORM ?= linux/amd64
 OLM_CONTAINER_TOOL ?= $(if $(shell command -v podman 2>/dev/null),podman,$(if $(shell command -v docker 2>/dev/null),docker,))
 OLM_OC ?= $(if $(shell command -v oc 2>/dev/null),oc,kubectl)
@@ -44,10 +65,15 @@ OLM_AUTH_CHECK = $(if $(filter oc,$(OLM_OC)),$(OLM_OC) whoami,$(OLM_OC) auth who
 OLM_GOOS ?= $(shell go env GOOS 2>/dev/null || echo linux)
 OLM_GOARCH ?= $(shell go env GOARCH 2>/dev/null || echo amd64)
 
+# Tool binaries — reuse main Makefile's LOCALBIN when available, install
+# versioned copies only in bin/olm/ to avoid conflicts.
 OLM_LOCALBIN ?= $(if $(LOCALBIN),$(LOCALBIN),$(CURDIR)/bin)/olm
-OLM_OPERATOR_SDK ?= $(OLM_LOCALBIN)/operator-sdk-$(OLM_OPERATOR_SDK_VERSION)
-OLM_CONTROLLER_GEN ?= $(OLM_LOCALBIN)/controller-gen-$(OLM_CONTROLLER_GEN_VERSION)
+OLM_OPERATOR_SDK ?= $(OLM_LOCALBIN)/operator-sdk-$(OPERATOR_SDK_VERSION)
+OLM_CONTROLLER_GEN ?= $(OLM_LOCALBIN)/controller-gen-$(CONTROLLER_GEN_VERSION)
 OLM_KUSTOMIZE ?= $(OLM_LOCALBIN)/kustomize-$(OLM_KUSTOMIZE_VERSION)
+
+# Go toolchain version from go.mod (informational)
+OLM_GO_TOOLCHAIN_VERSION := $(shell awk '$$1 == "toolchain" {print $$2}' go.mod 2>/dev/null)
 
 define OLM_CHECK_TOOL_VERSION
 	@printf "\n\033[1m$(1) Version Check:\033[0m\n"
@@ -79,13 +105,13 @@ olm-versions: olm-check-go olm-tools ## Display source-deployment tool and proje
 	@printf '\n\033[1m%-30s %-20s %s\033[0m\n' 'Tool and Project Versions:' 'Value' 'Used by Targets'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'DEFAULT_VERSION' '$(DEFAULT_VERSION)' 'bundle'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'VERSION' '$(VERSION)' 'bundle, deploy-olm'
-	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'OPERATOR_SDK_VERSION' '$(OLM_OPERATOR_SDK_VERSION)' 'operator-sdk, bundle'
+	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'OPERATOR_SDK_VERSION' '$(OPERATOR_SDK_VERSION)' 'operator-sdk, bundle'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'KUSTOMIZE_VERSION' '$(OLM_KUSTOMIZE_VERSION)' 'kustomize, bundle'
-	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'CONTROLLER_TOOLS_VERSION' '$(OLM_CONTROLLER_GEN_VERSION)' 'controller-gen, bundle'
+	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'CONTROLLER_GEN_VERSION' '$(CONTROLLER_GEN_VERSION)' 'controller-gen, bundle'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'OLM_CHANNEL' '$(OLM_CHANNEL)' 'bundle, deploy-olm'
 	@printf '\033[36m%-30s\033[0m %-20s %s\n' 'GO_TOOLCHAIN_VERSION' '$(OLM_GO_TOOLCHAIN_VERSION)' '(informational only)'
-	$(call OLM_CHECK_TOOL_VERSION,Operator-SDK,$(OLM_OPERATOR_SDK),$(OLM_OPERATOR_SDK) version 2>/dev/null | awk -F'"' '/operator-sdk version/ {print $$2}',$(OLM_OPERATOR_SDK_VERSION),OPERATOR_SDK_LOCAL)
-	$(call OLM_CHECK_TOOL_VERSION,Controller-Gen,$(OLM_CONTROLLER_GEN),$(OLM_CONTROLLER_GEN) --version 2>/dev/null | awk '/Version:/ {print $$2}',$(OLM_CONTROLLER_GEN_VERSION),CONTROLLER_GEN_LOCAL)
+	$(call OLM_CHECK_TOOL_VERSION,Operator-SDK,$(OLM_OPERATOR_SDK),$(OLM_OPERATOR_SDK) version 2>/dev/null | awk -F'"' '/operator-sdk version/ {print $$2}',$(OPERATOR_SDK_VERSION),OPERATOR_SDK_LOCAL)
+	$(call OLM_CHECK_TOOL_VERSION,Controller-Gen,$(OLM_CONTROLLER_GEN),$(OLM_CONTROLLER_GEN) --version 2>/dev/null | awk '/Version:/ {print $$2}',$(CONTROLLER_GEN_VERSION),CONTROLLER_GEN_LOCAL)
 	$(call OLM_CHECK_TOOL_VERSION,Kustomize,$(OLM_KUSTOMIZE),$(OLM_KUSTOMIZE) version 2>/dev/null | sed -nE 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/p',$(OLM_KUSTOMIZE_VERSION),KUSTOMIZE_LOCAL)
 
 .PHONY: olm-controller-gen
@@ -97,7 +123,7 @@ olm-controller-gen:
 		trap 'rm -rf "$$tmp_dir"' EXIT; \
 		cd "$$tmp_dir"; \
 		go mod init olm-tools >/dev/null; \
-		GOBIN="$(abspath $(dir $(OLM_CONTROLLER_GEN)))" GOFLAGS='' go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(OLM_CONTROLLER_GEN_VERSION); \
+		GOBIN="$(abspath $(dir $(OLM_CONTROLLER_GEN)))" GOFLAGS='' go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION); \
 		mv "$(abspath $(dir $(OLM_CONTROLLER_GEN)))/controller-gen" "$(abspath $(OLM_CONTROLLER_GEN))"; \
 	fi
 
@@ -106,7 +132,7 @@ olm-operator-sdk:
 	@command -v curl >/dev/null 2>&1 || { echo "curl is required to download operator-sdk" >&2; exit 1; }
 	@mkdir -p "$(dir $(OLM_OPERATOR_SDK))"
 	@if [ ! -x "$(OLM_OPERATOR_SDK)" ]; then \
-		url="https://github.com/operator-framework/operator-sdk/releases/download/$(OLM_OPERATOR_SDK_VERSION)/operator-sdk_$(OLM_GOOS)_$(OLM_GOARCH)"; \
+		url="https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$(OLM_GOOS)_$(OLM_GOARCH)"; \
 		echo "Downloading $$url"; \
 		curl --fail --retry 5 --retry-delay 5 -sSLo "$(OLM_OPERATOR_SDK).tmp" "$$url"; \
 		chmod +x "$(OLM_OPERATOR_SDK).tmp"; \
@@ -137,7 +163,7 @@ olm-build-push: olm-tools ## Build and push source and OLM bundle images to ttl.
 	@echo "Building $(OLM_OPERATOR_IMAGE) with the Konveyor builder"
 	$(OLM_CONTAINER_TOOL) build --platform=$(OLM_PLATFORM) \
 		-f Dockerfile -t $(OLM_OPERATOR_IMAGE) .
-	@echo "Generating OLM bundle with operator-sdk $(OLM_OPERATOR_SDK_VERSION)"
+	@echo "Generating OLM bundle with operator-sdk $(OPERATOR_SDK_VERSION)"
 	GOFLAGS=-mod=mod $(OLM_CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	$(OLM_OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
 	cd config/manifests/base && $(OLM_KUSTOMIZE) edit set image controller=$(OLM_OPERATOR_IMAGE)
@@ -158,7 +184,7 @@ olm-build-push: olm-tools ## Build and push source and OLM bundle images to ttl.
 	$(OLM_CONTAINER_TOOL) push $(OLM_BUNDLE_IMAGE)
 
 .PHONY: deploy-olm
-deploy-olm: olm-versions ## Display versions, then build source, push temporary images to ttl.sh, and install the operator with operator-sdk.
+deploy-olm: olm-versions ## Build source, push to ttl.sh, and install the operator via OLM.
 	@set -euo pipefail; \
 	command -v "$(OLM_OC)" >/dev/null 2>&1 || { echo "OpenShift/Kubernetes CLI '$(OLM_OC)' is required" >&2; exit 1; }; \
 	if ! identity="$$($(OLM_AUTH_CHECK) 2>&1)"; then \
@@ -166,44 +192,15 @@ deploy-olm: olm-versions ## Display versions, then build source, push temporary 
 		echo "$$identity" >&2; \
 		exit 1; \
 	fi; \
-	work_dir="$$(mktemp -d)"; \
-	cleanup_work_dir() { chmod -R 777 "$$work_dir" 2>/dev/null || true; rm -rf "$$work_dir"; }; \
-	trap cleanup_work_dir EXIT; \
-	cp -r . "$$work_dir/source"; \
-	chmod -R 777 "$$work_dir/source"; \
-	rm -rf "$$work_dir/source/bin"; \
-	cd "$$work_dir/source"; \
-	$(MAKE) -f Makefile.olm olm-build-push \
-		OLM_CONTROLLER_GEN_VERSION='$(OLM_CONTROLLER_GEN_VERSION)' \
-		OLM_OPERATOR_SDK_VERSION='$(OLM_OPERATOR_SDK_VERSION)' \
-		OLM_KUSTOMIZE_VERSION='$(OLM_KUSTOMIZE_VERSION)' \
-		OLM_OPERATOR_NAME='$(OLM_OPERATOR_NAME)' \
-		OLM_PACKAGE_NAME='$(OLM_PACKAGE_NAME)' \
-		OLM_OPERATOR_NAMESPACE='$(OLM_OPERATOR_NAMESPACE)' \
-		OLM_CHANNEL='$(OLM_CHANNEL)' \
-		VERSION='$(VERSION)' \
-		OLM_INSTALL_MODE='$(OLM_INSTALL_MODE)' \
-		OLM_SECURITY_CONTEXT_CONFIG='$(OLM_SECURITY_CONTEXT_CONFIG)' \
-		OLM_TTL_DURATION='$(OLM_TTL_DURATION)' \
-		OLM_RUN_ID='$(OLM_RUN_ID)' \
-		OLM_IMAGE_PREFIX='$(OLM_IMAGE_PREFIX)' \
-		OLM_OPERATOR_IMAGE='$(OLM_OPERATOR_IMAGE)' \
-		OLM_BUNDLE_IMAGE='$(OLM_BUNDLE_IMAGE)' \
-		OLM_PLATFORM='$(OLM_PLATFORM)' \
-		OLM_CONTAINER_TOOL='$(OLM_CONTAINER_TOOL)' \
-		OLM_OC='$(OLM_OC)' \
-		OLM_LOCALBIN='$(OLM_LOCALBIN)' \
-		OLM_CONTROLLER_GEN='$(OLM_CONTROLLER_GEN)' \
-		OLM_OPERATOR_SDK='$(OLM_OPERATOR_SDK)' \
-		OLM_KUSTOMIZE='$(OLM_KUSTOMIZE)'; \
-	"$(OLM_OC)" get namespace "$(OLM_OPERATOR_NAMESPACE)" >/dev/null 2>&1 || \
-		"$(OLM_OC)" create namespace "$(OLM_OPERATOR_NAMESPACE)"; \
-	"$(OLM_OPERATOR_SDK)" -n "$(OLM_OPERATOR_NAMESPACE)" cleanup "$(OLM_PACKAGE_NAME)" >/dev/null 2>&1 || true; \
-	echo "Installing $(OLM_BUNDLE_IMAGE) into $(OLM_OPERATOR_NAMESPACE)"; \
-	"$(OLM_OPERATOR_SDK)" -n "$(OLM_OPERATOR_NAMESPACE)" run bundle "$(OLM_BUNDLE_IMAGE)" \
+	$(MAKE) olm-build-push; \
+	"$(OLM_OC)" get namespace "$(OPERATOR_NAMESPACE)" >/dev/null 2>&1 || \
+		"$(OLM_OC)" create namespace "$(OPERATOR_NAMESPACE)"; \
+	"$(OLM_OPERATOR_SDK)" -n "$(OPERATOR_NAMESPACE)" cleanup "$(OLM_PACKAGE_NAME)" >/dev/null 2>&1 || true; \
+	echo "Installing $(OLM_BUNDLE_IMAGE) into $(OPERATOR_NAMESPACE)"; \
+	"$(OLM_OPERATOR_SDK)" -n "$(OPERATOR_NAMESPACE)" run bundle "$(OLM_BUNDLE_IMAGE)" \
 		--install-mode="$(OLM_INSTALL_MODE)" \
 		--security-context-config="$(OLM_SECURITY_CONTEXT_CONFIG)"; \
-	"$(OLM_OC)" get csv -n "$(OLM_OPERATOR_NAMESPACE)"
+	"$(OLM_OC)" get csv -n "$(OPERATOR_NAMESPACE)"
 
 .PHONY: undeploy-olm
 undeploy-olm: olm-operator-sdk ## Remove the source operator installed by deploy-olm.
@@ -214,29 +211,31 @@ undeploy-olm: olm-operator-sdk ## Remove the source operator installed by deploy
 		echo "$$identity" >&2; \
 		exit 1; \
 	fi; \
-	if ! "$(OLM_OC)" get namespace "$(OLM_OPERATOR_NAMESPACE)" >/dev/null 2>&1; then \
-		echo "Namespace $(OLM_OPERATOR_NAMESPACE) does not exist; nothing to clean up."; \
+	if ! "$(OLM_OC)" get namespace "$(OPERATOR_NAMESPACE)" >/dev/null 2>&1; then \
+		echo "Namespace $(OPERATOR_NAMESPACE) does not exist; nothing to clean up."; \
 		exit 0; \
 	fi; \
-	"$(OLM_OPERATOR_SDK)" -n "$(OLM_OPERATOR_NAMESPACE)" cleanup "$(OLM_PACKAGE_NAME)" >/dev/null 2>&1 || true; \
-	subscriptions="$$($(OLM_OC) get subscription -n "$(OLM_OPERATOR_NAMESPACE)" -o jsonpath='{range .items[?(@.spec.source=="$(OLM_CATALOG_SOURCE_NAME)")]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"; \
+	"$(OLM_OPERATOR_SDK)" -n "$(OPERATOR_NAMESPACE)" cleanup "$(OLM_PACKAGE_NAME)" >/dev/null 2>&1 || true; \
+	subscriptions="$$($(OLM_OC) get subscription -n "$(OPERATOR_NAMESPACE)" -o jsonpath='{range .items[?(@.spec.source=="$(OLM_CATALOG_SOURCE_NAME)")]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"; \
 	while IFS= read -r subscription; do \
-		[ -z "$$subscription" ] || "$(OLM_OC)" delete subscription "$$subscription" -n "$(OLM_OPERATOR_NAMESPACE)" --ignore-not-found=true; \
+		[ -z "$$subscription" ] || "$(OLM_OC)" delete subscription "$$subscription" -n "$(OPERATOR_NAMESPACE)" --ignore-not-found=true; \
 	done <<< "$$subscriptions"; \
-	"$(OLM_OC)" delete subscription "$(OLM_PACKAGE_NAME)" -n "$(OLM_OPERATOR_NAMESPACE)" --ignore-not-found=true; \
-	"$(OLM_OC)" delete csv -l "operators.coreos.com/$(OLM_PACKAGE_NAME).$(OLM_OPERATOR_NAMESPACE)" -n "$(OLM_OPERATOR_NAMESPACE)" --ignore-not-found=true; \
-	csvs="$$($(OLM_OC) get csv -n "$(OLM_OPERATOR_NAMESPACE)" -o name 2>/dev/null | grep -E "/$(OLM_PACKAGE_NAME)(\.|$$)" || true)"; \
+	"$(OLM_OC)" delete subscription "$(OLM_PACKAGE_NAME)" -n "$(OPERATOR_NAMESPACE)" --ignore-not-found=true; \
+	"$(OLM_OC)" delete csv -l "operators.coreos.com/$(OLM_PACKAGE_NAME).$(OPERATOR_NAMESPACE)" -n "$(OPERATOR_NAMESPACE)" --ignore-not-found=true; \
+	csvs="$$($(OLM_OC) get csv -n "$(OPERATOR_NAMESPACE)" -o name 2>/dev/null | grep -E "/$(OLM_PACKAGE_NAME)(\.|$$)" || true)"; \
 	while IFS= read -r csv; do \
-		[ -z "$$csv" ] || "$(OLM_OC)" delete "$$csv" -n "$(OLM_OPERATOR_NAMESPACE)" --ignore-not-found=true; \
+		[ -z "$$csv" ] || "$(OLM_OC)" delete "$$csv" -n "$(OPERATOR_NAMESPACE)" --ignore-not-found=true; \
 	done <<< "$$csvs"; \
 	"$(OLM_OC)" delete catalogsource "$(OLM_CATALOG_SOURCE_NAME)" -n "$(OLM_CATALOG_SOURCE_NAMESPACE)" --ignore-not-found=true; \
-	"$(OLM_OC)" delete operatorgroup "$(OLM_OPERATOR_GROUP_NAME)" -n "$(OLM_OPERATOR_NAMESPACE)" --ignore-not-found=true
+	"$(OLM_OC)" delete operatorgroup "$(OLM_OPERATOR_GROUP_NAME)" -n "$(OPERATOR_NAMESPACE)" --ignore-not-found=true
 
 .PHONY: olm-help
 olm-help: ## Display source-to-OLM deployment variables.
 	@printf '%s\n' \
-		"CONTROLLER_GEN_VERSION=$(OLM_CONTROLLER_GEN_VERSION)" \
-		"OPERATOR_SDK_VERSION=$(OLM_OPERATOR_SDK_VERSION)" \
+		"OPERATOR_NAME=$(OPERATOR_NAME)" \
+		"OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE)" \
+		"CONTROLLER_GEN_VERSION=$(CONTROLLER_GEN_VERSION)" \
+		"OPERATOR_SDK_VERSION=$(OPERATOR_SDK_VERSION)" \
 		"KUSTOMIZE_VERSION=$(OLM_KUSTOMIZE_VERSION)" \
 		"OLM_LOCALBIN=$(OLM_LOCALBIN)" \
 		"OLM_INSTALL_MODE=$(OLM_INSTALL_MODE)" \
@@ -246,4 +245,4 @@ olm-help: ## Display source-to-OLM deployment variables.
 		"OLM_OPERATOR_GROUP_NAME=$(OLM_OPERATOR_GROUP_NAME)" \
 		"OLM_OPERATOR_IMAGE=$(OLM_OPERATOR_IMAGE)" \
 		"OLM_BUNDLE_IMAGE=$(OLM_BUNDLE_IMAGE)" \
-		"OLM_TTL_DURATION=$(OLM_TTL_DURATION)"
+		"TTL_DURATION=$(TTL_DURATION)"

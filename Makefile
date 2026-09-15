@@ -571,10 +571,9 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 build-and-run: container-build-ocp container-push bundle-run
 
 # Source-to-OLM deployment
-# Uses medik8s/tools dev/olm.mk if available (via TOOLS_DIR), otherwise falls
-# back to the local Makefile.olm. This mirrors the dev.mk include pattern from
-# PR #410 and prepares for migration to medik8s/tools.
-OLM_OPERATOR_NAME ?= $(OPERATOR_NAME)
+# Uses medik8s/tools dev/olm.mk if available, falls back to local Makefile.olm.
+# Makefile.olm inherits OPERATOR_NAME, OPERATOR_SDK_VERSION, CONTROLLER_GEN_VERSION,
+# and KUSTOMIZE_VERSION directly — no bridging variables needed.
 TOOLS_DIR ?= $(shell cd .. && pwd)/tools
 OLM_MK := $(TOOLS_DIR)/dev/olm.mk
 ifeq ($(wildcard $(OLM_MK)),)
