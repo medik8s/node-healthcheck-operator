@@ -29,3 +29,6 @@ testdata/.remediators/
 catalog/
 catalog.Dockerfile
 .tools/
+.vscode/
+.codex/
+.DS_Store
