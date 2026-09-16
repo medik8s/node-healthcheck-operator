@@ -112,6 +112,9 @@ jobs:
     - name: Wait for deployments
       run: make dev-wait
 
+    - name: Start webhook cleanup watcher (removes OLM webhook duplicates)
+      run: make dev-webhook-watcher
+
     - name: Deployment status
       if: ${{ always() }}
       run: make dev-describe

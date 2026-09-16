@@ -245,6 +245,10 @@ step "Waiting for deployments"
 cd "${NHC_DIR}"
 make dev-wait
 
+step "Starting webhook cleanup watcher"
+cd "${NHC_DIR}"
+make dev-webhook-watcher
+
 step "Deployment status"
 cd "${NHC_DIR}"
 make dev-describe
