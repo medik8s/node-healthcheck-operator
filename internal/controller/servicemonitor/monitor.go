@@ -36,8 +36,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
 )
 
 const (

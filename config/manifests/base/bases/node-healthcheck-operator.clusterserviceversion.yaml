@@ -5,10 +5,10 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     categories: OpenShift Optional
-    containerImage: quay.io/medik8s/node-healthcheck-operator:v0.0.1
+    containerImage: quay.io/medik8s/node-healthcheck-operator:v5.8.0
     createdAt: ""
     description: Detect failed Nodes and trigger remediation with a remediation operator.
-    olm.skipRange: '>=0.0.1'
+    olm.skipRange: '>=0.1.0 <5.8.0'
     operatorframework.io/suggested-namespace: openshift-workload-availability
     operatorframework.io/suggested-namespace-template: '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"openshift-workload-availability","annotations":{"openshift.io/node-selector":""}}}'
     repository: https://github.com/medik8s/node-healthcheck-operator

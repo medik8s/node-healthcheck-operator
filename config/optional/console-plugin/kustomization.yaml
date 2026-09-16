@@ -20,4 +20,4 @@ generatorOptions:
 images:
 - name: console-plugin
   newName: quay.io/medik8s/node-remediation-console
-  newTag: latest
+  newTag: v5.8.0
