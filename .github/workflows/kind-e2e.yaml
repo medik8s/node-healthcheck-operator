@@ -58,8 +58,31 @@ jobs:
         make operator-sdk
         cp ./bin/operator-sdk /usr/local/bin/
 
+    - name: Reset Kind cluster
+      run: |
+        if kind get clusters | grep -Fxq "${MEDIK8S_CLUSTER_NAME}"; then
+          kind delete cluster --name "${MEDIK8S_CLUSTER_NAME}"
+        fi
+
     - name: Create Kind cluster with registry, OLM, and cert-manager
       run: make dev-setup
+
+    - name: Prepare clean OLM namespace
+      run: |
+        if kubectl get namespace "${DEPLOY_NAMESPACE}" >/dev/null 2>&1; then
+          kubectl delete namespace "${DEPLOY_NAMESPACE}" --wait=true --timeout=2m
+        fi
+
+        kubectl create namespace "${DEPLOY_NAMESPACE}"
+
+        old_olm_objects=$(kubectl get \
+          subscriptions.operators.coreos.com,csv,catalogsources.operators.coreos.com \
+          -n "${DEPLOY_NAMESPACE}" -o name)
+        if [ -n "${old_olm_objects}" ]; then
+          echo "Unexpected OLM objects in clean namespace:"
+          echo "${old_olm_objects}"
+          exit 1
+        fi
 
     - name: Start reboot watcher (simulates node reboot on Kind)
       run: make dev-reboot-watcher
@@ -82,7 +105,6 @@ jobs:
 
     - name: Deploy SNR via OLM bundle
       run: |
-        kubectl create ns ${DEPLOY_NAMESPACE}
         kubectl label --overwrite ns ${DEPLOY_NAMESPACE} \
           pod-security.kubernetes.io/enforce=privileged \
           pod-security.kubernetes.io/audit=privileged \

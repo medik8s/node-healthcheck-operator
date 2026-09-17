@@ -23,7 +23,7 @@ if [[ -n ${SNR_STRATEGY} ]]; then
   # to lower case
   TEMPLATE_NAME=${TEMPLATE_NAME,,}
   export SNRT_NAME=${TEMPLATE_NAME}
-  kubectl -n ${OPERATOR_NS} delete snrt ${SNRT_NAME} || true
+  kubectl -n "${OPERATOR_NS}" delete snrt "${SNRT_NAME}" --ignore-not-found=true
   cat <<EOF | kubectl create -f -
 apiVersion: self-node-remediation.medik8s.io/v1alpha1
 kind: SelfNodeRemediationTemplate
