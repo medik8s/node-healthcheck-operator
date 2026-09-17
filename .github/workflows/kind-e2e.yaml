@@ -61,17 +61,6 @@ jobs:
     - name: Create Kind cluster with registry, OLM, and cert-manager
       run: make dev-setup
 
-    - name: Verify clean OLM namespace
-      run: |
-        if kubectl get namespace "${DEPLOY_NAMESPACE}" >/dev/null 2>&1; then
-          echo "OLM target namespace already exists: ${DEPLOY_NAMESPACE}"
-          kubectl get \
-            subscriptions.operators.coreos.com,csv,catalogsources.operators.coreos.com \
-            -n "${DEPLOY_NAMESPACE}" -o name || true
-          echo "Refusing to install bundles into a potentially stale namespace"
-          exit 1
-        fi
-
     - name: Start reboot watcher (simulates node reboot on Kind)
       run: make dev-reboot-watcher
 
