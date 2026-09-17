@@ -58,29 +58,17 @@ jobs:
         make operator-sdk
         cp ./bin/operator-sdk /usr/local/bin/
 
-    - name: Reset Kind cluster
-      run: |
-        if kind get clusters | grep -Fxq "${MEDIK8S_CLUSTER_NAME}"; then
-          kind delete cluster --name "${MEDIK8S_CLUSTER_NAME}"
-        fi
-
     - name: Create Kind cluster with registry, OLM, and cert-manager
       run: make dev-setup
 
-    - name: Prepare clean OLM namespace
+    - name: Verify clean OLM namespace
       run: |
         if kubectl get namespace "${DEPLOY_NAMESPACE}" >/dev/null 2>&1; then
-          kubectl delete namespace "${DEPLOY_NAMESPACE}" --wait=true --timeout=2m
-        fi
-
-        kubectl create namespace "${DEPLOY_NAMESPACE}"
-
-        old_olm_objects=$(kubectl get \
-          subscriptions.operators.coreos.com,csv,catalogsources.operators.coreos.com \
-          -n "${DEPLOY_NAMESPACE}" -o name)
-        if [ -n "${old_olm_objects}" ]; then
-          echo "Unexpected OLM objects in clean namespace:"
-          echo "${old_olm_objects}"
+          echo "OLM target namespace already exists: ${DEPLOY_NAMESPACE}"
+          kubectl get \
+            subscriptions.operators.coreos.com,csv,catalogsources.operators.coreos.com \
+            -n "${DEPLOY_NAMESPACE}" -o name || true
+          echo "Refusing to install bundles into a potentially stale namespace"
           exit 1
         fi
 
@@ -130,6 +118,14 @@ jobs:
         operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http \
           ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
         sleep 1m
+
+    - name: Dump webhook configurations after bundle installs
+      run: |
+        echo "=== MutatingWebhookConfiguration YAML ==="
+        kubectl get mutatingwebhookconfigurations -o yaml
+        echo ""
+        echo "=== ValidatingWebhookConfiguration YAML ==="
+        kubectl get validatingwebhookconfigurations -o yaml
 
     - name: Wait for deployments
       run: make dev-wait
