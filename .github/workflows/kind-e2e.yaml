@@ -82,7 +82,6 @@ jobs:
 
     - name: Deploy SNR via OLM bundle
       run: |
-        kubectl create ns ${DEPLOY_NAMESPACE}
         kubectl label --overwrite ns ${DEPLOY_NAMESPACE} \
           pod-security.kubernetes.io/enforce=privileged \
           pod-security.kubernetes.io/audit=privileged \
@@ -108,6 +107,14 @@ jobs:
         operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http \
           ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
         sleep 1m
+
+    - name: Dump webhook configurations after bundle installs
+      run: |
+        echo "=== MutatingWebhookConfiguration YAML ==="
+        kubectl get mutatingwebhookconfigurations -o yaml
+        echo ""
+        echo "=== ValidatingWebhookConfiguration YAML ==="
+        kubectl get validatingwebhookconfigurations -o yaml
 
     - name: Wait for deployments
       run: make dev-wait
