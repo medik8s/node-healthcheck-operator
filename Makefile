@@ -356,7 +356,7 @@ add-replaces-field: ## Add replaces field to the CSV
 
 .PHONY: add-community-edition-to-display-name
 add-community-edition-to-display-name: ## Add the "Community Edition" suffix to the display name
-	sed -r -i "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV}
+	sed -i.bak "s|displayName: Node Health Check Operator|displayName: Node Health Check Operator - Community Edition|;" ${CSV} && rm ${CSV}.bak
 
 .PHONY: bundle-okd
 bundle-okd: ocp-version-check yq bundle-base ## Generate bundle manifests and metadata for OKD, then validate generated files.
@@ -409,11 +409,11 @@ bundle-metrics: bundle-base ## Generate bundle manifests and metadata with metri
 	$(MAKE) bundle-validate
 
 # Apply version or build date related changes in the bundle
-DEFAULT_ICON_BASE64 := $(shell base64 --wrap=0 ${BLUE_ICON_PATH})
+DEFAULT_ICON_BASE64 := $(shell base64 < ${BLUE_ICON_PATH} | tr -d '\n')
 export ICON_BASE64 ?= ${DEFAULT_ICON_BASE64}
 .PHONY: bundle-update
 bundle-update: yq ## update container image in the metadata
-	sed -r -i "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV}
+	sed -i.bak "s|containerImage: .*|containerImage: $(IMG)|;" ${CSV} && rm ${CSV}.bak
 	# set skipRange conditionally to avoid malformed values in dev builds
 	@if [ -n "${SKIP_RANGE_LOWER}" ] && [ "${VERSION}" != "${DEFAULT_VERSION}" ] && [ "${VERSION}" != "${SKIP_RANGE_LOWER}" ]; then \
 		if ! printf '%s\n' "${SKIP_RANGE_LOWER}" "${VERSION}" | sort -V -C 2>/dev/null; then \
@@ -425,7 +425,7 @@ bundle-update: yq ## update container image in the metadata
 		$(YQ) -i '.metadata.annotations."olm.skipRange" = "<$(VERSION)"' ${CSV}; \
 	fi
 	# set icon (not version or build date related, but just to not having this huge data permanently in the CSV)
-	sed -r -i "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV}
+	sed -i.bak "s|base64data:.*|base64data: ${ICON_BASE64}|;" ${CSV} && rm ${CSV}.bak
 	$(MAKE) bundle-validate
 
 .PHONY: bundle-validate

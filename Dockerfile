@@ -13,8 +13,14 @@ RUN \
     # get Go version from mod file
     export GO_VERSION=$(grep -oE "toolchain go[[:digit:]]\.[[:digit:]]+\.[[:digit:]]" go.mod | awk '{print $2}') && \
     echo ${GO_VERSION} && \
-    # find filename for latest z version from Go download page
-    export GO_FILENAME=$(curl -sL 'https://go.dev/dl/?mode=json&include=all' | jq -r "[.[] | select(.version == \"${GO_VERSION}\")][0].files[] | select(.os == \"linux\" and .arch == \"amd64\") | .filename") && \
+    # Match the Go toolchain to the architecture of the build container.
+    case "$(uname -m)" in \
+        x86_64) GO_ARCH=amd64 ;; \
+        aarch64) GO_ARCH=arm64 ;; \
+        ppc64le|s390x) GO_ARCH=$(uname -m) ;; \
+        *) echo "Unsupported build architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac && \
+    export GO_FILENAME=$(curl -sL 'https://go.dev/dl/?mode=json&include=all' | jq -r "[.[] | select(.version == \"${GO_VERSION}\")][0].files[] | select(.os == \"linux\" and .arch == \"${GO_ARCH}\") | .filename") && \
     echo ${GO_FILENAME} && \
     # download and unpack
     curl -sL -o go.tar.gz "https://golang.org/dl/${GO_FILENAME}" && \
