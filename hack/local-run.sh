@@ -1,10 +1,10 @@
 #!/bin/bash
 # local-run.sh — Replicate the Kind e2e GitHub Actions workflow locally
 #
-# Uses local checkouts of NHC, SNR, and tools instead of cloning from GitHub.
+# Uses local checkouts of NHC and tools instead of cloning from GitHub.
+# SNR is deployed from quay.io (matching the GitHub Actions workflow).
 # Assumes standard medik8s directory layout:
 #   upstream/operators/node-healthcheck-operator  (this repo)
-#   upstream/operators/self-node-remediation
 #   upstream/shared/tools
 #
 # Usage:
@@ -17,7 +17,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NHC_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SNR_DIR="${NHC_DIR}/../self-node-remediation"
 TOOLS_DIR="${NHC_DIR}/../../shared/tools"
 
 # --- Configuration (mirrors GitHub Actions env) ---
@@ -37,11 +36,10 @@ export MEDIK8S_REGISTRY_NAME="${MEDIK8S_REGISTRY_NAME:-kind-registry}"
 export MEDIK8S_REGISTRY_PORT="${MEDIK8S_REGISTRY_PORT:-5000}"
 export IMAGE_REGISTRY="${IMAGE_REGISTRY:-${MEDIK8S_REGISTRY_NAME}:${MEDIK8S_REGISTRY_PORT}}"
 export OPM_RENDER_FLAGS="${OPM_RENDER_FLAGS:---skip-tls-verify}"
-export DEPLOY_NAMESPACE="${DEPLOY_NAMESPACE:-k8s-test}"
+export DEPLOY_SNR_NAMESPACE="${DEPLOY_SNR_NAMESPACE:-snr-system}"
+export DEPLOY_NHC_NAMESPACE="${DEPLOY_NHC_NAMESPACE:-k8s-test}"
 export TOOLS_DIR
 
-SNR_IMG="${IMAGE_REGISTRY}/self-node-remediation:latest"
-SNR_BUNDLE="${IMAGE_REGISTRY}/self-node-remediation-operator-bundle:latest"
 NHC_IMG="${IMAGE_REGISTRY}/node-healthcheck-operator:latest"
 NHC_BUNDLE="${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest"
 
@@ -65,9 +63,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --teardown     Tear down the cluster and exit"
             echo ""
             echo "Environment variables:"
-            echo "  MEDIK8S_CLUSTER_NAME   Kind cluster name (default: medik8s-ci)"
-            echo "  CONTAINER_TOOL         Container tool (default: docker)"
-            echo "  DEPLOY_NAMESPACE       Namespace for operators (default: k8s-test)"
+            echo "  MEDIK8S_CLUSTER_NAME    Kind cluster name (default: medik8s-ci)"
+            echo "  CONTAINER_TOOL          Container tool (default: auto-detect podman/docker)"
+            echo "  DEPLOY_SNR_NAMESPACE    Namespace for SNR (default: snr-system)"
+            echo "  DEPLOY_NHC_NAMESPACE    Namespace for NHC (default: k8s-test)"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -75,11 +74,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Validate local directories ---
-if [ ! -d "${SNR_DIR}" ]; then
-    echo "Error: SNR directory not found at ${SNR_DIR}"
-    echo "Expected standard layout: upstream/operators/self-node-remediation"
-    exit 1
-fi
 if [ ! -d "${TOOLS_DIR}" ]; then
     echo "Error: Tools directory not found at ${TOOLS_DIR}"
     echo "Expected standard layout: upstream/shared/tools"
@@ -90,9 +84,6 @@ echo "=== Local repositories ==="
 echo "  NHC:   ${NHC_DIR}"
 echo "         branch: $(cd "${NHC_DIR}" && git branch --show-current)"
 echo "         commit: $(cd "${NHC_DIR}" && git log --oneline -1)"
-echo "  SNR:   ${SNR_DIR}"
-echo "         branch: $(cd "${SNR_DIR}" && git branch --show-current)"
-echo "         commit: $(cd "${SNR_DIR}" && git log --oneline -1)"
 echo "  Tools: ${TOOLS_DIR}"
 echo "         branch: $(cd "${TOOLS_DIR}" && git branch --show-current)"
 echo "         commit: $(cd "${TOOLS_DIR}" && git log --oneline -1)"
@@ -105,6 +96,37 @@ step() {
     echo "========================================"
 }
 
+# kubectl wait --for=create requires 1.31+; poll instead for compatibility
+wait_for_resource() {
+    local ns="$1" resource="$2" timeout="$3"
+    local elapsed=0
+    echo "  Waiting for ${resource} in ${ns} (timeout ${timeout}s)..."
+    while ! kubectl -n "${ns}" get "${resource}" >/dev/null 2>&1; do
+        if [ "${elapsed}" -ge "${timeout}" ]; then
+            echo "  Timed out waiting for ${resource}" >&2
+            return 1
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+    done
+    echo "  Found ${resource}."
+}
+
+wait_for_cluster_resource() {
+    local resource="$1" timeout="$2"
+    local elapsed=0
+    echo "  Waiting for ${resource} (timeout ${timeout}s)..."
+    while ! kubectl get "${resource}" >/dev/null 2>&1; do
+        if [ "${elapsed}" -ge "${timeout}" ]; then
+            echo "  Timed out waiting for ${resource}" >&2
+            return 1
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+    done
+    echo "  Found ${resource}."
+}
+
 image_exists() {
     "${CONTAINER_TOOL}" image inspect "$1" >/dev/null 2>&1
 }
@@ -114,7 +136,7 @@ check_and_cleanup_existing_build() {
     local image
 
     echo "=== Checking for existing local build artifacts ==="
-    for image in "${SNR_IMG}" "${SNR_BUNDLE}" "${NHC_IMG}" "${NHC_BUNDLE}"; do
+    for image in "${NHC_IMG}" "${NHC_BUNDLE}"; do
         if image_exists "${image}"; then
             echo "  Found image: ${image}"
             found=true
@@ -123,7 +145,7 @@ check_and_cleanup_existing_build() {
 
     if [ "${found}" = true ]; then
         echo "  Removing existing local operator images..."
-        for image in "${SNR_IMG}" "${SNR_BUNDLE}" "${NHC_IMG}" "${NHC_BUNDLE}"; do
+        for image in "${NHC_IMG}" "${NHC_BUNDLE}"; do
             "${CONTAINER_TOOL}" image rm -f "${image}" >/dev/null 2>&1 || true
         done
         echo "  Existing local build artifacts removed."
@@ -133,34 +155,34 @@ check_and_cleanup_existing_build() {
 }
 
 deployed_resources() {
-    kubectl get subscriptions,csv,deployments -n "${DEPLOY_NAMESPACE}" \
-        -o name 2>/dev/null | grep -E 'self-node-remediation|node-healthcheck-operator' || true
+    local ns="$1"
+    local pattern="$2"
+    kubectl get subscriptions,csv,deployments -n "${ns}" \
+        -o name 2>/dev/null | grep -E "${pattern}" || true
 }
 
 check_and_cleanup_existing_deployment() {
     local resources
 
     echo "=== Checking for existing operator deployments ==="
-    resources="$(deployed_resources)"
-    if [ -z "${resources}" ]; then
-        echo "  No existing SNR/NHC deployment found in namespace ${DEPLOY_NAMESPACE}."
-        return
-    fi
 
-    echo "  Found existing resources:"
-    echo "${resources}" | sed 's/^/    /'
-    echo "  Removing existing OLM installations..."
-
-    operator-sdk -n "${DEPLOY_NAMESPACE}" cleanup self-node-remediation || true
-    operator-sdk -n "${DEPLOY_NAMESPACE}" cleanup node-healthcheck-operator --delete-all || true
-
-    resources="$(deployed_resources)"
+    resources="$(deployed_resources "${DEPLOY_SNR_NAMESPACE}" 'self-node-remediation')"
     if [ -n "${resources}" ]; then
-        echo "  Warning: some SNR/NHC resources remain after cleanup:"
+        echo "  Found existing SNR resources in ${DEPLOY_SNR_NAMESPACE}:"
         echo "${resources}" | sed 's/^/    /'
-    else
-        echo "  Existing SNR/NHC deployment removed."
+        echo "  Removing existing SNR OLM installation..."
+        operator-sdk -n "${DEPLOY_SNR_NAMESPACE}" cleanup self-node-remediation || true
     fi
+
+    resources="$(deployed_resources "${DEPLOY_NHC_NAMESPACE}" 'node-healthcheck-operator')"
+    if [ -n "${resources}" ]; then
+        echo "  Found existing NHC resources in ${DEPLOY_NHC_NAMESPACE}:"
+        echo "${resources}" | sed 's/^/    /'
+        echo "  Removing existing NHC OLM installation..."
+        operator-sdk -n "${DEPLOY_NHC_NAMESPACE}" cleanup node-healthcheck-operator --delete-all || true
+    fi
+
+    echo "  Existing deployments cleaned up."
 }
 
 # --- Teardown ---
@@ -182,10 +204,6 @@ if [ "${SKIP_SETUP}" = false ]; then
     cd "${NHC_DIR}"
     make dev-setup
 
-    step "Starting reboot watcher"
-    cd "${NHC_DIR}"
-    make dev-reboot-watcher
-
     step "Cluster info"
     cd "${NHC_DIR}"
     make dev-cluster-info
@@ -199,51 +217,60 @@ if [ "${SKIP_BUILD}" = false ]; then
     check_and_cleanup_existing_build
     check_and_cleanup_existing_deployment
 
-    step "Building and pushing SNR"
-    cd "${SNR_DIR}"
-
-    # SNR Makefile hardcodes 'docker' — build directly with ${CONTAINER_TOOL}
-    make test
-    ${CONTAINER_TOOL} build -t ${SNR_IMG} .
-    ${CONTAINER_TOOL} push --tls-verify=false ${SNR_IMG}
-
-    make bundle IMG=${SNR_IMG}
-    ${CONTAINER_TOOL} build -f bundle.Dockerfile -t ${SNR_BUNDLE} .
-    ${CONTAINER_TOOL} push --tls-verify=false ${SNR_BUNDLE}
-
-    step "Deploying SNR via OLM bundle"
+    step "Deploying SNR from quay.io via OLM bundle"
     cd "${NHC_DIR}"
-    kubectl create ns ${DEPLOY_NAMESPACE} 2>/dev/null || true
-    kubectl label --overwrite ns ${DEPLOY_NAMESPACE} \
+    kubectl create ns "${DEPLOY_SNR_NAMESPACE}" 2>/dev/null || true
+    kubectl label --overwrite ns "${DEPLOY_SNR_NAMESPACE}" \
         pod-security.kubernetes.io/enforce=privileged \
         pod-security.kubernetes.io/audit=privileged \
         pod-security.kubernetes.io/warn=privileged
-    operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http \
-        ${IMAGE_REGISTRY}/self-node-remediation-operator-bundle:latest
+    operator-sdk run bundle -n "${DEPLOY_SNR_NAMESPACE}" \
+        --timeout 5m \
+        quay.io/medik8s/self-node-remediation-operator-bundle:latest
+
+    step "Starting reboot watcher"
+    cd "${NHC_DIR}"
+    make dev-reboot-watcher
 
     step "Building and pushing NHC"
     cd "${NHC_DIR}"
     export NHC_SKIP_TEST=true
     make container-build-k8s
 
-    # NHC Makefile hardcodes podman for builds
-    podman push --tls-verify=false ${NHC_IMG}
-    podman push --tls-verify=false ${NHC_BUNDLE}
+    # NHC Makefile hardcodes podman for builds, so push with podman too
+    podman push --tls-verify=false "${NHC_IMG}"
+    podman push --tls-verify=false "${NHC_BUNDLE}"
 
     step "Deploying NHC via OLM bundle"
     cd "${NHC_DIR}"
-    operator-sdk run bundle -n ${DEPLOY_NAMESPACE} --use-http \
-        ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
-    echo "Waiting 60s for NHC to stabilize..."
-    sleep 60
+    kubectl create ns "${DEPLOY_NHC_NAMESPACE}" 2>/dev/null || true
+    kubectl label --overwrite ns "${DEPLOY_NHC_NAMESPACE}" \
+        pod-security.kubernetes.io/enforce=privileged \
+        pod-security.kubernetes.io/audit=privileged \
+        pod-security.kubernetes.io/warn=privileged
+
+    operator-sdk run bundle -n "${DEPLOY_NHC_NAMESPACE}" --use-http \
+        --timeout 5m \
+        "${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest"
+
+    # Safety net: explicit RBAC binding in case ClusterRole aggregation is slow.
+    kubectl create clusterrolebinding nhc-snr-admin-binding \
+        --clusterrole=self-node-remediation-ext-remediation \
+        --serviceaccount="${DEPLOY_NHC_NAMESPACE}:node-healthcheck-controller-manager" \
+        2>/dev/null || true
 else
     echo "Skipping build (--skip-build)"
 fi
 
 # --- Wait and verify ---
-step "Waiting for deployments"
+step "Waiting for operators to be ready"
 cd "${NHC_DIR}"
+
 make dev-wait
+
+# Wait for NHC controller to complete leader election and initial reconciliation
+wait_for_cluster_resource clusterrole/node-healthcheck-operator-aggregation 120
+echo "NHC aggregation ClusterRole found — controller is active."
 
 step "Deployment status"
 cd "${NHC_DIR}"
@@ -252,11 +279,27 @@ make dev-describe
 # --- Run tests ---
 step "Running e2e tests"
 cd "${NHC_DIR}"
-OPERATOR_NS=${DEPLOY_NAMESPACE} \
+OPERATOR_NS=${DEPLOY_NHC_NAMESPACE} \
 SNR_STRATEGY=OutOfServiceTaint \
 LABEL_FILTER='!OCP-ONLY' \
 make test-e2e || {
     step "Debug (test failed)"
+    echo "=== NHC Status ==="
+    kubectl get nodehealthchecks -o yaml 2>/dev/null || true
+    echo ""
+    echo "=== SelfNodeRemediation CRs ==="
+    kubectl get selfnoderemediations -A -o yaml 2>/dev/null || true
+    echo ""
+    echo "=== SelfNodeRemediationTemplates ==="
+    kubectl get selfnoderemediationtemplates -A -o yaml 2>/dev/null || true
+    echo ""
+    echo "=== Node Status ==="
+    kubectl get nodes -o wide 2>/dev/null || true
+    echo ""
+    echo "=== NHC Events ==="
+    kubectl get events -A --sort-by=.lastTimestamp --field-selector reason!=Pulling,reason!=Pulled 2>/dev/null \
+        | grep -iE 'healthcheck|remediat|disabled|enabled|template|unhealthy' || echo "No NHC-related events"
+    echo ""
     make dev-ci-debug
     exit 1
 }
