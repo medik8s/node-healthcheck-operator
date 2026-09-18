@@ -1,4 +1,4 @@
-module github.com/medik8s/node-healthcheck-operator
+module github.com/medik8s/node-healthcheck-operator/v5
 
 // min version, matches k8s 1.34.7
 go 1.26.0

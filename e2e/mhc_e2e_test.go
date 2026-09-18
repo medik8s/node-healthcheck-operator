@@ -20,8 +20,8 @@ import (
 
 	"github.com/openshift/api/machine/v1beta1"
 
-	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
-	controllerutils "github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/e2e/utils"
+	controllerutils "github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
 )
 
 const (

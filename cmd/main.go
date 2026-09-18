@@ -57,17 +57,17 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	openshifttls "github.com/openshift/controller-runtime-common/pkg/tls"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	controller "github.com/medik8s/node-healthcheck-operator/internal/controller"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/featuregates"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/initializer"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/mhc"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/resources"
-	"github.com/medik8s/node-healthcheck-operator/internal/metrics"
-	metricstls "github.com/medik8s/node-healthcheck-operator/internal/metrics/tls"
-	webhookv1alpha1 "github.com/medik8s/node-healthcheck-operator/internal/webhook/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/version"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	controller "github.com/medik8s/node-healthcheck-operator/v5/internal/controller"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/featuregates"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/initializer"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/mhc"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/resources"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/metrics"
+	metricstls "github.com/medik8s/node-healthcheck-operator/v5/internal/metrics/tls"
+	webhookv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/internal/webhook/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/version"
 )
 
 const (
