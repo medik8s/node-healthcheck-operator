@@ -80,8 +80,9 @@ jobs:
         export NHC_SKIP_TEST=true
         make container-build-k8s
 
-        NHC_IMG=${IMAGE_REGISTRY}/node-healthcheck-operator:latest
-        NHC_BUNDLE=${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
+        NHC_TAG=$(make -s print-image-tag)
+        NHC_IMG=${IMAGE_REGISTRY}/node-healthcheck-operator:${NHC_TAG}
+        NHC_BUNDLE=${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${NHC_TAG}
 
         # NHC Makefile hardcodes podman for builds, so push with podman too
         podman push --tls-verify=false ${NHC_IMG}
@@ -95,9 +96,10 @@ jobs:
           pod-security.kubernetes.io/audit=privileged \
           pod-security.kubernetes.io/warn=privileged
 
+        NHC_TAG=$(make -s print-image-tag)
         operator-sdk run bundle -n ${DEPLOY_NHC_NAMESPACE} --use-http \
           --timeout 5m \
-          ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest
+          ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${NHC_TAG}
 
         # Safety net: explicit RBAC binding in case ClusterRole aggregation is slow.
         kubectl create clusterrolebinding nhc-snr-admin-binding \
