@@ -201,7 +201,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					nodeUnhealthyTime = utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 
 					By("ensuring 1st remediation CR exists")
-					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
+					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 60*time.Second).Sub(time.Now())
 					Eventually(
 						ensureRemediationResourceExists(nodeUnderTest.Name,
 							testNsName,
@@ -210,7 +210,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 								Version:  dummyRemediationGVK.Version,
 								Resource: strings.ToLower(dummyRemediationGVK.Kind) + "s",
 							},
-						), waitTime, 1*time.Second).
+						), waitTime, 2*time.Second).
 						Should(Succeed())
 
 					By("ensuring lease exist")
@@ -276,10 +276,10 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 					nodeUnhealthyTime = utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 
 					By("ensuring remediation CR exists")
-					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 5*time.Second).Sub(time.Now())
+					waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 60*time.Second).Sub(time.Now())
 					Eventually(
 						ensureRemediationResourceExists(nodeUnderTest.Name, operatorNsName, remediationGVR),
-						waitTime, "1s").Should(Succeed(), "CR wasn't created")
+						waitTime, "2s").Should(Succeed(), "CR wasn't created")
 
 					By("ensuring status is set")
 					Eventually(func(g Gomega) {

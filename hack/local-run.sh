@@ -230,7 +230,10 @@ if [ "${SKIP_BUILD}" = false ]; then
 
     step "Starting reboot watcher"
     cd "${NHC_DIR}"
-    make dev-reboot-watcher
+    # Delay must exceed unhealthyConditionDuration (30s) so NHC has time
+    # to detect the unhealthy node and create the remediation CR before
+    # the watcher restarts the container.
+    MEDIK8S_REBOOT_DELAY=90 make dev-reboot-watcher
 
     step "Building and pushing NHC"
     cd "${NHC_DIR}"
