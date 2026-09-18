@@ -272,6 +272,24 @@ make dev-wait
 wait_for_cluster_resource clusterrole/node-healthcheck-operator-aggregation 120
 echo "NHC aggregation ClusterRole found — controller is active."
 
+# Wait for Kubernetes aggregation controller to merge SNR rules into the NHC
+# aggregation ClusterRole. Without this, NHC may lack permissions to create
+# SelfNodeRemediation CRs (flaky race).
+echo "  Waiting for RBAC aggregation to populate rules..."
+for i in $(seq 1 60); do
+    rules=$(kubectl get clusterrole/node-healthcheck-operator-aggregation -o jsonpath='{.rules}' 2>/dev/null)
+    if [ -n "$rules" ] && [ "$rules" != "null" ] && [ "$rules" != "[]" ]; then
+        echo "  RBAC aggregation complete — rules populated."
+        break
+    fi
+    if [ "$i" -eq 60 ]; then
+        echo "  WARNING: RBAC aggregation rules still empty after 60s"
+        kubectl get clusterrole/node-healthcheck-operator-aggregation -o yaml
+        exit 1
+    fi
+    sleep 1
+done
+
 step "Deployment status"
 cd "${NHC_DIR}"
 make dev-describe

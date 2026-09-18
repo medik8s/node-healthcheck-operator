@@ -1,4 +1,4 @@
-name: Kind E2E Tests
+name: CI
 
 on:
   push:
@@ -8,7 +8,8 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  e2e-kind:
+  kind-e2e:
+    name: Kind E2E
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -98,6 +99,24 @@ jobs:
         # initialization — once it exists the controller is active.
         kubectl wait --for=create clusterrole/node-healthcheck-operator-aggregation --timeout=120s
         echo "NHC aggregation ClusterRole found — controller is active."
+
+        # Wait for Kubernetes aggregation controller to merge SNR rules into
+        # the NHC aggregation ClusterRole. Without this, NHC may lack
+        # permissions to create SelfNodeRemediation CRs (flaky race).
+        echo "Waiting for RBAC aggregation to populate rules..."
+        for i in $(seq 1 60); do
+          rules=$(kubectl get clusterrole/node-healthcheck-operator-aggregation -o jsonpath='{.rules}' 2>/dev/null)
+          if [ -n "$rules" ] && [ "$rules" != "null" ] && [ "$rules" != "[]" ]; then
+            echo "RBAC aggregation complete — rules populated."
+            break
+          fi
+          if [ "$i" -eq 60 ]; then
+            echo "WARNING: RBAC aggregation rules still empty after 60s"
+            kubectl get clusterrole/node-healthcheck-operator-aggregation -o yaml
+            exit 1
+          fi
+          sleep 1
+        done
 
     - name: Run e2e tests
       run: |
