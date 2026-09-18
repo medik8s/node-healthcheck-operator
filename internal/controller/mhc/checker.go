@@ -12,7 +12,7 @@ import (
 
 	"github.com/openshift/api/machine/v1beta1"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
 )
 
 // NodeConditionTerminating is the node condition type used by the termination handler MHC

@@ -9,11 +9,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/cluster"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/console"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/rbac"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/servicemonitor"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/utils"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/cluster"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/console"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/rbac"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/servicemonitor"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/utils"
 )
 
 // Initializer runs some bootstrapping code:

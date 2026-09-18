@@ -11,8 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/internal/metrics"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/metrics"
 )
 
 func TestUpdateStatusNodeHealthy_MetricsUseNodeName(t *testing.T) {

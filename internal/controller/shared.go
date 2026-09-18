@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
-	"github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
-	"github.com/medik8s/node-healthcheck-operator/internal/controller/resources"
+	"github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
+	"github.com/medik8s/node-healthcheck-operator/v5/internal/controller/resources"
 )
 
 func nodeUpdateNeedsReconcile(ev event.UpdateEvent, c client.Client, logger logr.Logger) bool {

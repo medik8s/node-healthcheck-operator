@@ -10,7 +10,7 @@ import (
 
 	"github.com/openshift/api/machine/v1beta1"
 
-	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/api/v1alpha1"
+	remediationv1alpha1 "github.com/medik8s/node-healthcheck-operator/v5/api/v1alpha1"
 )
 
 // generic unhealthy condition type for sharing code for NHC and MHC unhealthy conditions
