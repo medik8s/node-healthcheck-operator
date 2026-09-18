@@ -85,8 +85,8 @@ jobs:
         NHC_BUNDLE=${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${NHC_TAG}
 
         # NHC Makefile hardcodes podman for builds, so push with podman too
-        podman push --tls-verify=false ${NHC_IMG}
-        podman push --tls-verify=false ${NHC_BUNDLE}
+        podman push --tls-verify=false "${NHC_IMG}"
+        podman push --tls-verify=false "${NHC_BUNDLE}"
 
     - name: Deploy NHC via OLM bundle
       run: |
@@ -99,7 +99,7 @@ jobs:
         NHC_TAG=$(make -s print-image-tag)
         operator-sdk run bundle -n ${DEPLOY_NHC_NAMESPACE} --use-http \
           --timeout 5m \
-          ${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${NHC_TAG}
+          "${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${NHC_TAG}"
 
         # Safety net: explicit RBAC binding in case ClusterRole aggregation is slow.
         kubectl create clusterrolebinding nhc-snr-admin-binding \
