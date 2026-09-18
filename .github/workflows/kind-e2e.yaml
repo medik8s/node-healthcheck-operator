@@ -60,6 +60,21 @@ jobs:
           --timeout 5m \
           quay.io/medik8s/self-node-remediation-operator-bundle:latest
 
+    - name: Disable SNR software reboot for Kind
+      run: |
+        kubectl -n ${DEPLOY_SNR_NAMESPACE} wait --for=create \
+          selfnoderemediationconfig/self-node-remediation-config --timeout=120s
+        kubectl -n ${DEPLOY_SNR_NAMESPACE} patch selfnoderemediationconfig \
+          self-node-remediation-config --type=merge \
+          -p '{"spec":{"isSoftwareRebootEnabled":false}}'
+        kubectl -n ${DEPLOY_SNR_NAMESPACE} wait --for=create \
+          daemonset/self-node-remediation-ds --timeout=120s
+        kubectl -n ${DEPLOY_SNR_NAMESPACE} wait \
+          --for=jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="IS_SOFTWARE_REBOOT_ENABLED")].value}'=false \
+          daemonset/self-node-remediation-ds --timeout=120s
+        kubectl -n ${DEPLOY_SNR_NAMESPACE} rollout status \
+          daemonset/self-node-remediation-ds --timeout=120s
+
     - name: Build and push NHC
       run: |
         export NHC_SKIP_TEST=true
@@ -118,14 +133,67 @@ jobs:
           sleep 1
         done
 
+    - name: Pre-test cluster snapshot
+      run: |
+        echo "=== Nodes ==="
+        kubectl get nodes -o wide
+        echo ""
+        echo "=== Node Conditions ==="
+        kubectl get nodes -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,DISK:.status.conditions[?(@.type=="DiskPressure")].status,MEM:.status.conditions[?(@.type=="MemoryPressure")].status,PID:.status.conditions[?(@.type=="PIDPressure")].status'
+        echo ""
+        echo "=== All Pods (operator namespaces) ==="
+        kubectl get pods -n ${DEPLOY_SNR_NAMESPACE} -o wide 2>/dev/null || true
+        kubectl get pods -n ${DEPLOY_NHC_NAMESPACE} -o wide 2>/dev/null || true
+        echo ""
+        echo "=== SNR Config ==="
+        kubectl get selfnoderemediationconfig -n ${DEPLOY_SNR_NAMESPACE} -o yaml 2>/dev/null || true
+        echo ""
+        echo "=== SNR Templates ==="
+        kubectl get selfnoderemediationtemplates -A -o yaml 2>/dev/null || true
+        echo ""
+        echo "=== NHC CRDs ==="
+        kubectl get nodehealthchecks -o yaml 2>/dev/null || echo "No NHCs yet"
+        echo ""
+        echo "=== RBAC: aggregation ClusterRole ==="
+        kubectl get clusterrole/node-healthcheck-operator-aggregation -o yaml 2>/dev/null || true
+        echo ""
+        echo "=== ClusterRoleBindings for NHC ==="
+        kubectl get clusterrolebindings -o wide 2>/dev/null | grep -i 'healthcheck\|nhc' || echo "None"
+
     - name: Run e2e tests
+      timeout-minutes: 15
       run: |
         # Start reboot watcher in background — monitors worker nodes and
         # restarts Kind containers when kubelet stops, simulating reboot.
-        # Delay must exceed unhealthyConditionDuration (30s) so NHC has time
-        # to detect the unhealthy node and create the remediation CR before
-        # the watcher restarts the container.
-        MEDIK8S_REBOOT_DELAY=90 make dev-reboot-watcher
+        make dev-reboot-watcher
+
+        # Background debug watcher — logs cluster state every 30s during the
+        # test run. Output is interleaved with test output so it's visible
+        # even if the job times out before reaching the debug step.
+        (
+          while true; do
+            echo ""
+            echo "====== DEBUG SNAPSHOT $(date -u +%H:%M:%S) ======"
+            echo "--- Nodes ---"
+            kubectl get nodes -o custom-columns='NAME:.metadata.name,STATUS:.status.conditions[?(@.type=="Ready")].status,AGE:.metadata.creationTimestamp' 2>/dev/null || true
+            echo "--- NHC Status ---"
+            kubectl get nodehealthchecks -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,UNHEALTHY:.status.unhealthyNodes[*].name' 2>/dev/null || true
+            echo "--- SelfNodeRemediation CRs ---"
+            kubectl get selfnoderemediations -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,AGE:.metadata.creationTimestamp' 2>/dev/null || true
+            echo "--- Pods (SNR) ---"
+            kubectl get pods -n ${DEPLOY_SNR_NAMESPACE} -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,NODE:.spec.nodeName' 2>/dev/null || true
+            echo "--- Pods (NHC) ---"
+            kubectl get pods -n ${DEPLOY_NHC_NAMESPACE} -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,NODE:.spec.nodeName' 2>/dev/null || true
+            echo "--- Recent Events (last 60s) ---"
+            kubectl get events -A --sort-by=.lastTimestamp 2>/dev/null | grep -iE 'healthcheck|remediat|self-node|unhealthy|taint|reboot' | tail -10 || true
+            echo "--- NHC Controller Logs (last 10 lines) ---"
+            kubectl logs -n ${DEPLOY_NHC_NAMESPACE} -l app.kubernetes.io/name=node-healthcheck-operator --tail=10 2>/dev/null || true
+            echo "====== END SNAPSHOT ======"
+            sleep 30
+          done
+        ) &
+        DEBUG_PID=$!
+        trap "kill $DEBUG_PID 2>/dev/null || true" EXIT
 
         OPERATOR_NS=${DEPLOY_NHC_NAMESPACE} \
         SNR_STRATEGY=OutOfServiceTaint \
@@ -133,7 +201,7 @@ jobs:
         make test-e2e
 
     - name: Debug on failure
-      if: ${{ !success() }}
+      if: ${{ always() }}
       run: |
         echo "=== NHC Status ==="
         kubectl get nodehealthchecks -o yaml 2>/dev/null || true
@@ -144,10 +212,31 @@ jobs:
         echo "=== SelfNodeRemediationTemplates ==="
         kubectl get selfnoderemediationtemplates -A -o yaml 2>/dev/null || true
         echo ""
+        echo "=== SNR Config ==="
+        kubectl get selfnoderemediationconfig -n ${DEPLOY_SNR_NAMESPACE} -o yaml 2>/dev/null || true
+        echo ""
         echo "=== Node Status ==="
         kubectl get nodes -o wide 2>/dev/null || true
         echo ""
+        echo "=== Node Conditions (detailed) ==="
+        for node in $(kubectl get nodes -o name 2>/dev/null); do
+          echo "--- ${node} ---"
+          kubectl get ${node} -o jsonpath='{range .status.conditions[*]}{.type}{"\t"}{.status}{"\t"}{.lastTransitionTime}{"\n"}{end}' 2>/dev/null || true
+        done
+        echo ""
         echo "=== NHC Events ==="
         kubectl get events -A --sort-by=.lastTimestamp --field-selector reason!=Pulling,reason!=Pulled 2>/dev/null | grep -iE 'healthcheck|remediat|disabled|enabled|template|unhealthy' || echo "No NHC-related events"
+        echo ""
+        echo "=== All Events (last 50) ==="
+        kubectl get events -A --sort-by=.lastTimestamp 2>/dev/null | tail -50 || true
+        echo ""
+        echo "=== NHC Controller Logs ==="
+        kubectl logs -n ${DEPLOY_NHC_NAMESPACE} -l app.kubernetes.io/name=node-healthcheck-operator --tail=100 2>/dev/null || true
+        echo ""
+        echo "=== SNR Controller Logs ==="
+        kubectl logs -n ${DEPLOY_SNR_NAMESPACE} -l app.kubernetes.io/name=self-node-remediation --tail=100 -c manager 2>/dev/null || true
+        echo ""
+        echo "=== Kind container status ==="
+        docker ps -a 2>/dev/null || true
         echo ""
         make dev-ci-debug

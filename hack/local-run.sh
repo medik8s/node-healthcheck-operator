@@ -228,12 +228,23 @@ if [ "${SKIP_BUILD}" = false ]; then
         --timeout 5m \
         quay.io/medik8s/self-node-remediation-operator-bundle:latest
 
+    step "Disabling SNR software reboot for Kind"
+    kubectl -n "${DEPLOY_SNR_NAMESPACE}" wait --for=create \
+        selfnoderemediationconfig/self-node-remediation-config --timeout=120s
+    kubectl -n "${DEPLOY_SNR_NAMESPACE}" patch selfnoderemediationconfig \
+        self-node-remediation-config --type=merge \
+        -p '{"spec":{"isSoftwareRebootEnabled":false}}'
+    kubectl -n "${DEPLOY_SNR_NAMESPACE}" wait --for=create \
+        daemonset/self-node-remediation-ds --timeout=120s
+    kubectl -n "${DEPLOY_SNR_NAMESPACE}" wait \
+        --for=jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="IS_SOFTWARE_REBOOT_ENABLED")].value}'=false \
+        daemonset/self-node-remediation-ds --timeout=120s
+    kubectl -n "${DEPLOY_SNR_NAMESPACE}" rollout status \
+        daemonset/self-node-remediation-ds --timeout=120s
+
     step "Starting reboot watcher"
     cd "${NHC_DIR}"
-    # Delay must exceed unhealthyConditionDuration (30s) so NHC has time
-    # to detect the unhealthy node and create the remediation CR before
-    # the watcher restarts the container.
-    MEDIK8S_REBOOT_DELAY=90 make dev-reboot-watcher
+    make dev-reboot-watcher
 
     step "Building and pushing NHC"
     cd "${NHC_DIR}"
