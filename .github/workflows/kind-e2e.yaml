@@ -122,7 +122,10 @@ jobs:
       run: |
         # Start reboot watcher in background — monitors worker nodes and
         # restarts Kind containers when kubelet stops, simulating reboot.
-        make dev-reboot-watcher
+        # Delay must exceed unhealthyConditionDuration (30s) so NHC has time
+        # to detect the unhealthy node and create the remediation CR before
+        # the watcher restarts the container.
+        MEDIK8S_REBOOT_DELAY=90 make dev-reboot-watcher
 
         OPERATOR_NS=${DEPLOY_NHC_NAMESPACE} \
         SNR_STRATEGY=OutOfServiceTaint \
