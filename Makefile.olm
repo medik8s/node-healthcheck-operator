@@ -7,30 +7,13 @@
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -euo pipefail -c
 
-# Public tool-version knobs, matching the names used by the main Makefile.
-# When this file is included, the main Makefile's file-local defaults remain
-# untouched; command-line/environment values are honored below.
-CONTROLLER_GEN_VERSION ?= v0.20.1
-OPERATOR_SDK_VERSION ?= v1.42.3
-KUSTOMIZE_VERSION ?= v5@v5.8.1
-
-# Keep the conventional tool-version variable names usable from the
-# environment/command line. The main Makefile has its own defaults, so its
-# file-local values are deliberately not inherited by this isolated flow.
-OLM_CONTROLLER_GEN_VERSION ?= v0.20.1
-OLM_OPERATOR_SDK_VERSION ?= v1.42.3
-OLM_KUSTOMIZE_VERSION ?= v5.8.1
-ifneq ($(filter command line environment environment override,$(origin CONTROLLER_GEN_VERSION)),)
-OLM_CONTROLLER_GEN_VERSION := $(CONTROLLER_GEN_VERSION)
-endif
-ifneq ($(filter command line environment environment override,$(origin OPERATOR_SDK_VERSION)),)
-OLM_OPERATOR_SDK_VERSION := $(OPERATOR_SDK_VERSION)
-endif
-ifneq ($(filter command line environment environment override,$(origin KUSTOMIZE_VERSION)),)
-OLM_KUSTOMIZE_VERSION := $(KUSTOMIZE_VERSION)
-ifneq (,$(filter v5@v%,$(KUSTOMIZE_VERSION)))
-OLM_KUSTOMIZE_VERSION := $(patsubst v5@v%,v%,$(KUSTOMIZE_VERSION))
-endif
+# Reuse the tool versions defined by the main Makefile. The OLM-prefixed
+# variables remain available as optional overrides for this isolated flow.
+OLM_CONTROLLER_GEN_VERSION ?= $(CONTROLLER_GEN_VERSION)
+OLM_OPERATOR_SDK_VERSION ?= $(OPERATOR_SDK_VERSION)
+OLM_KUSTOMIZE_VERSION ?= $(KUSTOMIZE_VERSION)
+ifneq (,$(filter v5@v%,$(OLM_KUSTOMIZE_VERSION)))
+OLM_KUSTOMIZE_VERSION := $(patsubst v5@v%,v%,$(OLM_KUSTOMIZE_VERSION))
 endif
 
 OLM_OPERATOR_NAME ?= node-healthcheck-operator
@@ -268,4 +251,3 @@ olm-help: ## Display source-to-OLM deployment variables.
 		"OLM_OPERATOR_IMAGE=$(OLM_OPERATOR_IMAGE)" \
 		"OLM_BUNDLE_IMAGE=$(OLM_BUNDLE_IMAGE)" \
 		"OLM_TTL_DURATION=$(OLM_TTL_DURATION)"
-
