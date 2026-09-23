@@ -597,7 +597,3 @@ dev-%:
 	@$(MAKE) $@
 endif
 endif
-
-# Source-to-OLM deployment is kept in a separate makefile so the existing
-# development and release targets above retain their current behavior.
--include Makefile.olm
