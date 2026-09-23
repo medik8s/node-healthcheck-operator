@@ -1,8 +1,24 @@
-# More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
-# Ignore all files which are not go type
-!**/*.go
-!**/*.mod
-!**/*.sum
+# Local binaries and build artifacts
+bin/
+testbin/
+cover.out
 
-# scripts are needed
-!**/*.sh
+# Documentation and metadata
+docs/
+*.md
+LICENSE
+OWNERS
+OWNERS_ALIASES
+
+# CI/CD configuration
+.github/
+.ci-operator.yaml
+
+# E2E tests
+e2e/
+
+# Editor and OS junk
+.idea/
+.vscode/
+*.swp
+.DS_Store
