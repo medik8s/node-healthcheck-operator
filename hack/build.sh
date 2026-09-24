@@ -29,6 +29,7 @@ echo "cgo: ${CGO_ENABLED}"
 # export in case it was set
 export GOEXPERIMENT="${GOEXPERIMENT}"
 
-# detect target arch from Go toolchain, default to amd64
-GOARCH=$(go env GOARCH)
-GOOS=linux GOARCH=${GOARCH:-amd64} go build -o bin/manager cmd/main.go
+# Use an explicitly supplied target platform, otherwise the builder platform.
+GOOS="${GOOS:-linux}"
+GOARCH="${GOARCH:-$(go env GOARCH)}"
+GOOS="${GOOS}" GOARCH="${GOARCH}" go build -o bin/manager cmd/main.go

@@ -24,7 +24,7 @@ COPY .git/ .git/
 RUN go version
 
 RUN git config --global --add safe.directory /workspace
-RUN ./hack/build.sh
+RUN GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-$(go env GOARCH)}" ./hack/build.sh
 
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 WORKDIR /
