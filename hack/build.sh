@@ -9,26 +9,24 @@ BUILD_DATE=$(date --utc -Iseconds)
 
 mkdir -p bin
 
+# Allow override for debugging flags (defaults to stripping symbols)
+LDFLAGS_DEBUG="${LDFLAGS_DEBUG:- -s -w}"
+
 LDFLAGS_VALUE="-X github.com/medik8s/node-healthcheck-operator/v5/version.Version=${VERSION} "
 LDFLAGS_VALUE+="-X github.com/medik8s/node-healthcheck-operator/v5/version.GitCommit=${COMMIT} "
 LDFLAGS_VALUE+="-X github.com/medik8s/node-healthcheck-operator/v5/version.BuildDate=${BUILD_DATE} "
-# allow override for debugging flags
-LDFLAGS_DEBUG="${LDFLAGS_DEBUG:-" -s -w"}"
 LDFLAGS_VALUE+="${LDFLAGS_DEBUG}"
-# must be single quoted for use in GOFLAGS, and for more options see https://pkg.go.dev/cmd/link
-LDFLAGS="'-ldflags=${LDFLAGS_VALUE}'"
 
-# add ldflags to goflags
-export GOFLAGS+=" ${LDFLAGS}"
-echo "goflags: ${GOFLAGS}"
-
-# allow override and use zero by default- static linking
+# Allow override and use zero by default (static linking)
 export CGO_ENABLED=${CGO_ENABLED:-0}
 echo "cgo: ${CGO_ENABLED}"
 
-# export in case it was set
+# Export in case it was set
 export GOEXPERIMENT="${GOEXPERIMENT}"
 
-# detect target arch from Go toolchain, default to amd64
+# Detect target arch from Go toolchain, default to amd64
 GOARCH=$(go env GOARCH)
-GOOS=linux GOARCH=${GOARCH:-amd64} go build -o bin/manager cmd/main.go
+
+echo "Building bin/manager with ldflags: ${LDFLAGS_VALUE}"
+
+GOOS=linux GOARCH=${GOARCH:-amd64} go build -ldflags "${LDFLAGS_VALUE}" -o bin/manager cmd/main.go
