@@ -1,0 +1,9 @@
+apiVersion: v1
+data: {}
+kind: ConfigMap
+metadata:
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+  labels:
+    app.kubernetes.io/name: node-healthcheck-operator
+  name: node-healthcheck-ca-bundle
