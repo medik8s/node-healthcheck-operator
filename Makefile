@@ -450,7 +450,7 @@ bundle-reset: ## Revert all version or build date related changes
 
 .PHONY: bundle-build-ocp
 bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s
 bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
