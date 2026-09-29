@@ -123,6 +123,10 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
+# CONTAINER_TOOL defines the container tool to be used for building images.
+CONTAINER_TOOL ?= podman
+export CONTAINER_TOOL
+
 .PHONY: all
 all: container-build-ocp container-push
 
@@ -234,11 +238,11 @@ generate: controller-gen ## Generate code
 
 .PHONY: docker-build
 docker-build: test-no-verify ## Build the docker image; skip linters and verification to not break CI
-	podman build -t ${IMG} .
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push the docker image
-	podman push ${IMG}
+	$(CONTAINER_TOOL) push ${IMG}
 
 ##@ Build Dependencies
 
@@ -454,15 +458,15 @@ bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
 
 .PHONY: bundle-build-k8s
 bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-metrics
 bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for K8s with metric related configuration
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image
-	podman push ${BUNDLE_IMG}
+	$(CONTAINER_TOOL) push ${BUNDLE_IMG}
 
 .PHONY: bundle-run
 bundle-run: operator-sdk create-ns ## Run bundle image
@@ -524,7 +528,7 @@ catalog-build: opm ## Build a file-based catalog image.
 	$(OPM) render ${OPM_RENDER_FLAGS} ${BUNDLE_IMG} --output yaml >> ${CATALOG_INDEX}
 	$(MAKE) add_channel_entry_for_the_bundle
 	$(OPM) validate ${CATALOG_DIR}
-	podman build . -f ${CATALOG_DOCKERFILE} -t ${CATALOG_IMG}
+	$(CONTAINER_TOOL) build . -f ${CATALOG_DOCKERFILE} -t ${CATALOG_IMG}
 	# Clean up the catalog directory and Dockerfile
 	rm -r ${CATALOG_DIR} ${CATALOG_DOCKERFILE}
 
