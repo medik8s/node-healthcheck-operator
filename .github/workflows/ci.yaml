@@ -1,7 +1,6 @@
 name: CI
 
 on:
-  push:
   pull_request:
   # Ready for reuse from other repos once moved to medik8s/.github
   workflow_call: {}
