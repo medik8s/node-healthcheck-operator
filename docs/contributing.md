@@ -46,7 +46,25 @@ make container-build container-push
 
 In case you use Kubernetes and not OKD or Openshift, please
 [install OLM](https://olm.operatorframework.io/docs/getting-started/#installing-olm-in-your-cluster)
-first. After that you can deploy your NHC version with `make bundle-run`
+first.
+
+### Deploying the current source to OpenShift
+
+For PR or branch testing, build the operator with the pinned source-deployment
+toolchain, push temporary images to `ttl.sh`, and install the generated OLM
+bundle with operator-sdk:
+
+```bash
+make dev-olm-deploy
+```
+
+The temporary images expire after two hours by default. Override the duration
+and deployment namespace when needed, for example:
+
+```bash
+TTL_SH_TTL=4h DEV_OLM_OPERATOR_NAMESPACE=openshift-workload-availability make dev-olm-deploy
+make dev-olm-undeploy
+```
 
 ### Creating a PR
 
