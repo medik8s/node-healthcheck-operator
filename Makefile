@@ -114,6 +114,10 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
+# CONTAINER_TOOL defines the container tool to be used for building images.
+CONTAINER_TOOL ?= podman
+export CONTAINER_TOOL
+
 .PHONY: all
 all: container-build-ocp container-push
 
@@ -225,11 +229,11 @@ generate: controller-gen ## Generate code
 
 .PHONY: docker-build
 docker-build: test-no-verify ## Build the docker image; skip linters and verification to not break CI
-	podman build -t ${IMG} .
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push the docker image
-	podman push ${IMG}
+	$(CONTAINER_TOOL) push ${IMG}
 
 ##@ Build Dependencies
 
@@ -426,15 +430,15 @@ bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
 
 .PHONY: bundle-build-k8s
 bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-metrics
 bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for K8s with metric related configuration
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image
-	podman push ${BUNDLE_IMG}
+	$(CONTAINER_TOOL) push ${BUNDLE_IMG}
 
 .PHONY: bundle-run
 bundle-run: operator-sdk create-ns ## Run bundle image
@@ -453,12 +457,12 @@ create-ns: ## Create namespace
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: index-build
 index-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool podman --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
+	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
 
 # Push the catalog image.
 .PHONY: index-push
 index-push: ## Push a catalog image.
-	podman push $(INDEX_IMG)
+	$(CONTAINER_TOOL) push $(INDEX_IMG)
 
 .PHONY: test-e2e
 test-e2e: ## Run end to end tests
