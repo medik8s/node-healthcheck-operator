@@ -124,7 +124,12 @@ KUBECTL=oc
 endif
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
-CONTAINER_TOOL ?= podman
+CONTAINER_TOOL ?= $(shell \
+	if command -v podman >/dev/null 2>&1; then echo podman; \
+	elif command -v docker >/dev/null 2>&1; then echo docker; \
+	else echo podman; \
+	fi \
+)
 export CONTAINER_TOOL
 
 .PHONY: all
@@ -453,15 +458,18 @@ bundle-reset: ## Revert all version or build date related changes
 	VERSION=$(DEFAULT_VERSION) $(MAKE) bundle-validate
 
 .PHONY: bundle-build-ocp
-bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
+bundle-build-ocp: bundle-ocp ## Build the bundle image for OCP.
+	$(MAKE) bundle-update
 	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s
-bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
+bundle-build-k8s: bundle-k8s ## Build the bundle image for k8s.
+	$(MAKE) bundle-update
 	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-metrics
-bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for K8s with metric related configuration
+bundle-build-metrics: bundle-metrics ## Build the bundle image for K8s with metric related configuration
+	$(MAKE) bundle-update
 	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
@@ -535,7 +543,7 @@ catalog-build: opm ## Build a file-based catalog image.
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
-	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+	$(CONTAINER_TOOL) push $(CATALOG_IMG)
 
 .PHONY: test-e2e
 test-e2e: ## Run end to end tests
