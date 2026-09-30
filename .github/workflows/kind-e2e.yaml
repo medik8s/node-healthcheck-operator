@@ -82,9 +82,16 @@ jobs:
         NHC_IMG=${IMAGE_REGISTRY}/node-healthcheck-operator:${NHC_TAG}
         NHC_BUNDLE=${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:${NHC_TAG}
 
-        # NHC Makefile hardcodes podman for builds, so push with podman too
-        podman push --tls-verify=false "${NHC_IMG}"
-        podman push --tls-verify=false "${NHC_BUNDLE}"
+        # Push with the active container tool. Podman requires --tls-verify=false for HTTP
+        # registries like kind-registry:5000, while Docker does not support that flag and
+        # relies on daemon configuration (/etc/docker/daemon.json).
+        if [ "${CONTAINER_TOOL}" = "docker" ]; then
+          docker push "${NHC_IMG}"
+          docker push "${NHC_BUNDLE}"
+        else
+          podman push --tls-verify=false "${NHC_IMG}"
+          podman push --tls-verify=false "${NHC_BUNDLE}"
+        fi
 
     - name: Deploy NHC via OLM bundle
       run: |
