@@ -1,5 +1,4 @@
 package controller
-// test DO NOT MERGE
 
 import (
 	"context"
