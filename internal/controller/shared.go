@@ -33,6 +33,8 @@ func nodeUpdateNeedsReconcile(ev event.UpdateEvent, c client.Client, logger logr
 		annotationsNeedReconcile(oldNode.Annotations, newNode.Annotations)
 }
 
+// test DO NOT MERGE
+
 func labelsNeedReconcile(c client.Client, oldLabels, newLabels map[string]string, logger logr.Logger) bool {
 	// Check if the ExcludeFromRemediation label was added, removed, or its value changed
 	oldVal, existsInOldLabels := oldLabels[commonLabels.ExcludeFromRemediation]
