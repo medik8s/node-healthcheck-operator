@@ -124,12 +124,7 @@ KUBECTL=oc
 endif
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
-CONTAINER_TOOL ?= $(shell \
-	if command -v podman >/dev/null 2>&1; then echo podman; \
-	elif command -v docker >/dev/null 2>&1; then echo docker; \
-	else echo podman; \
-	fi \
-)
+CONTAINER_TOOL ?= podman
 export CONTAINER_TOOL
 
 .PHONY: all
@@ -459,7 +454,6 @@ bundle-reset: ## Revert all version or build date related changes
 
 .PHONY: bundle-build-ocp
 bundle-build-ocp: bundle-ocp ## Build the bundle image for OCP.
-	$(MAKE) bundle-update
 	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s
