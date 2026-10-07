@@ -68,8 +68,23 @@ var _ = Describe("removeConfirmedHealthyAnnotation", func() {
 			m = newManager(fakeClient)
 		})
 
-		It("succeeds without error", func() {
+		It("succeeds without error and does not mutate the node", func() {
 			Expect(m.removeConfirmedHealthyAnnotation(nodeName)).To(Succeed())
+
+			unchanged := &corev1.Node{}
+			Expect(fakeClient.Get(context.Background(), client.ObjectKey{Name: nodeName}, unchanged)).To(Succeed())
+			Expect(unchanged.GetAnnotations()).To(BeEmpty())
+		})
+	})
+
+	Context("node does not exist", func() {
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(newScheme()).Build()
+			m = newManager(fakeClient)
+		})
+
+		It("returns an error", func() {
+			Expect(m.removeConfirmedHealthyAnnotation(nodeName)).To(HaveOccurred())
 		})
 	})
 })
