@@ -107,4 +107,5 @@ func TestUpdateStatusNodeHealthy_MetricsUseNodeName(t *testing.T) {
 	if len(nhc.Status.UnhealthyNodes) != 0 {
 		t.Errorf("expected unhealthy nodes to be empty, got %d", len(nhc.Status.UnhealthyNodes))
 	}
+	t.Errorf("intentional failure for branch protection validation")
 }
