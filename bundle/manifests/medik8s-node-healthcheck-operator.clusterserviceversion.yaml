@@ -53,7 +53,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/medik8s/node-healthcheck-operator
     support: Medik8s
-  name: node-healthcheck-operator.v5.8.0
+  name: medik8s-node-healthcheck-operator.v5.8.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -669,7 +669,7 @@ spec:
     name: Medik8s
     url: https://github.com/medik8s
   version: 5.8.0
-  replaces: node-healthcheck-operator.v0.12.1
+  replaces: medik8s-node-healthcheck-operator.v0.12.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1

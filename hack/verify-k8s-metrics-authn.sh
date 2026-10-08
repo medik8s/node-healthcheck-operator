@@ -50,6 +50,7 @@ set -uo pipefail
 
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-kind-registry:5000}"
 OLM_VERSION="${OLM_VERSION:-v0.38.0}"
+PACKAGE_NAME="medik8s-node-healthcheck-operator"
 NAMESPACE="${NAMESPACE:-node-healthcheck-operator-system}"
 DEPLOY_NAME="node-healthcheck-controller-manager"
 SERVICE_NAME="node-healthcheck-controller-manager-metrics-service"
@@ -119,7 +120,7 @@ cleanup() {
         docker rm -f "$REGISTRY_NAME" 2>/dev/null || true
     elif [[ "$SKIP_DEPLOY" == false ]]; then
         log_info "Cleaning up OLM deployment..."
-        "$OPERATOR_SDK" cleanup node-healthcheck-operator -n "$NAMESPACE" 2>/dev/null || true
+        "$OPERATOR_SDK" cleanup "${PACKAGE_NAME}" -n "$NAMESPACE" 2>/dev/null || true
     fi
 }
 
