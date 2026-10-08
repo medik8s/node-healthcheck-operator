@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document helps when **something is wrong with remediation behaviour**: NHC is **disabled**, **quiet** when you expect action, **stuck** on one step, or **refusing** spec changes. It stays **symptom-oriented**; the reconcile sequence lives in **`architecture.md`**.
+This document helps when **something is wrong with remediation behaviour**: NHC is **disabled**, **quiet** when you expect action, **stuck** on one step, or **refusing** spec changes. It stays **symptom-oriented**; the reconcile sequence lives in **`../ARCHITECTURE.md`**.
 
 ## How problems show up
 
@@ -21,15 +21,15 @@ Each item below is: **what you notice** → **typical reason** → **where to lo
      *Look at:* events **remediation skipped** / upgrade messaging; **ClusterVersion** progressing; node **machineconfig** annotations on affected nodes.  
    - **Pause:** **`spec.pauseRequests`** is non-empty → **no new** remediations; in-flight ones continue.  
      *Look at:* `spec.pauseRequests`, `status.phase` **Paused**.  
-   - **minHealthy / maxUnhealthy:** Too few nodes count as “healthy” for the selector → NHC **skips** starting more work.  
-     *Look at:* `status.healthyNodes`, `status.observedNodes`, events about skipped remediation.  
+   - **minHealthy / maxUnhealthy:** These are **mutually exclusive** modes, not independent checks—exactly one is set. **`minHealthy`** counts healthy nodes directly; **`maxUnhealthy`** counts unhealthy nodes and is converted to `total selected - maxUnhealthy` before the same minimum-healthy gate applies. If too few nodes count as "healthy" under that gate, NHC **skips** starting more work.  
+     *Look at:* `status.healthyNodes`, `status.observedNodes` (the primary values for diagnosing this gate), events about skipped remediation.  
    - **Storm recovery:** **`spec.stormCooldownDuration`** set and storm / **cooldown** active → **no new** remediations until the logic clears.  
      *Look at:* conditions **`StormActive`**, **`StormCooldownActive`**, events about storm / skipped creation.  
    - **Lease not obtained:** Another reconcile or holder still owns the **per-node / per-NHC** lease path → create skipped, **requeue**.  
      *Look at:* lease-related skip events, timing of concurrent changes.  
    - **Control plane guard:** Another **control-plane** remediation is already in flight for a **different** node, or **etcd disruption** is not allowed (OpenShift path).  
      *Look at:* remediation CRs with **`remediation.medik8s.io/isControlPlaneNode`**, events about skipping CP remediation / retry in ~1 minute.  
-   - **Node excluded:** Node has **`remediation.medik8s.io/exclude-from-remediation`**.  
+   - **Node excluded:** Node has **`remediation.medik8s.io/exclude-from-remediation`** set to **`true`** (any other value, including empty, is ignored and logged as a warning event).  
      *Look at:* node **labels**.
 
 3. **Escalating remediation does not move to the “next” template**  
@@ -76,7 +76,7 @@ Each item below is: **what you notice** → **typical reason** → **where to lo
 
 ## Related pieces
 
-- **`architecture.md`** — order of gates (upgrade, pause, storm, minHealthy, leases, CP).  
+- **`../ARCHITECTURE.md`** — order of gates (upgrade, pause, storm, minHealthy, leases, CP).  
 - **`runbook.md`** — commands and field checklist.
 
 ## Scope

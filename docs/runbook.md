@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is for **operators**: quick **`kubectl`** checks, which **fields** matter, and **sensible next steps** when behaviour looks wrong. Deep logic is in **`architecture.md`**; symptom mapping is in **`failure_modes.md`**.
+This document is for **operators**: quick **`kubectl`** checks, which **fields** matter, and **sensible next steps** when behaviour looks wrong. Deep logic is in **`../ARCHITECTURE.md`**; symptom mapping is in **`failure_modes.md`**.
 
 ## How to use it
 
@@ -22,7 +22,7 @@ This document is for **operators**: quick **`kubectl`** checks, which **fields**
    - **`status.unhealthyNodes`** — per-node entries; each may list **`remediations`** with **`resource`**, **`started`**, and **`timedOut`** for **escalating** flows.
 
 3. **Read spec second**  
-   - **`spec.selector`** — must be **non-empty** (webhook). Confirm it matches the nodes you care about.  
+   - **`spec.selector`** — must be **non-empty** (webhook rejects empty selectors on both **create** and **update**). An NHC created before this validation existed can still have an empty selector on the cluster today; reconciliation passes an empty selector straight to node listing, which then **matches every node**. Confirm it matches the nodes you care about.  
    - **`spec.unhealthyConditions`** — **OR** rules; check **type**, **status**, and **duration** against a node’s **`lastTransitionTime`**.  
    - **`spec.minHealthy`** *or* **`spec.maxUnhealthy`** — exactly one; affects whether new remediations start when many nodes are bad. Do **not** use **`maxUnhealthy`** with **`MachineDeletionRemediationTemplate`** (single or escalating)—admission will **reject** the NHC; use **`minHealthy`** or a different remediator template kind.  
    - **`spec.remediationTemplate`** *or* **`spec.escalatingRemediations`** — exactly one mode. For escalation, confirm **`order`** and **`timeout`** (each timeout **≥ 1 minute** at admission).  
@@ -35,7 +35,7 @@ This document is for **operators**: quick **`kubectl`** checks, which **fields**
    kubectl get node -l '<labels matching your NHC selector>'
    kubectl describe node <name>
    ```  
-   Check **conditions**, and whether **`remediation.medik8s.io/exclude-from-remediation`** is set.
+   Check **conditions**, and whether **`remediation.medik8s.io/exclude-from-remediation`** is set to **`true`** (any other value, including empty, is ignored).
 
 5. **Inspect remediation CRs**  
    Use the **kind/namespace/name** from **`status.unhealthyNodes[].remediations[].resource`**, or list by **owner / labels** if your remediator exposes them. On the remediation object, check:
@@ -44,7 +44,7 @@ This document is for **operators**: quick **`kubectl`** checks, which **fields**
    - **Labels** — **`remediation.medik8s.io/isControlPlaneNode`** on control-plane remediations.
 
 6. **OpenShift-only checks (when relevant)**  
-   - **MachineHealthCheck** count and specs — multiple or “custom” MHCs **disable** NHC. On clusters with the **Machine API**, the operator also runs a separate **MachineHealthCheck** reconciler (see **`architecture.md`**).  
+   - **MachineHealthCheck** count and specs — multiple or “custom” MHCs **disable** NHC. On clusters with the **Machine API**, the operator also runs a separate **MachineHealthCheck** reconciler (see **`../ARCHITECTURE.md`**).  
    - **ClusterVersion** / upgrade — NHC may **defer** new remediations while upgrading.  
    - **etcd / PDB** — if control-plane remediation seems blocked, correlate with CP remediation CRs and events.
 
@@ -62,7 +62,7 @@ This document is for **operators**: quick **`kubectl`** checks, which **fields**
 
 ## Related pieces
 
-- **`architecture.md`** — reconcile order.  
+- **`../ARCHITECTURE.md`** — reconcile order.  
 - **`failure_modes.md`** — symptom → cause.  
 - **`code_map.md`** — where to read in **`github.com/medik8s/node-healthcheck-operator`**.
 

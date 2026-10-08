@@ -56,7 +56,7 @@ This document maps **concepts** to **paths** in the upstream operator repo **`gi
 
 ## Related pieces
 
-- **`architecture.md`**, **`failure_modes.md`**, **`runbook.md`** — behaviour and ops without file paths.
+- **`../ARCHITECTURE.md`**, **`failure_modes.md`**, **`runbook.md`** — behaviour and ops without file paths.
 
 ## Scope
 

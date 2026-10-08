@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document explains **how the Node Health Check operator is structured**: what runs inside the operator process, which reconcilers exist, and **in what order** major decisions happen when a **`NodeHealthCheck`** is reconciled. It is written for someone who already knows what NHC does at a product level (see **`overview.md`**).
+This document explains **how the Node Health Check operator is structured**: what runs inside the operator process, which reconcilers exist, and **in what order** major decisions happen when a **`NodeHealthCheck`** is reconciled. It is written for someone who already knows what NHC does at a product level (see **`docs/overview.md`**).
 
 ## How it works
 
@@ -17,7 +17,7 @@ This document explains **how the Node Health Check operator is structured**: wha
 
 4. **`NodeHealthCheck` reconciler (main loop)**  
    For each **`NodeHealthCheck`** CR, the reconciler roughly does the following, in order:
-   - **Lease:** Acquire or use a **per–NodeHealthCheck** lease identity so concurrent reconciles for the same NHC name do not fight each other.
+   - **Lease manager:** Build a lease manager whose **holder identity** is derived from this NHC's name (`NodeHealthCheck-<name>`). The leases it later requests are **per-Node**, not per-NHC: before creating a remediation CR for an unhealthy node, the reconciler requests a `coordination.k8s.io` Lease named after that **Node**, so at most one holder can remediate a given node at a time, even across different NHC objects.
    - **Healthy delay context:** If **`spec.healthyDelay`** is set, downstream logic uses it to **delay** treating a node as healthy again after unhealthy conditions clear (including interaction with remediation CR annotations such as **`remediation.medik8s.io/healthy-delay`**). A **negative** **`healthyDelay`** means NHC will **never** consider the node healthy again automatically—**manual intervention** is expected (per API semantics).
    - **Disable if MHC conflicts:** If the checker says NHC must be off, set **`Disabled`** and stop.
    - **Validate templates:** Ensure **every** referenced remediation template exists and has a usable **`spec.template`**. If not, set **`Disabled`** (template not found / invalid) and **requeue** on not-found with a short delay so creation-order races can heal.
@@ -31,9 +31,9 @@ This document explains **how the Node Health Check operator is structured**: wha
    - **Healthy nodes:** For nodes that no longer match unhealthy rules, **delete** or **finish** remediation CRs as appropriate, update **`unhealthyNodes`** / metrics, and track timestamps when conditions became healthy but CRs are still deleting.
    - **Counts:** Update **observed** and **healthy** node counts in status.
    - **If there are matching unhealthy nodes:**
-     - **minHealthy / maxUnhealthy:** If the **minimum healthy** requirement is **not** met, **skip starting new remediations** for this pass (with events).
+     - **minHealthy / maxUnhealthy:** These are **mutually exclusive** configuration modes (admission requires **exactly one**), not independent predicates. **`minHealthy`** counts **healthy** nodes directly; **`maxUnhealthy`** counts **unhealthy** nodes and is converted to `total selected nodes - maxUnhealthy` before the same **minimum-healthy** gate is applied. If that gate is **not** met, **skip starting new remediations** for this pass (with events). **`status.observedNodes`** and **`status.healthyNodes`** are the primary values for diagnosing this gate.
      - **Storm recovery:** If **`spec.stormCooldownDuration`** is set, evaluate **storm** state. When a “storm” is active or in **cooldown**, **skip new remediations** even if individual nodes look bad—this gives node status time to converge after a widespread incident. Status conditions **`StormActive`** and **`StormCooldownActive`** record that state.
-     - **Per unhealthy node:** Skip if the node has the **exclude-from-remediation** label. Otherwise **remediate**: enforce **control-plane** rules (at most one concurrent **different** control-plane remediation in the general case; on OpenShift also consult **etcd disruption** allowability), pick **current template** (single template vs **escalating** chain), **create** remediation CR if appropriate subject to **leases**, handle **timeouts** and **escalation** (annotate remediation CR with **`remediation.medik8s.io/nhc-timed-out`** when a step times out or fails before success, advance to next escalating step), and watch for **very old** remediation CRs for alerting/metrics.
+     - **Per unhealthy node:** Skip if the node has the **exclude-from-remediation** label **set to `true`** (any other value, including empty, is ignored with a warning event). Otherwise **remediate**: enforce **control-plane** rules (at most one concurrent **different** control-plane remediation in the general case; on OpenShift also consult **etcd disruption** allowability), pick **current template** (single template vs **escalating** chain), **create** remediation CR if appropriate subject to **leases**, handle **timeouts** and **escalation** (annotate remediation CR with **`remediation.medik8s.io/nhc-timed-out`** when a step times out or fails before success, advance to next escalating step), and watch for **very old** remediation CRs for alerting/metrics.
 
 5. **Escalating remediation (within step 4)**  
    When **`escalatingRemediations`** is configured, templates are considered in **`order`**. The reconciler treats a step as **finished unsuccessfully** when the corresponding entry in **`status.unhealthyNodes[].remediations`** has **`timedOut` set**; until then, that step remains **current**. When all steps have **timed out**, there is **no template left** for that node and escalation stops. **Lease duration** logic accounts for the **current** step timeout and can include the **sum of prior steps’ timeouts** so the lock covers the whole chain.
@@ -55,11 +55,11 @@ This document explains **how the Node Health Check operator is structured**: wha
 
 ## Related pieces
 
-- **`overview.md`** — what NHC is for, escalating vs single template at a high level.
-- **`failure_modes.md`** — what you **see** when templates are missing, MHC disables NHC, storm blocks work, leases fail, etc.
-- **`runbook.md`** — **`kubectl`** checks and fields to inspect.
-- **`code_map.md`** — repository file index (`github.com/medik8s/node-healthcheck-operator`).
+- **`docs/overview.md`** — what NHC is for, escalating vs single template at a high level.
+- **`docs/failure_modes.md`** — what you **see** when templates are missing, MHC disables NHC, storm blocks work, leases fail, etc.
+- **`docs/runbook.md`** — **`kubectl`** checks and fields to inspect.
+- **`docs/code_map.md`** — repository file index (`github.com/medik8s/node-healthcheck-operator`).
 
 ## Scope
 
-This document does **not** enumerate **every** event name, metric name, or **RBAC** verb. It does **not** replace **`failure_modes.md`** for “why is my node not getting a CR” debugging trees.
+This document does **not** enumerate **every** event name, metric name, or **RBAC** verb. It does **not** replace **`docs/failure_modes.md`** for “why is my node not getting a CR” debugging trees.

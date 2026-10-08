@@ -29,7 +29,7 @@ NHC is the **orchestrator**: it decides **when** to start remediation and **whic
 
 - **Remediators** (SNR, FAR, MDR, etc.) consume the CRs NHC creates; they report success/failure via **conditions** NHC watches.
 - **Annotation** **`remediation.medik8s.io/nhc-timed-out`** on a remediation CR is set when NHC gives up on a **timed escalation step** (or similar timeout path) so the remediator can align cleanup and the next step can run.
-- **Label** **`remediation.medik8s.io/exclude-from-remediation`** on a **Node** makes NHC skip that node.
+- **Label** **`remediation.medik8s.io/exclude-from-remediation`** set to **`true`** on a **Node** makes NHC skip that node (any other value, including empty, is ignored).
 
 ## What this file is not
 
