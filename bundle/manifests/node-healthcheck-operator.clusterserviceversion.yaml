@@ -334,6 +334,14 @@ spec:
           - ""
           resources:
           - nodes
+          verbs:
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
           - pods
           verbs:
           - get
