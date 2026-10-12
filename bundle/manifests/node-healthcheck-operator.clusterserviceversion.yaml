@@ -275,7 +275,7 @@ spec:
     to know that the node has reached a safe state before initiating recovery of the workload.
 
     Unfortunately it is not always practical to require admin intervention in order to confirm the node’s true status.
-    In order to automate the recovery of exclusive workloads, we provide operators for failure detection
+    In order to automate the recovery of exclusive workloads, the following operators provide automated failure detection
     and remediation.
 
     ### Failure detection: Node Health Check operator
@@ -301,12 +301,19 @@ spec:
     the node rebooting and rejoining the cluster - restoring capacity.
 
     #### Fence Agents Remediation (FAR)
-    FAR uses well-known agents to fence unhealthy nodes, and eventually FAR remediates the nodes.
-    The remediation includes rebooting the unhealthy node using a fence agent,
-    and then evicting workloads from the unhealthy node.
+    The Fence Agents Remediation Operator uses well-known fence agents to
+    reboot unhealthy nodes via out-of-band management (e.g. IPMI, iDRAC).
+    FAR first taints the node to evict stateless workloads and prevent
+    new scheduling, then fences the node for a reboot. This ensures the
+    node returns to a clean state, accelerating workload rescheduling
+    onto healthy nodes.
 
     #### Machine Deletion Remediation (MDR)
-    MDR is limited to OpenShift, and it uses Machine API for reprovisioning unhealthy nodes by deleting their machines.
+    The Machine Deletion Remediation Operator is available on OpenShift with
+    Machine API. It reprovisions unhealthy nodes by deleting the underlying
+    machine. When an owning infrastructure controller, such as a MachineSet,
+    can provide replacement capacity, it creates a replacement node and
+    restores cluster capacity.
   displayName: Node Health Check Operator - Community Edition
   icon:
   - base64data: base64EncodedIcon
@@ -649,10 +656,19 @@ spec:
     type: AllNamespaces
   keywords:
   - NHC
+  - Node Health Check
   - Self Node Remediation
   - SNR
+  - Fence Agents Remediation
+  - FAR
+  - Storage Based Remediation
+  - SBR
+  - Machine Deletion Remediation
+  - MDR
   - Remediation
   - Fencing
+  - node remediation
+  - watchdog
   - medik8s
   - k8s
   links:
