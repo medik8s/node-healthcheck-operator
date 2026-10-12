@@ -251,6 +251,7 @@ spec:
     - Self Node Remediation (SNR)
     - Fence Agents Remediation (FAR)
     - Machine Deletion Remediation (MDR)
+    - Storage-Based Remediation (SBR)
 
     #### Self Node Remediation (SNR)
     SNR uses watchdog timers and heuristics to ensure nodes enter a safe state
@@ -267,6 +268,10 @@ spec:
 
     #### Machine Deletion Remediation (MDR)
     MDR is limited to OpenShift, and it uses Machine API for reprovisioning unhealthy nodes by deleting their machines.
+
+    #### Storage-Based Remediation (SBR)
+    SBR uses shared block storage as a fencing mechanism, enabling node remediation
+    without requiring out-of-band management hardware (e.g. IPMI or iDRAC).
   displayName: Node Health Check Operator
   icon:
   - base64data: base64EncodedIcon
