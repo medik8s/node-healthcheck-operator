@@ -1,0 +1,208 @@
+name: Auto Label PR on CI Success
+
+on:
+  check_suite:
+    types: [completed]
+  status: {}
+
+permissions:
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  label-on-success:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'check_suite' || github.event_name == 'status'
+    steps:
+      - name: Get PR number
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let prNumber = null;
+
+            if (context.eventName === 'check_suite') {
+              const pulls = context.payload.check_suite.pull_requests;
+              if (pulls && pulls.length > 0) {
+                prNumber = pulls[0].number;
+              }
+            } else if (context.eventName === 'status') {
+              const sha = context.payload.sha;
+              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: sha
+              });
+              if (prs.length > 0) {
+                prNumber = prs[0].number;
+              }
+            }
+
+            if (!prNumber) {
+              console.log('No PR found for this event');
+              return null;
+            }
+
+            console.log(`Found PR #${prNumber}`);
+            return prNumber;
+          result-encoding: string
+
+      - name: Check all CI status and add/remove label
+        if: steps.pr.outputs.result != 'null'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = parseInt('${{ steps.pr.outputs.result }}');
+            const labelName = 'all-checks-passed';
+            const labelColor = '0e8a16'; // GitHub green
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const headSha = pr.head.sha;
+            const prUrl = pr.html_url;
+
+            console.log('='.repeat(80));
+            console.log(`🔍 Checking CI status for PR #${prNumber}`);
+            console.log(`📍 ${prUrl}`);
+            console.log(`🔗 Commit SHA: ${headSha}`);
+            console.log('='.repeat(80));
+
+            // Get all check runs for this commit
+            const { data: checkRuns } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha
+            });
+
+            // Get all statuses (for legacy CI systems)
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha
+            });
+
+            // Combine all checks
+            const allChecks = [
+              ...checkRuns.check_runs.map(run => ({
+                name: run.name,
+                status: run.status,
+                conclusion: run.conclusion,
+                type: 'check_run'
+              })),
+              ...statuses.map(status => ({
+                name: status.context,
+                status: status.state === 'pending' ? 'in_progress' : 'completed',
+                conclusion: status.state === 'success' ? 'success' :
+                           status.state === 'failure' ? 'failure' :
+                           status.state === 'error' ? 'failure' : 'pending',
+                type: 'status'
+              }))
+            ];
+
+            console.log(`Total checks found: ${allChecks.length}`);
+
+            // Filter out the label workflow itself and tide to avoid circular dependency
+            // Tide status depends on labels (lgtm, approved), not just CI passing
+            const relevantChecks = allChecks.filter(check =>
+              !check.name.includes('Auto Label PR') &&
+              !check.name.includes('label-on-success') &&
+              check.name !== 'tide'
+            );
+
+            if (relevantChecks.length === 0) {
+              console.log('No CI checks found yet, skipping label update');
+              return;
+            }
+
+            // Check if all are completed and successful
+            const allCompleted = relevantChecks.every(check =>
+              check.status === 'completed'
+            );
+
+            const allSuccessful = relevantChecks.every(check =>
+              check.conclusion === 'success'
+            );
+
+            const anyFailed = relevantChecks.some(check =>
+              check.conclusion === 'failure' ||
+              check.conclusion === 'cancelled' ||
+              check.conclusion === 'timed_out'
+            );
+
+            console.log(`Completed: ${allCompleted}, Successful: ${allSuccessful}, Failed: ${anyFailed}`);
+
+            // List check details for debugging
+            for (const check of relevantChecks) {
+              console.log(`  - ${check.name}: ${check.status} / ${check.conclusion}`);
+            }
+
+            // Ensure label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: labelName
+              });
+            } catch (error) {
+              if (error.status === 404) {
+                console.log(`Creating label: ${labelName}`);
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: labelName,
+                  color: labelColor,
+                  description: 'All CI checks have passed'
+                });
+              }
+            }
+
+            // Get current labels on PR
+            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            const hasLabel = currentLabels.some(label => label.name === labelName);
+
+            // Add or remove label based on status
+            if (allCompleted && allSuccessful && !anyFailed) {
+              if (!hasLabel) {
+                console.log(`✅ All checks passed! Adding "${labelName}" label`);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  labels: [labelName]
+                });
+                console.log('='.repeat(80));
+                console.log(`✅ SUCCESS: Label "${labelName}" added to PR #${prNumber}`);
+                console.log(`📍 View PR: ${prUrl}`);
+                console.log('='.repeat(80));
+              } else {
+                console.log(`Label "${labelName}" already present`);
+              }
+            } else {
+              if (hasLabel) {
+                console.log(`❌ Not all checks passed, removing "${labelName}" label`);
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: labelName
+                });
+                console.log('='.repeat(80));
+                console.log(`⚠️  Label "${labelName}" removed from PR #${prNumber} (checks not all passing)`);
+                console.log(`📍 View PR: ${prUrl}`);
+                console.log('='.repeat(80));
+              } else {
+                console.log(`Not all checks passed yet, label not present`);
+                console.log(`📍 View PR: ${prUrl}`);
+              }
+            }
