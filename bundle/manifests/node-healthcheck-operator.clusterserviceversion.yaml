@@ -337,7 +337,7 @@ spec:
           verbs:
           - get
           - list
-          - update
+          - patch
           - watch
         - apiGroups:
           - ""
