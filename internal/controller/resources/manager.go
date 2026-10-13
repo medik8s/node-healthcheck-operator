@@ -446,10 +446,11 @@ func (m *manager) removeConfirmedHealthyAnnotation(nodeName string) error {
 	if _, found := ann[RemediationManuallyConfirmedHealthyAnnotationKey]; !found {
 		return nil
 	}
+	original := node.DeepCopy()
 	delete(ann, RemediationManuallyConfirmedHealthyAnnotationKey)
 	node.SetAnnotations(ann)
 
-	return m.Update(m.ctx, node)
+	return m.Patch(m.ctx, node, client.MergeFrom(original))
 
 }
 
