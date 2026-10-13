@@ -40,6 +40,7 @@ export DEPLOY_SNR_NAMESPACE="${DEPLOY_SNR_NAMESPACE:-snr-system}"
 export DEPLOY_NHC_NAMESPACE="${DEPLOY_NHC_NAMESPACE:-k8s-test}"
 export TOOLS_DIR
 
+PACKAGE_NAME="medik8s-node-healthcheck-operator"
 NHC_IMG="${IMAGE_REGISTRY}/node-healthcheck-operator:latest"
 NHC_BUNDLE="${IMAGE_REGISTRY}/node-healthcheck-operator-bundle:latest"
 
@@ -179,7 +180,7 @@ check_and_cleanup_existing_deployment() {
         echo "  Found existing NHC resources in ${DEPLOY_NHC_NAMESPACE}:"
         echo "${resources}" | sed 's/^/    /'
         echo "  Removing existing NHC OLM installation..."
-        operator-sdk -n "${DEPLOY_NHC_NAMESPACE}" cleanup node-healthcheck-operator --delete-all || true
+        operator-sdk -n "${DEPLOY_NHC_NAMESPACE}" cleanup "${PACKAGE_NAME}" --delete-all || true
     fi
 
     echo "  Existing deployments cleaned up."
