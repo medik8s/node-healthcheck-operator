@@ -1,0 +1,30 @@
+# Shared label behavior and configuration:
+# https://github.com/medik8s/.github/blob/main/docs/pr-check-label.md
+name: Auto Label PR on CI Success
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, closed]
+  workflow_run:
+    workflows: ['**', '!Auto Label PR on CI Success']
+    types: [requested, in_progress, completed]
+  check_run:
+    types: [created, rerequested, completed]
+  check_suite:
+    types: [completed]
+  status: {}
+  # Reconcile events that GitHub suppresses and allow manual repair.
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: read
+  statuses: read
+
+jobs:
+  label:
+    uses: medik8s/.github/.github/workflows/pr-check-label.yaml@main
