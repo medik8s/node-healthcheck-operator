@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   issues: write
   checks: read
   statuses: read
