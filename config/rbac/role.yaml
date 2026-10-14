@@ -23,6 +23,14 @@ rules:
   - ""
   resources:
   - nodes
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - get
