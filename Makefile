@@ -114,6 +114,10 @@ ifeq (,$(shell which kubectl))
 KUBECTL=oc
 endif
 
+# CONTAINER_TOOL defines the container tool to be used for building images.
+CONTAINER_TOOL ?= podman
+export CONTAINER_TOOL
+
 .PHONY: all
 all: container-build-ocp container-push
 
@@ -225,11 +229,11 @@ generate: controller-gen ## Generate code
 
 .PHONY: docker-build
 docker-build: test-no-verify ## Build the docker image; skip linters and verification to not break CI
-	podman build -t ${IMG} .
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push the docker image
-	podman push ${IMG}
+	$(CONTAINER_TOOL) push ${IMG}
 
 ##@ Build Dependencies
 
@@ -302,6 +306,10 @@ GOBIN=$(PROJECT_DIR)/bin GOFLAGS='' go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+.PHONY: print-image-tag
+print-image-tag: ## Print the current bundle image tag (used by CI to know what was just built)
+	@echo $(IMAGE_TAG)
 
 .PHONY: bundle-base
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
@@ -422,19 +430,19 @@ bundle-reset: ## Revert all version or build date related changes
 
 .PHONY: bundle-build-ocp
 bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-k8s
 bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-build-metrics
 bundle-build-metrics: bundle-metrics bundle-update ## Build the bundle image for K8s with metric related configuration
-	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image
-	podman push ${BUNDLE_IMG}
+	$(CONTAINER_TOOL) push ${BUNDLE_IMG}
 
 .PHONY: bundle-run
 bundle-run: operator-sdk create-ns ## Run bundle image
@@ -453,12 +461,12 @@ create-ns: ## Create namespace
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: index-build
 index-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool podman --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
+	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(INDEX_IMG) --bundles $(BUNDLE_IMG)
 
 # Push the catalog image.
 .PHONY: index-push
 index-push: ## Push a catalog image.
-	podman push $(INDEX_IMG)
+	$(CONTAINER_TOOL) push $(INDEX_IMG)
 
 .PHONY: test-e2e
 test-e2e: ## Run end to end tests
@@ -495,3 +503,32 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run
+
+# Shared dev environment
+# Keep the standalone tag query free of output from the shared dev makefile.
+ifneq ($(MAKECMDGOALS),print-image-tag)
+# Uses a local sibling checkout if available (e.g. ../tools),
+# otherwise downloads the tools repo into .tools/ on first dev-* target use.
+TOOLS_DIR ?= $(shell cd .. && pwd)/tools
+DEV_MK := $(TOOLS_DIR)/dev/dev.mk
+ifeq ($(wildcard $(DEV_MK)),)
+  TOOLS_DIR := $(shell pwd)/.tools
+  DEV_MK := $(TOOLS_DIR)/dev/dev.mk
+endif
+-include $(DEV_MK)
+ifeq ($(wildcard $(DEV_MK)),)
+dev-%:
+	@echo "Downloading medik8s/tools into $(TOOLS_DIR)..."
+	@if [ -d $(TOOLS_DIR) ]; then \
+		if [ -f $(TOOLS_DIR)/.managed-by-makefile ]; then \
+			echo "  Removing stale $(TOOLS_DIR)..."; rm -rf $(TOOLS_DIR); \
+		else \
+			echo "Error: $(TOOLS_DIR) exists but was not created by this Makefile..."; exit 1; \
+		fi; \
+	fi
+	@git clone --depth 1 https://github.com/medik8s/tools.git $(TOOLS_DIR)
+	@touch $(TOOLS_DIR)/.managed-by-makefile
+	@test -f $(DEV_MK) || { echo "Error: $(DEV_MK) not found after clone."; exit 1; }
+	@$(MAKE) $@
+endif
+endif

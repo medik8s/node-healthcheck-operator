@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  # main* also covers fork branches (main-<topic>), so a push to a fork runs
+  # the suite without opening a PR first.
+  push:
+    branches: [main*, medik8s-*, release-*]
+  # Any target branch: main, medik8s-X.Y, release-X.Y, and cherry-pick PRs.
+  pull_request:
+    branches: ['**']
+  workflow_dispatch: {}
+  # Ready for reuse from other repos once moved to medik8s/.github
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: medik8s/.github/.github/workflows/ci.yaml@main
