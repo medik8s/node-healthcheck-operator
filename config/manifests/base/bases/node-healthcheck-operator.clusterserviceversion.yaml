@@ -250,6 +250,7 @@ spec:
     There are multiple remediators for handling node failure that we recommend:
     - Self Node Remediation (SNR)
     - Fence Agents Remediation (FAR)
+    - Storage-Based Remediation (SBR)
     - Machine Deletion Remediation (MDR)
 
     #### Self Node Remediation (SNR)
@@ -267,6 +268,13 @@ spec:
     new scheduling, then fences the node for a reboot. This ensures the
     node returns to a clean state, accelerating workload rescheduling
     onto healthy nodes.
+
+    #### Storage-Based Remediation (SBR)
+    SBR requires a shared RWX storage volume as a coordination layer for heartbeat-based
+    node liveness detection. When a node loses storage access, its local kernel watchdog
+    performs fencing by triggering a self-reboot, preventing split-brain and enabling
+    workloads to be safely rescheduled. No out-of-band management hardware
+    (e.g. IPMI or iDRAC) is required.
 
     #### Machine Deletion Remediation (MDR)
     The Machine Deletion Remediation Operator is available on OpenShift with
