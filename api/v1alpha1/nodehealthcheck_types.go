@@ -55,7 +55,7 @@ const (
 	// PhasePaused is used when not disabled, but PauseRequests is set
 	PhasePaused NHCPhase = "Paused"
 
-	// PhaseRemediating is used when not disabled and not paused, and InFlightRemediations is set
+	// PhaseRemediating is used when not disabled and not paused, and at least one UnhealthyNodes entry has a non-empty Remediations list
 	PhaseRemediating NHCPhase = "Remediating"
 
 	// PhaseEnabled is used in all other cases
@@ -281,7 +281,7 @@ type NodeHealthCheckStatus struct {
 	// Known phases are Disabled, Paused, Remediating and Enabled, based on:\n
 	// - the status of the Disabled condition\n
 	// - the value of PauseRequests\n
-	// - the value of InFlightRemediations
+	// - whether any UnhealthyNodes entry has a non-empty Remediations list
 	//
 	//+optional
 	//+operator-sdk:csv:customresourcedefinitions:type=status,xDescriptors="urn:alm:descriptor:io.kubernetes.phase"

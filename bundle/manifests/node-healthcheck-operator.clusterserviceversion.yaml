@@ -218,7 +218,7 @@ spec:
           Known phases are Disabled, Paused, Remediating and Enabled, based on:\n
           - the status of the Disabled condition\n
           - the value of PauseRequests\n
-          - the value of InFlightRemediations
+          - whether any UnhealthyNodes entry has a non-empty Remediations list
         displayName: Phase
         path: phase
         x-descriptors:
