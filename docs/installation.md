@@ -24,6 +24,31 @@ and follow the instructions.
 > OLM on k8s will install operators in the `operators` namespace,
 > while OCP or OKD are using `openshift-operators`
 
+## Installation without OLM
+
+On Kubernetes without OLM, NHC can be installed with the `install.yaml` manifest attached to each
+[release](https://github.com/medik8s/node-healthcheck-operator/releases). It needs
+[cert-manager](https://cert-manager.io/docs/installation/) for the webhook serving certificate.
+
+```bash
+kubectl apply --server-side -f https://github.com/medik8s/node-healthcheck-operator/releases/download/v<version>/install.yaml
+```
+
+NHC is installed into the `node-healthcheck-operator-system` namespace.
+The manifest is built from `config/standalone`, so it can also be used as a kustomize base.
+The image tag in the repository is a placeholder, so set it to the release you install:
+
+```yaml
+resources:
+- https://github.com/medik8s/node-healthcheck-operator//config/standalone?ref=v<version>
+images:
+- name: quay.io/medik8s/node-healthcheck-operator
+  newTag: v<version>
+```
+
+To build the manifest from source, run `make build-installer`, which writes `dist/install.yaml`.
+Use `IMG` to set a different operator image.
+
 ### For development
 
 For instructions on how to install NHC for development, please visit
