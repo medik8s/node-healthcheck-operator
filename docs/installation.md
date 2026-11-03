@@ -51,6 +51,22 @@ To build the manifest from source, run `make build-installer VERSION=<version>`,
 without the leading `v`, which writes `dist/install.yaml`.
 Use `IMG` to set a different operator image.
 
+### Using Helm
+
+The Helm chart in `dist/chart` installs the same resources and also needs cert-manager:
+
+```bash
+helm install node-healthcheck-operator dist/chart \
+  --namespace node-healthcheck-operator-system --create-namespace
+```
+
+See `dist/chart/values.yaml` for the configurable values.
+The CRD is kept when the chart is uninstalled, so existing NodeHealthCheck resources survive a reinstall.
+
+The chart is generated from `dist/install.yaml` with the kubebuilder Helm plugin.
+After changing `config/`, run `make helm-chart` and update `dist/chart/values.yaml` until
+`make verify-helm-chart` passes.
+
 ### For development
 
 For instructions on how to install NHC for development, please visit

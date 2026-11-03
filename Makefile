@@ -22,6 +22,11 @@ YQ_API_VERSION = v4
 # https://github.com/mikefarah/yq/releases
 YQ_VERSION = v4.53.2
 
+# https://github.com/kubernetes-sigs/kubebuilder/releases
+KUBEBUILDER_VERSION = v4.16.0
+# https://github.com/helm/helm/releases
+HELM_VERSION = v3.22.1
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.34
 
@@ -199,6 +204,22 @@ deploy: manifests kustomize ## Deploy controller in the configured Kubernetes cl
 undeploy: ## UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
 	$(KUSTOMIZE) build $${KUSTOMIZE_OVERLAY-config/default} | $(KUBECTL) delete -f -
 
+.PHONY: helm-chart
+helm-chart: build-installer kubebuilder yq ## Generate the Helm chart in dist/chart from dist/install.yaml
+	$(KUBEBUILDER) edit --plugins=helm/v2-alpha --manifests=dist/install.yaml --output-dir=dist
+	$(YQ) -i '.version = "$(VERSION)" | .appVersion = "$(IMAGE_TAG)"' dist/chart/Chart.yaml
+	sed -i.bak 's/{{ include "node-healthcheck-operator.name" . }}-operator/{{ include "node-healthcheck-operator.name" . }}/' dist/chart/templates/*/*.yaml
+	rm -f dist/chart/templates/*/*.yaml.bak
+	$(MAKE) fmt
+
+.PHONY: verify-helm-chart
+verify-helm-chart: helm-chart helm ## Verify that dist/chart is up to date and renders the same resources as dist/install.yaml
+	@if [ -n "$$(git status --porcelain -- dist/chart config/standalone)" ]; then \
+		git status --porcelain -- dist/chart config/standalone; git diff -- dist/chart config/standalone; \
+		echo "dist/chart or config/standalone is not up to date, run 'make helm-chart' and commit the changes"; exit 1; \
+	fi
+	YQ=$(YQ) HELM=$(HELM) ./hack/verify-helm-chart.sh
+
 .PHONY: build-installer
 build-installer: manifests kustomize ## Generate dist/install.yaml for installing NHC without OLM (requires cert-manager)
 	mkdir -p dist
@@ -274,6 +295,16 @@ SORT_IMPORTS = $(shell pwd)/bin/sort-imports
 .PHONY: sort-imports
 sort-imports: ## Download sort-imports locally if necessary.
 	$(call go-install-tool,$(SORT_IMPORTS),github.com/slintes/sort-imports@$(SORT_IMPORTS_VERSION))
+
+KUBEBUILDER = $(shell pwd)/bin/kubebuilder
+.PHONY: kubebuilder
+kubebuilder: ## Download kubebuilder locally if necessary.
+	$(call go-install-tool,$(KUBEBUILDER),sigs.k8s.io/kubebuilder/v4@$(KUBEBUILDER_VERSION))
+
+HELM = $(shell pwd)/bin/helm
+.PHONY: helm
+helm: ## Download helm locally if necessary.
+	$(call go-install-tool,$(HELM),helm.sh/helm/v3/cmd/helm@$(HELM_VERSION))
 
 YQ = $(shell pwd)/bin/yq
 .PHONY: yq
