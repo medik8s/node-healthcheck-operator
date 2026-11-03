@@ -212,6 +212,17 @@ helm-chart: build-installer kubebuilder yq ## Generate the Helm chart in dist/ch
 	rm -f dist/chart/templates/*/*.yaml.bak
 	$(MAKE) fmt
 
+HELM_CHART_REPO ?= oci://$(IMAGE_REGISTRY)/charts
+HELM_PUSH_FLAGS ?=
+
+.PHONY: helm-package
+helm-package: helm ## Package the Helm chart for VERSION into dist/, the chart's default image tag is IMAGE_TAG
+	$(HELM) package dist/chart --version $(VERSION) --app-version $(IMAGE_TAG) --destination dist
+
+.PHONY: helm-push
+helm-push: helm-package ## Push the packaged Helm chart to HELM_CHART_REPO
+	$(HELM) push dist/$(OPERATOR_NAME)-$(VERSION).tgz $(HELM_CHART_REPO) $(HELM_PUSH_FLAGS)
+
 .PHONY: verify-helm-chart
 verify-helm-chart: helm-chart helm ## Verify that dist/chart is up to date and renders the same resources as dist/install.yaml
 	@if [ -n "$$(git status --porcelain -- dist/chart)" ]; then \

@@ -53,16 +53,19 @@ Use `IMG` to set a different operator image.
 
 ### Using Helm
 
-The Helm chart in `dist/chart` installs the same resources and also needs cert-manager.
-Run this from a checkout of the repository at a release tag that includes the chart.
-The chart's default image tag follows the repository's default version, not the release tag,
-so set it to the release you install:
+The Helm chart installs the same resources and also needs cert-manager.
+It is published with the releases (older releases have no chart; install those with OLM).
+Use the release version without the leading `v`:
 
 ```bash
-helm install node-healthcheck-operator dist/chart \
-  --set manager.image.tag=v<version> \
+helm install node-healthcheck-operator oci://quay.io/medik8s/charts/node-healthcheck-operator \
+  --version <version> \
   --namespace node-healthcheck-operator-system --create-namespace
 ```
+
+To install from source, check out the repository at a release tag that includes the chart and use
+`dist/chart` instead of the OCI reference. Its default image tag follows the repository's default
+version, not the release tag, so also pass `--set manager.image.tag=v<version>`.
 
 See `dist/chart/values.yaml` for the configurable values.
 The CRD is kept when the chart is uninstalled, so existing NodeHealthCheck resources survive a reinstall.

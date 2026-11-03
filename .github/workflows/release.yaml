@@ -94,6 +94,7 @@ jobs:
 
             * Operator: quay.io/medik8s/node-healthcheck-operator:v${{ env.VERSION }}
             * Bundle: quay.io/medik8s/node-healthcheck-operator-bundle:v${{ env.VERSION }}
+            * Helm chart: oci://quay.io/medik8s/charts/node-healthcheck-operator, version ${{ env.VERSION }}
 
             ### Source code and OLM manifests
 
@@ -101,6 +102,16 @@ jobs:
           files: |
             bundle.tar.gz
             dist/install.yaml
+
+      - name: Push Helm chart
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: |
+          make helm
+          echo "${QUAY_PASSWORD}" | ./bin/helm registry login quay.io --username "${QUAY_USERNAME}" --password-stdin
+          VERSION=$VERSION make helm-push
+
   create_k8s_release_pr:
     if: inputs.operation == 'create_k8s_release_pr'
     uses: medik8s/.github/.github/workflows/release_community_bundle.yaml@main
