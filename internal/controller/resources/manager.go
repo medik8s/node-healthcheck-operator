@@ -106,7 +106,14 @@ func (m *manager) GenerateRemediationCRForNode(node *corev1.Node, owner client.O
 		}
 	}
 
-	return m.generateRemediationCR(node.GetName(), node.GetName(), nhcOwnerRef, machineOwnerRef, template)
+	cr, err := m.generateRemediationCR(node.GetName(), node.GetName(), nhcOwnerRef, machineOwnerRef, template)
+	if err != nil {
+		return nil, err
+	}
+	if err := bindSelectedNode(cr, node); err != nil {
+		return nil, err
+	}
+	return cr, nil
 }
 
 func (m *manager) GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured, nodeName string) (*unstructured.Unstructured, error) {
