@@ -283,8 +283,8 @@ cd "${NHC_DIR}"
 make dev-wait
 
 # Wait for NHC controller to complete leader election and initial reconciliation
-wait_for_cluster_resource clusterrole/node-healthcheck-operator-aggregation 120
-echo "NHC aggregation ClusterRole found — controller is active."
+wait_for_cluster_resource clusterrolebinding/node-healthcheck-operator-aggregation 120
+echo "NHC aggregation ClusterRoleBinding found — controller is active."
 
 # Wait for Kubernetes aggregation controller to merge SNR rules into the NHC
 # aggregation ClusterRole. Without this, NHC may lack permissions to create
