@@ -1,0 +1,21 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: controller-manager
+    app.kubernetes.io/name: {{ include "node-healthcheck-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  name: {{ include "node-healthcheck-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: {{ .Values.webhook.port }}
+  selector:
+    app.kubernetes.io/component: controller-manager
+    app.kubernetes.io/name: {{ include "node-healthcheck-operator.name" . }}
+{{- end }}
