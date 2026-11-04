@@ -180,12 +180,6 @@ manager:
 ## RBAC configuration
 ##
 rbac:
-  ## RBAC resource scope
-  ## - false (default): ClusterRole/ClusterRoleBinding (all namespaces)
-  ## - true: Role/RoleBinding (release namespace only)
-  ##
-  namespaced: false
-
   ## Helper roles for CRD management (admin/editor/viewer)
   ##
   helpers:

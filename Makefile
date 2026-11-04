@@ -210,13 +210,16 @@ helm-chart: build-installer kubebuilder yq ## Generate the Helm chart in dist/ch
 	$(YQ) -i '.version = "$(VERSION)" | .appVersion = "$(IMAGE_TAG)"' dist/chart/Chart.yaml
 	sed -i.bak 's/{{ include "node-healthcheck-operator.name" . }}-operator/{{ include "node-healthcheck-operator.name" . }}/' dist/chart/templates/*/*.yaml
 	rm -f dist/chart/templates/*/*.yaml.bak
+	{ printf '%s\n' '{{- if .Values.rbac.namespaced }}{{- fail "rbac.namespaced is not supported: the operator needs cluster-wide access to Nodes and NodeHealthChecks" }}{{- end }}'; \
+		cat dist/chart/templates/rbac/manager-role.yaml; } > dist/chart/templates/rbac/manager-role.yaml.tmp
+	mv dist/chart/templates/rbac/manager-role.yaml.tmp dist/chart/templates/rbac/manager-role.yaml
 	$(MAKE) fmt
 
 .PHONY: verify-helm-chart
 verify-helm-chart: helm-chart helm ## Verify that dist/chart is up to date and renders the same resources as dist/install.yaml
-	@if [ -n "$$(git status --porcelain -- dist/chart config/standalone)" ]; then \
-		git status --porcelain -- dist/chart config/standalone; git diff -- dist/chart config/standalone; \
-		echo "dist/chart or config/standalone is not up to date, run 'make helm-chart' and commit the changes"; exit 1; \
+	@if [ -n "$$(git status --porcelain -- dist/chart)" ]; then \
+		git status --porcelain -- dist/chart; git diff -- dist/chart; \
+		echo "dist/chart is not up to date, run 'make helm-chart' and commit the changes"; exit 1; \
 	fi
 	YQ=$(YQ) HELM=$(HELM) ./hack/verify-helm-chart.sh
 
