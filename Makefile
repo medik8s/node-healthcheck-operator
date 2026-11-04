@@ -202,8 +202,10 @@ undeploy: ## UnDeploy controller from the configured Kubernetes cluster in ~/.ku
 .PHONY: build-installer
 build-installer: manifests kustomize ## Generate dist/install.yaml for installing NHC without OLM (requires cert-manager)
 	mkdir -p dist
-	cd config/standalone && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/standalone > dist/install.yaml
+	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	cp -R config "$$tmp/" && \
+	(cd "$$tmp/config/manager" && $(KUSTOMIZE) edit set image controller=${IMG}) && \
+	$(KUSTOMIZE) build "$$tmp/config/standalone" > dist/install.yaml
 
 .PHONY: manifests
 manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
