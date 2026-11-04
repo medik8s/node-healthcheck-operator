@@ -26,8 +26,9 @@ and follow the instructions.
 
 ## Installation without OLM
 
-On Kubernetes without OLM, NHC can be installed with the `install.yaml` manifest attached to each
-[release](https://github.com/medik8s/node-healthcheck-operator/releases). It needs
+On Kubernetes without OLM, NHC can be installed with the `install.yaml` manifest attached to the
+[releases](https://github.com/medik8s/node-healthcheck-operator/releases). Older releases don't have
+this asset; install those with OLM. It needs
 [cert-manager](https://cert-manager.io/docs/installation/) for the webhook serving certificate.
 
 ```bash

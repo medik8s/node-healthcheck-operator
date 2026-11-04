@@ -205,6 +205,7 @@ build-installer: manifests kustomize ## Generate dist/install.yaml for installin
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 	cp -R config "$$tmp/" && \
 	(cd "$$tmp/config/manager" && $(KUSTOMIZE) edit set image controller=${IMG}) && \
+	(cd "$$tmp/config/standalone" && $(KUSTOMIZE) edit set image controller=${IMG}) && \
 	$(KUSTOMIZE) build "$$tmp/config/standalone" > dist/install.yaml
 
 .PHONY: manifests
