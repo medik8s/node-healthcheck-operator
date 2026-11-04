@@ -1,0 +1,17 @@
+apiVersion: v2
+name: node-healthcheck-operator
+description: Node Healthcheck Operator detects unhealthy nodes and triggers remediation with a remediation operator
+type: application
+home: https://www.medik8s.io
+sources:
+  - https://github.com/medik8s/node-healthcheck-operator
+icon: https://raw.githubusercontent.com/medik8s/node-healthcheck-operator/main/config/assets/nhc_blue.png
+version: 5.8.0
+appVersion: "v5.8.0"
+keywords:
+  - kubernetes
+  - operator
+  - medik8s
+  - remediation
+annotations:
+  kubebuilder.io/generated-by: kubebuilder
