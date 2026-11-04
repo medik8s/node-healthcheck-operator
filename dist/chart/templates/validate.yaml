@@ -1,0 +1,15 @@
+{{- if .Values.rbac.namespaced }}
+{{- fail "rbac.namespaced is not supported: the operator needs cluster-wide access to Nodes and NodeHealthChecks" }}
+{{- end }}
+{{- if not .Values.webhook.enabled }}
+{{- fail "webhook.enabled=false is not supported: the operator always serves its validating webhook" }}
+{{- end }}
+{{- if ne (int .Values.webhook.port) 9443 }}
+{{- fail "webhook.port must be 9443: the operator always serves its webhook on that port" }}
+{{- end }}
+{{- if ne (int .Values.metrics.port) 8443 }}
+{{- fail "metrics.port must be 8443: the manager container declares its metrics port as 8443" }}
+{{- end }}
+{{- if not .Values.metrics.secure }}
+{{- fail "metrics.secure=false is not supported: the operator always serves metrics over HTTPS" }}
+{{- end }}

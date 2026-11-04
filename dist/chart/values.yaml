@@ -220,9 +220,9 @@ crd:
 ##
 metrics:
   enabled: true
-  # Metrics server port
+  # Metrics server port, must be 8443
   port: 8443
-  # Enable secure metrics: HTTPS with certs/auth (true) or HTTP (false).
+  # Secure metrics: HTTPS with certs/auth. Must be true.
   # Note: Metrics authn/authz needs ClusterRole access.
   secure: true
 
@@ -235,8 +235,9 @@ certManager:
 ## Webhook server configuration
 ##
 webhook:
+  # Must be true: the operator always serves its validating webhook.
   enabled: true
-  # Webhook server port
+  # Webhook server port, must be 9443
   port: 9443
 
 ## Prometheus ServiceMonitor for metrics scraping.

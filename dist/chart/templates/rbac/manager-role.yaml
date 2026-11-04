@@ -1,4 +1,3 @@
-{{- if .Values.rbac.namespaced }}{{- fail "rbac.namespaced is not supported: the operator needs cluster-wide access to Nodes and NodeHealthChecks" }}{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if .Values.rbac.namespaced }}
 kind: Role

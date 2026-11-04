@@ -53,7 +53,8 @@ Use `IMG` to set a different operator image.
 
 ### Using Helm
 
-The Helm chart in `dist/chart` installs the same resources and also needs cert-manager:
+The Helm chart in `dist/chart` installs the same resources and also needs cert-manager.
+Run this from a checkout of the repository at a release tag that includes the chart:
 
 ```bash
 helm install node-healthcheck-operator dist/chart \

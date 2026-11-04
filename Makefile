@@ -210,9 +210,6 @@ helm-chart: build-installer kubebuilder yq ## Generate the Helm chart in dist/ch
 	$(YQ) -i '.version = "$(VERSION)" | .appVersion = "$(IMAGE_TAG)"' dist/chart/Chart.yaml
 	sed -i.bak 's/{{ include "node-healthcheck-operator.name" . }}-operator/{{ include "node-healthcheck-operator.name" . }}/' dist/chart/templates/*/*.yaml
 	rm -f dist/chart/templates/*/*.yaml.bak
-	{ printf '%s\n' '{{- if .Values.rbac.namespaced }}{{- fail "rbac.namespaced is not supported: the operator needs cluster-wide access to Nodes and NodeHealthChecks" }}{{- end }}'; \
-		cat dist/chart/templates/rbac/manager-role.yaml; } > dist/chart/templates/rbac/manager-role.yaml.tmp
-	mv dist/chart/templates/rbac/manager-role.yaml.tmp dist/chart/templates/rbac/manager-role.yaml
 	$(MAKE) fmt
 
 .PHONY: verify-helm-chart
