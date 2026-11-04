@@ -46,7 +46,8 @@ images:
   newTag: v<version>
 ```
 
-To build the manifest from source, run `make build-installer`, which writes `dist/install.yaml`.
+To build the manifest from source, run `make build-installer VERSION=<version>`, with the version
+without the leading `v`, which writes `dist/install.yaml`.
 Use `IMG` to set a different operator image.
 
 ### For development
