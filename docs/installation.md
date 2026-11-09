@@ -54,10 +54,13 @@ Use `IMG` to set a different operator image.
 ### Using Helm
 
 The Helm chart in `dist/chart` installs the same resources and also needs cert-manager.
-Run this from a checkout of the repository at a release tag that includes the chart:
+Run this from a checkout of the repository at a release tag that includes the chart.
+The chart's default image tag follows the repository's default version, not the release tag,
+so set it to the release you install:
 
 ```bash
 helm install node-healthcheck-operator dist/chart \
+  --set manager.image.tag=v<version> \
   --namespace node-healthcheck-operator-system --create-namespace
 ```
 
@@ -65,8 +68,9 @@ See `dist/chart/values.yaml` for the configurable values.
 The CRD is kept when the chart is uninstalled, so existing NodeHealthCheck resources survive a reinstall.
 
 The chart is generated from `dist/install.yaml` with the kubebuilder Helm plugin.
-After changing `config/`, run `make helm-chart` and update `dist/chart/values.yaml` until
-`make verify-helm-chart` passes.
+After changing `config/`, run `make helm-chart`, update `dist/chart/values.yaml` and commit the
+changes in `dist/chart`. `make verify-helm-chart` regenerates the chart and fails when that leaves
+uncommitted changes, so run it on a clean `dist/chart`.
 
 ### For development
 
