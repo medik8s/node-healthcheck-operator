@@ -197,7 +197,16 @@ deploy: manifests kustomize ## Deploy controller in the configured Kubernetes cl
 
 .PHONY: undeploy
 undeploy: ## UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -f -
+	$(KUSTOMIZE) build $${KUSTOMIZE_OVERLAY-config/default} | $(KUBECTL) delete -f -
+
+.PHONY: build-installer
+build-installer: manifests kustomize ## Generate dist/install.yaml for installing NHC without OLM (requires cert-manager)
+	mkdir -p dist
+	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	cp -R config "$$tmp/" && \
+	(cd "$$tmp/config/manager" && $(KUSTOMIZE) edit set image controller=${IMG}) && \
+	(cd "$$tmp/config/standalone" && $(KUSTOMIZE) edit set image controller=${IMG}) && \
+	$(KUSTOMIZE) build "$$tmp/config/standalone" > dist/install.yaml
 
 .PHONY: manifests
 manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.

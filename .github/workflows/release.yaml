@@ -72,6 +72,9 @@ jobs:
       - name: Compress bundle manifests
         run: tar czf bundle.tar.gz bundle/
 
+      - name: Generate install manifest for installation without OLM
+        run: VERSION=$VERSION make build-installer
+
       - name: Create release with manifests
         uses: softprops/action-gh-release@v2
         with:
@@ -94,8 +97,10 @@ jobs:
 
             ### Source code and OLM manifests
 
-            Please find the source code and the OLM manifests in the `Assets` section below.
-          files: bundle.tar.gz
+            Please find the source code, the OLM manifests and the install manifest for installation without OLM (`install.yaml`) in the `Assets` section below.
+          files: |
+            bundle.tar.gz
+            dist/install.yaml
   create_k8s_release_pr:
     if: inputs.operation == 'create_k8s_release_pr'
     uses: medik8s/.github/.github/workflows/release_community_bundle.yaml@main
