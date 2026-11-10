@@ -1,0 +1,18 @@
+name: Go Version Update
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Dry run — show changes without creating a PR"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  update:
+    uses: medik8s/.github/.github/workflows/update-go-version.yaml@main
+    with:
+      version-schema: ocp-4.22
+      dry-run: ${{ inputs.dry-run || false }}
