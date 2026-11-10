@@ -291,7 +291,9 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 
 					By("ensuring DetectedUnhealthy event was emitted")
 					Eventually(func(g Gomega) {
-						events, err := clientSet.CoreV1().Events("default").List(context.Background(), metav1.ListOptions{
+						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+						defer cancel()
+						events, err := clientSet.CoreV1().Events("default").List(ctx, metav1.ListOptions{
 							FieldSelector: fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=NodeHealthCheck,reason=DetectedUnhealthy", nhcName),
 						})
 						g.Expect(err).ToNot(HaveOccurred())
