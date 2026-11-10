@@ -122,10 +122,10 @@ jobs:
         make dev-wait
 
         # Wait for NHC controller to complete leader election and initial
-        # reconciliation. The aggregation ClusterRole is created during
+        # reconciliation. The aggregation ClusterRoleBinding is created during
         # initialization — once it exists the controller is active.
-        kubectl wait --for=create clusterrole/node-healthcheck-operator-aggregation --timeout=120s
-        echo "NHC aggregation ClusterRole found — controller is active."
+        kubectl wait --for=create clusterrolebinding/node-healthcheck-operator-aggregation --timeout=120s
+        echo "NHC aggregation ClusterRoleBinding found — controller is active."
 
         # Wait for Kubernetes aggregation controller to merge SNR rules into
         # the NHC aggregation ClusterRole. Without this, NHC may lack
