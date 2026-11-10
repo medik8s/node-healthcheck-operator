@@ -407,6 +407,14 @@ spec:
   timeout: 5m
 ```
 
+### Identity-bound FAR remediation
+
+A `FenceAgentsRemediationTemplate` with `spec.template.spec.safetyPolicy: RedfishOffV1` opts into the FAR Node-binding contract. This requires a FAR build that supports that policy; legacy remediators and templates without the policy retain their existing behavior.
+
+For this policy, NHC adds `spec.nodeBinding` with `version: v1`, the selected Node's `name` and `uid`, and its canonical lowercase `status.nodeInfo.systemUUID`. The identity comes from the same Node object used for the remediation decision, not a later lookup by name. Templates must omit `nodeBinding`. Missing UID, malformed UUID, and all-zero or all-ones UUIDs prevent generation. MachineHealthCheck generation does not supply this binding.
+
+FAR owns validation, immutability, authenticated Redfish verification, and UID-bound release and cleanup. The existing `remediation.medik8s.io/node-name` annotation remains a routing hint and must agree with the typed binding; it does not replace it. NHC does not perform power operations or establish that a host is physically Off.
+
 ### RBAC and role aggregation
 
 In order to allow NHC to read template CRs, and to create/read/update/delete
