@@ -30,8 +30,8 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
           registry: quay.io
 
-      - name: Build and push CSV version v0.0.1 with latest images
-        run: make container-build-k8s container-push
+      - name: Build and push latest images from main
+        run: make container-build-k8s container-push IMAGE_TAG=latest
 
       - name: Build and push index image with versioned NHC + SNR images
         # broken atm because of mandatory previous release...
