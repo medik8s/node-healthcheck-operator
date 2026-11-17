@@ -12,20 +12,19 @@ import (
 )
 
 const (
-	roleName            = "node-healthcheck-operator-aggregation"
-	aggregationLabelKey = "rbac.ext-remediation/aggregate-to-ext-remediation"
-	saName              = "node-healthcheck-controller-manager"
-	deploymentName      = "node-healthcheck-controller-manager"
+	roleName       = "node-healthcheck-operator-aggregation"
+	saName         = "node-healthcheck-controller-manager"
+	deploymentName = "node-healthcheck-controller-manager"
 )
 
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=*
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=*
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind,resourceNames=node-healthcheck-operator-aggregation
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=update,resourceNames=node-healthcheck-operator-aggregation
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 
 // Aggregation defines the functions needed for setting up RBAC aggregation
 type Aggregation interface {
 	CreateOrUpdateAggregation() error
-	getRole() *rbacv1.ClusterRole
 	getRoleBinding() *rbacv1.ClusterRoleBinding
 }
 
@@ -47,63 +46,11 @@ func NewAggregation(ctx context.Context, client client.Client, namespace string)
 }
 
 func (a aggregation) CreateOrUpdateAggregation() error {
-
-	if err := a.createOrUpdateRole(); err != nil {
-		return err
-	}
 	return a.createOrUpdateRoleBinding()
-
-}
-
-func (a aggregation) createOrUpdateRole() error {
-	// check if the role exists
-	role := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: roleName,
-		},
-	}
-	err := a.Get(a.ctx, client.ObjectKeyFromObject(role), role)
-	if errors.IsNotFound(err) {
-		return a.createRole()
-	} else if err != nil {
-		return fmt.Errorf("failed to get cluster role: %v", err)
-	}
-	return a.updateRole(role)
-}
-
-func (a aggregation) createRole() error {
-	err := a.Create(a.ctx, a.getRole())
-	return err
-}
-
-func (a aggregation) updateRole(oldRole *rbacv1.ClusterRole) error {
-	newRole := a.getRole()
-	oldRole.Rules = newRole.Rules
-	oldRole.AggregationRule = newRole.AggregationRule
-	return a.Update(a.ctx, oldRole)
-}
-
-func (a aggregation) getRole() *rbacv1.ClusterRole {
-	return &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            roleName,
-			Namespace:       a.namespace,
-			OwnerReferences: a.getOwnerRefs(),
-		},
-		AggregationRule: &rbacv1.AggregationRule{
-			ClusterRoleSelectors: []metav1.LabelSelector{
-				{
-					MatchLabels: map[string]string{
-						aggregationLabelKey: "true",
-					},
-				},
-			},
-		},
-	}
 }
 
 func (a aggregation) createOrUpdateRoleBinding() error {
-	// check if the role exists
+	// check if the binding exists
 	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: roleName,

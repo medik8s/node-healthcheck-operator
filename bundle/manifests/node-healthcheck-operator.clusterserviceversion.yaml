@@ -453,9 +453,27 @@ spec:
           - rbac.authorization.k8s.io
           resources:
           - clusterrolebindings
+          verbs:
+          - create
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resourceNames:
+          - node-healthcheck-operator-aggregation
+          resources:
+          - clusterrolebindings
+          verbs:
+          - update
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resourceNames:
+          - node-healthcheck-operator-aggregation
+          resources:
           - clusterroles
           verbs:
-          - '*'
+          - bind
         - apiGroups:
           - remediation.medik8s.io
           resources:
