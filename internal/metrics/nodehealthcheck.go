@@ -8,6 +8,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+// DO NOT MERGE, check branch protection
+
 var (
 	// nodeHealthCheckOldRemediationCR is a Prometheus metric, which reports the number of old Remediation CRs.
 	// It is an indication for remediation that is pending for a long while, which might indicate a problem with the external remediation mechanism.
