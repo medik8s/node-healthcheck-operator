@@ -194,7 +194,7 @@ serviceAccount:
   enabled: true
 
   ## Existing ServiceAccount name (required when enabled=false)
-  ## Set to "default" to use the namespace default ServiceAccount
+  ## Must be node-healthcheck-controller-manager: the operator binds the remediation template RBAC to that name
   ## Note: When enabled=true, respects nameOverride/fullnameOverride
   ##
   # name: ""

@@ -13,3 +13,6 @@
 {{- if not .Values.metrics.secure }}
 {{- fail "metrics.secure=false is not supported: the operator always serves metrics over HTTPS" }}
 {{- end }}
+{{- if ne (include "node-healthcheck-operator.serviceAccountName" .) "node-healthcheck-controller-manager" }}
+{{- fail "the manager must run as the ServiceAccount node-healthcheck-controller-manager: the operator binds the remediation template RBAC to that name" }}
+{{- end }}
