@@ -1,0 +1,21 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: controller-manager
+    app.kubernetes.io/name: {{ include "node-healthcheck-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  name: {{ include "node-healthcheck-operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+  - name: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+    port: {{ .Values.metrics.port }}
+    targetPort: https
+  selector:
+    app.kubernetes.io/component: controller-manager
+    app.kubernetes.io/name: {{ include "node-healthcheck-operator.name" . }}
+{{- end }}
