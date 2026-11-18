@@ -40,6 +40,9 @@ export VERSION
 export PREVIOUS_VERSION ?= 0.12.1
 # Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
 SKIP_RANGE_LOWER ?= 0.1.0
+# NO_REPLACES omits the CSV / catalog "replaces" field for a clean-root release that has no
+# in-package predecessor
+NO_REPLACES ?= false
 
 CHANNELS ?= stable
 export CHANNELS
@@ -350,17 +353,19 @@ add-console-plugin-annotation: ## Add console-plugin annotation to the CSV
 
 .PHONY: add-replaces-field
 add-replaces-field: ## Add replaces field to the CSV
-	@if [ -z "$(PREVIOUS_VERSION)" ]; then \
-		echo "Error: PREVIOUS_VERSION must be set for versioned builds"; \
+	sed -r -i "/  replaces:.*/d" ${CSV}
+	# NO_REPLACES=true => clean-root release (e.g. first release after the package rename)
+	@if [ "$(NO_REPLACES)" = "true" ]; then \
+		echo "NO_REPLACES=true: omitting replaces field (clean-root release)"; \
+	elif [ -z "$(PREVIOUS_VERSION)" ]; then \
+		echo "Error: PREVIOUS_VERSION must be set for versioned builds (or set NO_REPLACES=true for a clean-root release)"; \
 		exit 1; \
-	fi
-	@if [ "$(PREVIOUS_VERSION)" = "$(VERSION)" ]; then \
+	elif [ "$(PREVIOUS_VERSION)" = "$(VERSION)" ]; then \
 		echo "Error: PREVIOUS_VERSION must differ from VERSION"; \
 		exit 1; \
+	else \
+		sed -r -i "/  version: $(VERSION)/ a\  replaces: $(PACKAGE_NAME).v$(PREVIOUS_VERSION)" ${CSV}; \
 	fi
-	# Prefer sed here in order to keep "replaces" near "version".
-	sed -r -i "/  replaces:.*/d" ${CSV}
-	sed -r -i "/  version: $(VERSION)/ a\  replaces: $(PACKAGE_NAME).v$(PREVIOUS_VERSION)" ${CSV}
 
 .PHONY: add-community-edition-to-display-name
 add-community-edition-to-display-name: ## Add the "Community Edition" suffix to the display name
@@ -449,7 +454,7 @@ bundle-scorecard: operator-sdk ## Run scorecard tests
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
 	VERSION=$(DEFAULT_VERSION) $(MAKE) manifests bundle-k8s
-	VERSION=$(DEFAULT_VERSION) $(MAKE) add-replaces-field
+	NO_REPLACES=true VERSION=$(DEFAULT_VERSION) $(MAKE) add-replaces-field
 	sed -r -i "s|olm.skipRange: .*|olm.skipRange: '>=${SKIP_RANGE_LOWER} <$(DEFAULT_VERSION)'|;" ${CSV}
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
@@ -504,7 +509,7 @@ add_channel_entry_for_the_bundle:
 		echo "name: $$channel" >> ${CATALOG_INDEX}; \
 		echo "entries:" >> ${CATALOG_INDEX}; \
 		echo "  - name: ${PACKAGE_NAME}.v${VERSION}" >> ${CATALOG_INDEX}; \
-		if [ -n "${PREVIOUS_VERSION}" ]; then \
+		if [ "${NO_REPLACES}" != "true" ] && [ -n "${PREVIOUS_VERSION}" ]; then \
 			if [ "${PREVIOUS_VERSION}" = "${VERSION}" ]; then \
 				echo "Error: PREVIOUS_VERSION must differ from VERSION"; \
 				exit 1; \

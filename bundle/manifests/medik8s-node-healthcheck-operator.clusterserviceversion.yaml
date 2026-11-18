@@ -701,7 +701,6 @@ spec:
     name: Medik8s
     url: https://github.com/medik8s
   version: 5.8.0
-  replaces: medik8s-node-healthcheck-operator.v0.12.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1
