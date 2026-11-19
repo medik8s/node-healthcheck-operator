@@ -106,7 +106,17 @@ func (m *manager) GenerateRemediationCRForNode(node *corev1.Node, owner client.O
 		}
 	}
 
-	return m.generateRemediationCR(node.GetName(), node.GetName(), nhcOwnerRef, machineOwnerRef, template)
+	remediationCR, err := m.generateRemediationCR(node.GetName(), node.GetName(), nhcOwnerRef, machineOwnerRef, template)
+	if err != nil {
+		return nil, err
+	}
+	annotations := remediationCR.GetAnnotations()
+	annotations[commonannotations.NodeUIDAnnotation] = string(node.GetUID())
+	if node.Status.NodeInfo.SystemUUID != "" {
+		annotations[commonannotations.NodeSystemUUIDAnnotation] = node.Status.NodeInfo.SystemUUID
+	}
+	remediationCR.SetAnnotations(annotations)
+	return remediationCR, nil
 }
 
 func (m *manager) GenerateRemediationCRForMachine(machine *machinev1beta1.Machine, owner client.Object, template *unstructured.Unstructured, nodeName string) (*unstructured.Unstructured, error) {

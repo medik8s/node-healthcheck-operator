@@ -388,6 +388,10 @@ following these steps:
 - an owner reference will be set to the NHC CR
 - another owner reference will be set the node's machine if available
 (currently on OKD and OpenShift only)  
+- annotations `remediation.medik8s.io/node-name`, `remediation.medik8s.io/node-uid`
+and `remediation.medik8s.io/node-system-uuid` will carry the node's name, UID and
+`status.nodeInfo.systemUUID` as reported; the last one is left out when the node
+reports no system UUID
 
 For the above template, a remediation CR will look like this:
 
