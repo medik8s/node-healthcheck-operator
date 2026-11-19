@@ -10,4 +10,4 @@ resources:
 images:
 - name: controller
   newName: quay.io/medik8s/node-healthcheck-operator
-  newTag: v5.8.0
+  newTag: v99.9.9
