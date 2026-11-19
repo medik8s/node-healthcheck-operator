@@ -8,7 +8,7 @@ toolchain go1.26.5
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/medik8s/common v1.17.0
+	github.com/medik8s/common v1.18.0
 	github.com/onsi/ginkgo/v2 v2.28.3
 	github.com/onsi/gomega v1.40.0
 	github.com/pkg/errors v0.9.1
@@ -126,5 +126,3 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
-
-replace github.com/medik8s/common => github.com/lexfrei/medik8s-common v1.17.1-0.20261116081753-725acbfde4a8

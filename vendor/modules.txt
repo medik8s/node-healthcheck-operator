@@ -165,7 +165,7 @@ github.com/json-iterator/go
 # github.com/kylelemons/godebug v1.1.0
 ## explicit; go 1.11
 github.com/kylelemons/godebug/diff
-# github.com/medik8s/common v1.17.0 => github.com/lexfrei/medik8s-common v1.17.1-0.20261116081753-725acbfde4a8
+# github.com/medik8s/common v1.18.0
 ## explicit; go 1.20
 github.com/medik8s/common/pkg/annotations
 github.com/medik8s/common/pkg/conditions
@@ -1332,4 +1332,3 @@ sigs.k8s.io/structured-merge-diff/v6/value
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-# github.com/medik8s/common => github.com/lexfrei/medik8s-common v1.17.1-0.20261116081753-725acbfde4a8
