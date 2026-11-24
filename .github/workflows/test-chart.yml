@@ -1,0 +1,160 @@
+name: Helm Chart
+
+on:
+  push:
+    branches: [main*, medik8s-*, release-*]
+  pull_request:
+    branches: ['**']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify chart
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Verify that the chart is up to date
+        run: make verify-helm-chart
+
+      - name: Lint chart
+        run: bin/helm lint dist/chart
+
+  install:
+    name: Install chart on Kind
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      IMG: localhost/node-healthcheck-operator:ci
+      NAMESPACE: node-healthcheck-operator-system
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install helm
+        run: |
+          make helm
+          echo "${GITHUB_WORKSPACE}/bin" >> "${GITHUB_PATH}"
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: nhc-chart
+
+      - name: Build and load operator image
+        run: |
+          docker build -t "${IMG}" .
+          kind load docker-image "${IMG}" --name nhc-chart
+
+      - name: Install cert-manager
+        run: |
+          helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+            --version v1.19.1 \
+            --namespace cert-manager \
+            --create-namespace \
+            --set crds.enabled=true \
+            --wait \
+            --timeout 5m
+
+      - name: Install chart
+        run: |
+          helm install node-healthcheck-operator dist/chart \
+            --namespace "${NAMESPACE}" \
+            --create-namespace \
+            --set manager.image.repository="${IMG%:*}" \
+            --set manager.image.tag="${IMG##*:}" \
+            --set manager.replicas=1 \
+            --wait \
+            --timeout 5m
+
+      - name: Verify the validating webhook
+        run: |
+          for _ in $(seq 1 30); do
+            if out=$(kubectl apply -f - 2>&1 <<'EOF'
+          apiVersion: remediation.medik8s.io/v1alpha1
+          kind: NodeHealthCheck
+          metadata:
+            name: invalid
+          spec:
+            selector: {}
+          EOF
+            ); then
+              echo "webhook accepted an invalid NodeHealthCheck"
+              exit 1
+            fi
+            echo "${out}"
+            echo "${out}" | grep -q "failed calling webhook" || break
+            sleep 2
+          done
+          echo "${out}" | grep -q "Either RemediationTemplate or at least one EscalatingRemediations must be set"
+
+      - name: Verify RBAC aggregation for remediation templates
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: apiextensions.k8s.io/v1
+          kind: CustomResourceDefinition
+          metadata:
+            name: dummyremediationtemplates.test.medik8s.io
+          spec:
+            group: test.medik8s.io
+            scope: Namespaced
+            names:
+              kind: DummyRemediationTemplate
+              plural: dummyremediationtemplates
+            versions:
+            - name: v1alpha1
+              served: true
+              storage: true
+              schema:
+                openAPIV3Schema:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: dummy-remediation
+            labels:
+              rbac.ext-remediation/aggregate-to-ext-remediation: "true"
+          rules:
+          - apiGroups: [test.medik8s.io]
+            resources: [dummyremediationtemplates]
+            verbs: [get, list, watch]
+          EOF
+          sa=$(kubectl -n "${NAMESPACE}" get deployment -l app.kubernetes.io/name=node-healthcheck-operator \
+            -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}')
+          for _ in $(seq 1 30); do
+            kubectl auth can-i get dummyremediationtemplates.test.medik8s.io \
+              --as="system:serviceaccount:${NAMESPACE}:${sa}" && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Uninstall chart
+        run: helm uninstall node-healthcheck-operator --namespace "${NAMESPACE}" --wait
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n "${NAMESPACE}" describe deployment
+          kubectl -n "${NAMESPACE}" logs deployment/node-healthcheck-controller-manager --all-containers || true
