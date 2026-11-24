@@ -2,7 +2,6 @@ package rbac
 
 import (
 	"context"
-	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,8 +39,7 @@ var _ = Describe("Aggregation Tests", func() {
 	getEmptyRole := func() *rbacv1.ClusterRole {
 		return &rbacv1.ClusterRole{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      roleName,
-				Namespace: namespace,
+				Name: roleName,
 			},
 		}
 	}
@@ -49,19 +47,16 @@ var _ = Describe("Aggregation Tests", func() {
 	getEmptyRoleBinding := func() *rbacv1.ClusterRoleBinding {
 		return &rbacv1.ClusterRoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      roleName,
-				Namespace: namespace,
+				Name: roleName,
 			},
 		}
 	}
 
 	AfterEach(func() {
 		By("deleting old roles and bindings")
-		// cleanup role and binding
 		k8sClient.Delete(context.Background(), getEmptyRole())
 		k8sClient.Delete(context.Background(), getEmptyRoleBinding())
 
-		/// wait
 		Eventually(func() bool {
 			r := getEmptyRole()
 			if err := k8sClient.Get(context.Background(), client.ObjectKeyFromObject(r), r); !errors.IsNotFound(err) {
@@ -76,73 +71,71 @@ var _ = Describe("Aggregation Tests", func() {
 
 	})
 
-	validateRole := func(r *rbacv1.ClusterRole) {
-		expected := aggr.getRole()
-		ExpectWithOffset(1, reflect.DeepEqual(r.AggregationRule, expected.AggregationRule))
-		ExpectWithOffset(1, reflect.DeepEqual(r.Rules, expected.Rules))
-		ExpectWithOffset(1, reflect.DeepEqual(r.OwnerReferences, expected.OwnerReferences))
-	}
-
-	validateRoleBinding := func(rb *rbacv1.ClusterRoleBinding) {
-		expected := aggr.getRoleBinding()
-		Expect(reflect.DeepEqual(rb.RoleRef, expected.RoleRef))
-		Expect(reflect.DeepEqual(rb.Subjects, expected.Subjects))
-		Expect(reflect.DeepEqual(rb.OwnerReferences, expected.OwnerReferences))
-	}
-
-	validate := func() {
-		r := getEmptyRole()
-		Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(r), r)).To(Succeed())
-		validateRole(r)
-
+	validateRoleBinding := func() *rbacv1.ClusterRoleBinding {
 		rb := getEmptyRoleBinding()
-		Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(rb), r)).To(Succeed())
-		validateRoleBinding(rb)
-
+		ExpectWithOffset(1, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(rb), rb)).To(Succeed())
+		expected := aggr.getRoleBinding()
+		ExpectWithOffset(1, rb.RoleRef).To(Equal(expected.RoleRef))
+		ExpectWithOffset(1, rb.Subjects).To(Equal(expected.Subjects))
+		return rb
 	}
 
 	When("Aggregation is not set up", func() {
 
-		It("Should create rule and binding", func() {
-			validate()
+		It("Should create the binding but not the role", func() {
+			rb := validateRoleBinding()
+			Expect(rb.OwnerReferences).To(HaveLen(1))
+			Expect(rb.OwnerReferences).To(Equal(aggr.getRoleBinding().OwnerReferences))
+			Expect(k8sClient.Get(context.Background(), client.ObjectKeyFromObject(getEmptyRole()), getEmptyRole())).To(
+				WithTransform(errors.IsNotFound, BeTrue()))
 		})
 
 	})
 
 	When("Aggregation is already set up", func() {
 
-		Context("Aggregation is up to date", func() {
+		var existingRole *rbacv1.ClusterRole
+
+		BeforeEach(func() {
+			By("creating the role like the manifests or older versions did")
+			existingRole = &rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: roleName,
+				},
+				AggregationRule: &rbacv1.AggregationRule{
+					ClusterRoleSelectors: []metav1.LabelSelector{
+						{
+							MatchLabels: map[string]string{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), existingRole)).To(Succeed())
+		})
+
+		validateRoleUntouched := func() {
+			r := getEmptyRole()
+			ExpectWithOffset(1, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(r), r)).To(Succeed())
+			ExpectWithOffset(1, r.ResourceVersion).To(Equal(existingRole.ResourceVersion))
+			ExpectWithOffset(1, r.AggregationRule).To(Equal(existingRole.AggregationRule))
+		}
+
+		Context("Binding is up to date", func() {
 			BeforeEach(func() {
-				By("faking old roles and bindings")
-				Expect(k8sClient.Create(context.Background(), aggr.getRole())).To(Succeed())
-				Expect(k8sClient.Create(context.Background(), aggr.getRoleBinding())).To(Succeed())
+				Expect(k8sClient.Create(context.Background(), NewAggregation(context.Background(), k8sClient, namespace).getRoleBinding())).To(Succeed())
 			})
 
-			It("Should update rule and binding", func() {
-				validate()
+			It("Should keep the binding and not touch the role", func() {
+				validateRoleBinding()
+				validateRoleUntouched()
 			})
 		})
 
-		Context("Aggregation is outdated", func() {
+		Context("Binding is outdated", func() {
 			BeforeEach(func() {
-				oldRole := aggr.getRole()
-				oldRole.AggregationRule.ClusterRoleSelectors = []metav1.LabelSelector{
-					{
-						MatchLabels: map[string]string{
-							"foo": "bar",
-						},
-					},
-				}
-				oldRole.Rules = []rbacv1.PolicyRule{
-					{
-						APIGroups: []string{"foo"},
-						Resources: []string{"something"},
-						Verbs:     []string{"all"},
-					},
-				}
-				oldRole.OwnerReferences[0].UID = "1234"
-
-				oldRoleBinding := aggr.getRoleBinding()
+				oldRoleBinding := NewAggregation(context.Background(), k8sClient, namespace).getRoleBinding()
 				oldRoleBinding.Subjects = []rbacv1.Subject{
 					{
 						Kind:      "ServiceAccount",
@@ -158,12 +151,12 @@ var _ = Describe("Aggregation Tests", func() {
 						UID:        "123",
 					},
 				}
-				Expect(k8sClient.Create(context.Background(), oldRole)).To(Succeed())
 				Expect(k8sClient.Create(context.Background(), oldRoleBinding)).To(Succeed())
 			})
 
-			It("Should update rule and binding", func() {
-				validate()
+			It("Should update the binding and not touch the role", func() {
+				validateRoleBinding()
+				validateRoleUntouched()
 			})
 		})
 	})

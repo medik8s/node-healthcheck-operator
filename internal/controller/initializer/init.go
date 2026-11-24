@@ -45,7 +45,7 @@ func (i *initializer) Start(ctx context.Context) error {
 	}
 
 	if err = rbac.NewAggregation(ctx, i.cl, ns).CreateOrUpdateAggregation(); err != nil {
-		return errors.Wrap(err, "failed to create or update RBAC aggregation role")
+		return errors.Wrap(err, "failed to create or update RBAC aggregation role binding")
 	}
 
 	if err = console.CreateOrUpdatePlugin(ctx, i.cl, i.capabilities, ns, ctrl.Log.WithName("console-plugin")); err != nil {
