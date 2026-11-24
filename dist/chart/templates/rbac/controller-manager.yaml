@@ -1,0 +1,21 @@
+{{- if .Values.serviceAccount.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/name: {{ include "node-healthcheck-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- with .Values.serviceAccount.labels }}
+    {{- with omit . "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "app.kubernetes.io/managed-by" }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  name: {{ include "node-healthcheck-operator.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
