@@ -127,8 +127,8 @@ github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+
 github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJJLY9Nlc=
 github.com/maruel/natural v1.1.1 h1:Hja7XhhmvEFhcByqDoHz9QZbkWey+COd9xWfCfn1ioo=
 github.com/maruel/natural v1.1.1/go.mod h1:v+Rfd79xlw1AgVBjbO0BEQmptqb5HvL/k9GRHB7ZKEg=
-github.com/medik8s/common v1.17.0 h1:AmJKx0tzqGZF27Ot0A4ak85q0F0zqUkVyCvYmm67rtY=
-github.com/medik8s/common v1.17.0/go.mod h1:A9jYldC6PZcAuBowNNm712FqWdASB2ey5Vjp8MYN/PY=
+github.com/medik8s/common v1.18.0 h1:WMW8FDnnB6UWwAJpZQmLYFhRKto9DZvLwhJnEQcsgV8=
+github.com/medik8s/common v1.18.0/go.mod h1:A9jYldC6PZcAuBowNNm712FqWdASB2ey5Vjp8MYN/PY=
 github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3vE=
 github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC8DvP0i/A=
 github.com/moby/spdystream v0.5.1 h1:9sNYeYZUcci9R6/w7KDaFWEWeV4LStVG78Mpyq/Zm/Y=

@@ -193,6 +193,57 @@ var _ = Describe("Node Health Check CR", func() {
 		}
 	}
 
+	Context("Node identity annotations", func() {
+		DescribeTable("copies the selected Node identity without interpreting it", func(apiVersion, kind, systemUUID string, preset bool) {
+			node := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker-a", UID: "node-a"},
+				Status:     v1.NodeStatus{NodeInfo: v1.NodeSystemInfo{SystemUUID: systemUUID}},
+			}
+			template := newTestRemediationTemplateCR(kind, MachineNamespace, "node-identity-template")
+			template.SetAPIVersion(apiVersion)
+			if preset {
+				template.SetAnnotations(map[string]string{
+					commonannotations.NodeUIDAnnotation:        "other-node",
+					commonannotations.NodeSystemUUIDAnnotation: "00000000-0000-0000-0000-000000000001",
+				})
+			}
+			rm := resources.NewManager(k8sClient, ctx, controllerruntime.Log, false, nil, fakeRecorder)
+			cr, err := rm.GenerateRemediationCRForNode(node, newNodeHealthCheck(), template)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cr.GetKind()).To(Equal(kind))
+			Expect(cr.GetAPIVersion()).To(Equal(apiVersion))
+			Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeNameAnnotation, node.Name))
+			Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeUIDAnnotation, string(node.UID)))
+			Expect(cr.GetAnnotations()).To(HaveKeyWithValue(annotations.TemplateNameAnnotation, template.GetName()))
+			if systemUUID == "" {
+				Expect(cr.GetAnnotations()).NotTo(HaveKey(commonannotations.NodeSystemUUIDAnnotation))
+			} else {
+				Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeSystemUUIDAnnotation, systemUUID))
+			}
+		},
+			Entry("FAR", "fence-agents-remediation.medik8s.io/v1alpha1", "FenceAgentsRemediation", "00112233-4455-4677-8899-aAbBcCdDeEfF", false),
+			Entry("SNR", "self-node-remediation.medik8s.io/v1alpha1", "SelfNodeRemediation", "00112233-4455-4677-8899-aAbBcCdDeEfF", false),
+			Entry("MDR", "machine-deletion-remediation.medik8s.io/v1alpha1", "MachineDeletionRemediation", "00112233-4455-4677-8899-aAbBcCdDeEfF", false),
+			Entry("a Node without a system UUID", "self-node-remediation.medik8s.io/v1alpha1", "SelfNodeRemediation", "", false),
+			Entry("template identity cannot fill in the Node's missing system UUID", "fence-agents-remediation.medik8s.io/v1alpha1", "FenceAgentsRemediation", "", true),
+		)
+
+		It("leaves the Node UID and system UUID off a Machine remediation", func() {
+			machine := &machinev1beta1.Machine{ObjectMeta: metav1.ObjectMeta{Name: "machine-a", Namespace: MachineNamespace, UID: "machine-a"}}
+			owner := &machinev1beta1.MachineHealthCheck{
+				TypeMeta:   metav1.TypeMeta{APIVersion: machinev1beta1.SchemeGroupVersion.String(), Kind: "MachineHealthCheck"},
+				ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: MachineNamespace, UID: "mhc-a"},
+			}
+			template := newTestRemediationTemplateCR("Metal3Remediation", MachineNamespace, "node-identity-template")
+			rm := resources.NewManager(k8sClient, ctx, controllerruntime.Log, false, nil, fakeRecorder)
+			cr, err := rm.GenerateRemediationCRForMachine(machine, owner, template, "worker-a")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeNameAnnotation, "worker-a"))
+			Expect(cr.GetAnnotations()).NotTo(HaveKey(commonannotations.NodeUIDAnnotation))
+			Expect(cr.GetAnnotations()).NotTo(HaveKey(commonannotations.NodeSystemUUIDAnnotation))
+		})
+	})
+
 	Context("Reconciliation", func() {
 		const (
 			unhealthyNodeName = "unhealthy-worker-node-1"
@@ -259,6 +310,37 @@ var _ = Describe("Node Health Check CR", func() {
 
 			// let thing settle a bit
 			time.Sleep(1 * time.Second)
+		})
+
+		Context("selected Node identity in a created remediation", func() {
+			BeforeEach(func() {
+				setupObjects(1, 2, false)
+				objects[0].(*v1.Node).Status.Conditions[0].Status = v1.ConditionTrue
+			})
+
+			DescribeTable("records the identity from the unhealthy Node", func(systemUUID string) {
+				node := &v1.Node{}
+				Expect(k8sClient.Get(ctx, client.ObjectKey{Name: unhealthyNodeName}, node)).To(Succeed())
+				node.Status.NodeInfo.SystemUUID = systemUUID
+				node.Status.Conditions[0].Status = v1.ConditionUnknown
+				node.Status.Conditions[0].LastTransitionTime = metav1.NewTime(time.Now().Add(-unhealthyConditionDuration - time.Second))
+				Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+
+				Eventually(func(g Gomega) {
+					cr := findRemediationCRForNHC(unhealthyNodeName, underTest)
+					g.Expect(cr).NotTo(BeNil())
+					g.Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeNameAnnotation, node.Name))
+					g.Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeUIDAnnotation, string(node.UID)))
+					if systemUUID == "" {
+						g.Expect(cr.GetAnnotations()).NotTo(HaveKey(commonannotations.NodeSystemUUIDAnnotation))
+					} else {
+						g.Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeSystemUUIDAnnotation, systemUUID))
+					}
+				}, "5s", "100ms").Should(Succeed())
+			},
+				Entry("without a reported system UUID", ""),
+				Entry("with a raw mixed-case system UUID", "00112233-4455-4677-8899-aAbBcCdDeEfF"),
+			)
 		})
 
 		testReconcile := func() {
@@ -405,6 +487,12 @@ var _ = Describe("Node Health Check CR", func() {
 							),
 						))
 					Expect(cr.GetAnnotations()[oldRemediationCRAnnotationKey]).To(BeEmpty())
+
+					selectedNode := &v1.Node{}
+					Expect(k8sClient.Get(ctx, client.ObjectKey{Name: unhealthyNodeName}, selectedNode)).To(Succeed())
+					Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeNameAnnotation, selectedNode.Name))
+					Expect(cr.GetAnnotations()).To(HaveKeyWithValue(commonannotations.NodeUIDAnnotation, string(selectedNode.UID)))
+					Expect(cr.GetAnnotations()).NotTo(HaveKey(commonannotations.NodeSystemUUIDAnnotation))
 
 					By("simulating remediator by putting a finalizer on the remediation CR")
 					cr.SetFinalizers([]string{"dummy"})
